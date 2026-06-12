@@ -52,13 +52,13 @@ export function MobileShell({ children, overlay }: MobileShellProps) {
 
   return (
     <div className="min-h-dvh bg-[radial-gradient(circle_at_top,rgba(241,70,53,0.1),transparent_34%),linear-gradient(180deg,#f8fafc_0%,#eef3f8_100%)] px-0 py-0 sm:px-4 sm:py-4">
-      <div className="relative mx-auto flex min-h-dvh w-full max-w-[430px] overflow-hidden bg-app-bg shadow-[var(--shadow-shell)] ring-1 ring-slate-900/5 sm:min-h-[calc(100dvh-2rem)] sm:rounded-[32px]">
+      <div className="relative mx-auto flex h-[100dvh] min-h-0 w-full max-w-[430px] overflow-hidden bg-app-bg shadow-[var(--shadow-shell)] ring-1 ring-slate-900/5 sm:h-[calc(100dvh-2rem)] sm:rounded-[32px]">
         <div className="pointer-events-none absolute inset-0">
           <div className="absolute -right-20 top-0 h-48 w-48 rounded-full bg-accent/10 blur-3xl" />
           <div className="absolute -left-24 bottom-24 h-56 w-56 rounded-full bg-sky-200/35 blur-3xl" />
         </div>
 
-        <div className="relative flex w-full flex-1 flex-col">
+        <div className="relative flex w-full flex-1 min-h-0 flex-col">
           <header className="sticky top-0 z-20 border-b border-border/80 bg-white/90 px-4 py-3 backdrop-blur">
             <div className="flex items-center justify-between gap-3">
               <button
@@ -165,11 +165,11 @@ export function MobileShell({ children, overlay }: MobileShellProps) {
             </aside>
           </div>
 
-          <main className="flex-1 overflow-y-auto px-4 pb-28 pt-4">
+          <main className="min-h-0 flex-1 overflow-y-auto px-4 pb-28 pt-4">
             {children}
           </main>
 
-          <nav className="sticky bottom-0 z-20 border-t border-border/80 bg-white/95 px-3 pb-[max(env(safe-area-inset-bottom),0.75rem)] pt-2 backdrop-blur">
+          <nav className="sticky bottom-0 z-20 shrink-0 border-t border-border/80 bg-white/95 px-3 pb-[max(env(safe-area-inset-bottom),0.75rem)] pt-2 backdrop-blur">
             <div
               className={cn(
                 'grid gap-2',

@@ -22,6 +22,7 @@ export function DriverCounterOfferSheet() {
   )
   const [price, setPrice] = useState('')
   const [comment, setComment] = useState('')
+  const [error, setError] = useState('')
 
   useEffect(() => {
     if (!isDriverCounterOfferSheetOpen || !selectedOrder) return
@@ -40,12 +41,12 @@ export function DriverCounterOfferSheet() {
     const numericPrice = Number(price)
 
     if (!Number.isFinite(numericPrice) || numericPrice <= 0) {
-      window.alert('Введите корректную цену.')
+      setError('Введите корректную цену.')
       return
     }
 
+    setError('')
     actions.sendDriverCounterOffer(numericPrice, comment.trim())
-    window.alert('Предложение отправлено')
   }
 
   return (
@@ -92,6 +93,12 @@ export function DriverCounterOfferSheet() {
             className="w-full resize-none rounded-2xl border border-border bg-surface-soft px-4 py-3 text-sm outline-none transition focus:border-accent"
           />
         </label>
+
+        {error ? (
+          <div className="rounded-2xl bg-red-50 px-4 py-3 text-sm text-red-700">
+            {error}
+          </div>
+        ) : null}
 
         {selectedCounterOffer?.status === 'pending' ? (
           <button

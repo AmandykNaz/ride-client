@@ -25,9 +25,53 @@ export type RideRequestStatus =
   | 'COMPLETED'
   | 'CANCELLED'
 
-export type WalletTransactionType = 'TOP_UP' | 'COMMISSION' | 'REFUND' | 'ADJUSTMENT'
+export type WalletTransactionType =
+  | 'TOP_UP_APPROVED'
+  | 'COMMISSION_CHARGED'
+  | 'COMMISSION_REFUND'
+  | 'MANUAL_ADJUSTMENT'
 
-export type TopUpRequestStatus = 'PENDING' | 'APPROVED' | 'REJECTED'
+export type WalletTransactionStatus = 'PENDING' | 'APPROVED' | 'REJECTED'
+
+export type WalletTransaction = {
+  id: string
+  type: WalletTransactionType
+  amount: number
+  status: WalletTransactionStatus
+  title: string
+  description?: string
+  createdAt: string
+  sourceOrderId?: string
+  sourceTopUpRequestId?: string
+}
+
+export type TopUpRequestStatus =
+  | 'PENDING_REVIEW'
+  | 'APPROVED'
+  | 'REJECTED'
+  | 'CANCELLED'
+
+export type TopUpRequestMethod = 'KASPI' | 'HALYK' | 'CASH'
+
+export type TopUpRequest = {
+  id: string
+  amount: number
+  method: TopUpRequestMethod
+  referenceNumber: string
+  screenshotAttached: boolean
+  status: TopUpRequestStatus
+  createdAt: string
+  reviewedAt?: string
+  rejectReason?: string
+}
+
+export type DriverWallet = {
+  balance: number
+  minBalance: number
+  transactions: WalletTransaction[]
+  topUpRequests: TopUpRequest[]
+  chargedOrderIds: string[]
+}
 
 export type TripType = 'shared' | 'full'
 
@@ -159,6 +203,9 @@ export type DriverActiveOrder = {
   requestedPrice: number
   driverOfferedPrice?: number
   commissionPreview: number
+  completedBalanceBefore?: number
+  completedBalanceAfter?: number
+  commissionCharged?: boolean
   rideType?: TripType
   passengersCount?: number
   parcelSize?: ParcelSize

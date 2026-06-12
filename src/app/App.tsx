@@ -8,15 +8,19 @@ import { PassengerRatingModal } from '../features/passenger/components/Passenger
 function AppContent() {
   const { currentScreen, isPhoneVerifySheetOpen, isPassengerOnboardingOpen, isPassengerRatingOpen } =
     useAppState()
+  const hasOverlay =
+    isPhoneVerifySheetOpen || isPassengerOnboardingOpen || isPassengerRatingOpen
 
   return (
     <MobileShell
       overlay={
-        <>
-          {isPhoneVerifySheetOpen ? <PhoneVerifySheet /> : null}
-          {isPassengerOnboardingOpen ? <PassengerOnboardingModal /> : null}
-          {isPassengerRatingOpen ? <PassengerRatingModal /> : null}
-        </>
+        hasOverlay ? (
+          <>
+            {isPhoneVerifySheetOpen ? <PhoneVerifySheet /> : null}
+            {isPassengerOnboardingOpen ? <PassengerOnboardingModal /> : null}
+            {isPassengerRatingOpen ? <PassengerRatingModal /> : null}
+          </>
+        ) : null
       }
     >
       <ScreenRenderer screen={currentScreen} />

@@ -21,7 +21,7 @@ function getNextActionLabel(category: 'ride' | 'parcel', status: string) {
 }
 
 export default function DriverActiveOrderPage() {
-  const { driverActiveOrder, driverVerificationStatus } = useAppState()
+  const { driverActiveOrder, driverVerificationStatus, driverWallet } = useAppState()
   const actions = useAppActions()
 
   if (driverVerificationStatus !== 'APPROVED') {
@@ -65,6 +65,8 @@ export default function DriverActiveOrderPage() {
   const nextActionLabel = getNextActionLabel(driverActiveOrder.category, driverActiveOrder.status)
   const isCompleted = driverActiveOrder.status === 'COMPLETED'
   const isCancelled = driverActiveOrder.status === 'CANCELLED'
+  const balanceBefore = driverActiveOrder.completedBalanceBefore ?? driverWallet.balance + commission
+  const balanceAfter = driverActiveOrder.completedBalanceAfter ?? driverWallet.balance
 
   return (
     <PageCard
@@ -159,9 +161,32 @@ export default function DriverActiveOrderPage() {
         )}
 
         {isCompleted ? (
-          <div className="rounded-2xl bg-emerald-50 p-4 text-sm text-emerald-800">
+          <div className="space-y-3 rounded-2xl bg-emerald-50 p-4 text-sm text-emerald-800">
             <p className="font-semibold">Заказ завершён</p>
-            <p className="mt-2">Списание комиссии будет подключено на следующем шаге wallet.</p>
+            <p>Комиссия списана с баланса.</p>
+            <div className="grid gap-2 rounded-2xl bg-white/70 p-3 text-emerald-900">
+              <div className="flex items-center justify-between gap-3">
+                <span>Цена заказа</span>
+                <span className="font-semibold">{formatKzt(driverActiveOrder.price)}</span>
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <span>Комиссия 8%</span>
+                <span className="font-semibold">-{formatKzt(commission)}</span>
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <span>Баланс до</span>
+                <span className="font-semibold">{formatKzt(balanceBefore)}</span>
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <span>Баланс после</span>
+                <span className="font-semibold">{formatKzt(balanceAfter)}</span>
+              </div>
+            </div>
+            {balanceAfter < driverWallet.minBalance ? (
+              <div className="rounded-2xl bg-amber-100 px-4 py-3 text-amber-900">
+                Баланс стал ниже минимума.
+              </div>
+            ) : null}
           </div>
         ) : isCancelled ? (
           <div className="rounded-2xl bg-red-50 p-4 text-sm text-red-700">

@@ -31,10 +31,13 @@ export default function DriverFeedPage() {
     driverFeedOrders,
     driverCounterOffers,
     driverProfile,
+    driverWallet,
+    driverActiveOrder,
   } = useAppState()
   const actions = useAppActions()
   const [feedFilter, setFeedFilter] = useState<FeedFilter>('all')
 
+  const lowBalance = driverWallet.balance < driverWallet.minBalance
   const visibleOrders = useMemo(
     () =>
       driverFeedOrders
@@ -81,6 +84,37 @@ export default function DriverFeedPage() {
     )
   }
 
+  if (lowBalance) {
+    return (
+      <PageCard
+        eyebrow="Водитель"
+        title="Баланс ниже минимального"
+        description="Пополните баланс, чтобы видеть заказы."
+      >
+        <div className="flex items-center gap-3 rounded-2xl bg-amber-50 p-4 text-amber-900">
+          <Sparkles className="h-5 w-5" />
+          <p className="text-sm">Пополните баланс, чтобы видеть заказы.</p>
+        </div>
+        <div className="grid gap-2 sm:grid-cols-2">
+          <button
+            type="button"
+            onClick={() => actions.setScreen('driverBalance')}
+            className="rounded-2xl bg-accent px-4 py-3 text-sm font-semibold text-white"
+          >
+            Пополнить баланс
+          </button>
+          <button
+            type="button"
+            onClick={() => actions.setScreen('driverDashboard')}
+            className="rounded-2xl border border-border bg-white px-4 py-3 text-sm font-semibold text-ink"
+          >
+            В кабинет
+          </button>
+        </div>
+      </PageCard>
+    )
+  }
+
   return (
     <div className="space-y-4">
       <PageCard
@@ -105,7 +139,7 @@ export default function DriverFeedPage() {
               Баланс
             </p>
             <p className="mt-2 text-sm font-semibold text-ink">
-              {formatKzt(driverProfile?.balance ?? 0)}
+              {formatKzt(driverWallet.balance)}
             </p>
           </div>
           <div className="rounded-2xl bg-surface-soft p-4">
@@ -113,7 +147,7 @@ export default function DriverFeedPage() {
               Минимум
             </p>
             <p className="mt-2 text-sm font-semibold text-ink">
-              {formatKzt(driverProfile?.minBalance ?? 1000)}
+              {formatKzt(driverWallet.minBalance)}
             </p>
           </div>
         </div>
@@ -153,6 +187,25 @@ export default function DriverFeedPage() {
           {driverProfile?.isOnline ? 'Сейчас онлайн' : 'Сейчас оффлайн'}
         </button>
       </PageCard>
+
+      {driverActiveOrder ? (
+        <PageCard
+          eyebrow="Водитель"
+          title="Активный заказ"
+          description="Управляйте заказом из отдельного экрана."
+        >
+          <div className="rounded-2xl bg-surface-soft p-4 text-sm text-ink">
+            Активный заказ уже открыт. Перейдите в кабинет или карточку заказа.
+          </div>
+          <button
+            type="button"
+            onClick={() => actions.setScreen('driverOrders')}
+            className="w-full rounded-2xl bg-accent px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-accent/20"
+          >
+            Открыть активный заказ
+          </button>
+        </PageCard>
+      ) : null}
 
       <div className="space-y-3">
         {visibleOrders.map((order) => (

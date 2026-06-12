@@ -43,6 +43,7 @@ export default function DriverDashboardPage() {
     driverApplicationDraft,
     driverRegistrationStep,
     driverActiveOrder,
+    driverWallet,
   } = useAppState()
   const actions = useAppActions()
 
@@ -273,7 +274,7 @@ export default function DriverDashboardPage() {
             Баланс
           </p>
           <p className="mt-2 text-sm font-semibold text-ink">
-            {formatKzt(driverProfile?.balance ?? 0)}
+            {formatKzt(driverWallet.balance)}
           </p>
         </div>
         <div className="rounded-2xl bg-surface-soft p-4">
@@ -281,10 +282,37 @@ export default function DriverDashboardPage() {
             Минимум
           </p>
           <p className="mt-2 text-sm font-semibold text-ink">
-            {formatKzt(driverProfile?.minBalance ?? 1000)}
+            {formatKzt(driverWallet.minBalance)}
           </p>
         </div>
       </div>
+
+      <div
+        className={cn(
+          'rounded-2xl p-4 text-sm font-semibold',
+          driverWallet.balance >= driverWallet.minBalance
+            ? 'bg-emerald-50 text-emerald-700'
+            : 'bg-amber-50 text-amber-800',
+        )}
+      >
+        {driverWallet.balance >= driverWallet.minBalance
+          ? 'Доступ к заказам активен'
+          : 'Доступ к заказам ограничен'}
+      </div>
+
+      {driverWallet.balance < driverWallet.minBalance ? (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+          <p className="font-semibold">Баланс ниже минимального</p>
+          <p className="mt-1">Пополните баланс, чтобы видеть заказы.</p>
+          <button
+            type="button"
+            onClick={() => actions.setScreen('driverBalance')}
+            className="mt-3 rounded-2xl bg-accent px-4 py-3 text-sm font-semibold text-white"
+          >
+            Пополнить
+          </button>
+        </div>
+      ) : null}
 
       <div className="rounded-2xl border border-border bg-white p-4">
         <div className="flex items-center justify-between gap-3">
@@ -353,7 +381,13 @@ export default function DriverDashboardPage() {
         <button
           type="button"
           onClick={() => actions.setScreen('driverFeed')}
-          className="rounded-2xl border border-border bg-white px-3 py-3 text-sm font-semibold text-ink"
+          disabled={driverWallet.balance < driverWallet.minBalance}
+          className={cn(
+            'rounded-2xl px-3 py-3 text-sm font-semibold',
+            driverWallet.balance < driverWallet.minBalance
+              ? 'cursor-not-allowed border border-border bg-slate-50 text-muted'
+              : 'border border-border bg-white text-ink',
+          )}
         >
           Лента заказов
         </button>

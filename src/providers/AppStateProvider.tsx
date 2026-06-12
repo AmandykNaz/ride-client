@@ -26,6 +26,10 @@ import type {
   RideDraft,
   RideRequest,
   RideRequestStatus,
+  DriverWallet,
+  TopUpRequest,
+  TopUpRequestMethod,
+  WalletTransaction,
   UserRole,
 } from '../types/domain'
 
@@ -44,6 +48,7 @@ type AppState = {
   parcelDraft: ParcelDraft
   driverApplicationDraft: DriverApplicationDraft
   driverRegistrationStep: DriverApplicationStep
+  driverWallet: DriverWallet
   driverFeedOrders: DriverFeedOrder[]
   driverActiveOrder: DriverActiveOrder | null
   driverCounterOffers: DriverCounterOffer[]
@@ -51,6 +56,13 @@ type AppState = {
   driverCounterOfferOrderId: string | null
   driverCounterOfferPrice: string
   driverCounterOfferComment: string
+  isTopUpFormOpen: boolean
+  topUpForm: {
+    amount: string
+    method: TopUpRequestMethod
+    referenceNumber: string
+    screenshotAttached: boolean
+  }
   activeRideRequest: RideRequest | null
   driverOffers: DriverOffer[]
   activeRide: ActiveRide | null
@@ -92,6 +104,16 @@ type AppContextValue = {
     returnToPassengerMode: () => void
     editDriverApplicationAfterChanges: () => void
     toggleDriverOnlineStatus: () => void
+    setDriverOnline: (online: boolean) => void
+    openTopUpForm: () => void
+    closeTopUpForm: () => void
+    updateTopUpForm: (patch: Partial<AppState['topUpForm']>) => void
+    submitTopUpRequest: () => void
+    demoApproveTopUpRequest: (requestId: string) => void
+    demoRejectTopUpRequest: (requestId: string) => void
+    chargeCommissionForCompletedOrder: (orderId?: string) => void
+    refundCommissionDemo: (orderId: string) => void
+    blockDriverOrdersIfLowBalance: () => void
     openDriverCounterOfferSheet: (orderId: string) => void
     closeDriverCounterOfferSheet: () => void
     sendDriverCounterOffer: (price: number, comment: string) => void
@@ -160,6 +182,16 @@ type AppAction =
   | { type: 'returnToPassengerMode' }
   | { type: 'editDriverApplicationAfterChanges' }
   | { type: 'toggleDriverOnlineStatus' }
+  | { type: 'setDriverOnline'; online: boolean }
+  | { type: 'openTopUpForm' }
+  | { type: 'closeTopUpForm' }
+  | { type: 'updateTopUpForm'; patch: Partial<AppState['topUpForm']> }
+  | { type: 'submitTopUpRequest' }
+  | { type: 'demoApproveTopUpRequest'; requestId: string }
+  | { type: 'demoRejectTopUpRequest'; requestId: string }
+  | { type: 'chargeCommissionForCompletedOrder'; orderId?: string }
+  | { type: 'refundCommissionDemo'; orderId: string }
+  | { type: 'blockDriverOrdersIfLowBalance' }
   | { type: 'openDriverCounterOfferSheet'; orderId: string }
   | { type: 'closeDriverCounterOfferSheet' }
   | { type: 'sendDriverCounterOffer'; price: number; comment: string }
@@ -514,6 +546,132 @@ function nextDriverOrderStatus(
   }
 }
 
+function defaultDriverWallet(): DriverWallet {
+  return {
+    balance: 1500,
+    minBalance: 1000,
+    transactions: [],
+    topUpRequests: [],
+    chargedOrderIds: [],
+  }
+}
+
+function syncDriverProfileWithWallet(
+  profile: DriverProfile | null,
+  wallet: DriverWallet,
+): DriverProfile | null {
+  if (!profile) return profile
+
+  return {
+    ...profile,
+    balance: wallet.balance,
+    minBalance: wallet.minBalance,
+  }
+}
+
+function makeWalletTransaction(params: {
+  type: WalletTransaction['type']
+  amount: number
+  title: string
+  description?: string
+  sourceOrderId?: string
+  sourceTopUpRequestId?: string
+}): WalletTransaction {
+  return {
+    id: makeId('txn'),
+    status: 'APPROVED',
+    createdAt: new Date().toISOString(),
+    ...params,
+  }
+}
+
+function formatTopUpMethod(method: TopUpRequestMethod) {
+  if (method === 'KASPI') return 'Kaspi'
+  if (method === 'HALYK') return 'Halyk'
+  return 'Наличные админу'
+}
+
+function canAccessDriverOrders(state: Pick<AppState, 'driverVerificationStatus' | 'driverWallet'>) {
+  return (
+    state.driverVerificationStatus === 'APPROVED' &&
+    state.driverWallet.balance >= state.driverWallet.minBalance
+  )
+}
+
+function createTopUpRequestFromForm(
+  form: AppState['topUpForm'],
+): TopUpRequest {
+  return {
+    id: makeId('topup'),
+    amount: Number(form.amount),
+    method: form.method,
+    referenceNumber: form.referenceNumber.trim(),
+    screenshotAttached: form.screenshotAttached,
+    status: 'PENDING_REVIEW',
+    createdAt: new Date().toISOString(),
+  }
+}
+
+function chargeCommissionIfNeeded(
+  state: AppState,
+  orderId?: string,
+): Pick<AppState, 'driverWallet' | 'driverActiveOrder' | 'driverProfile'> {
+  const activeOrder = state.driverActiveOrder
+  if (!activeOrder) {
+    return {
+      driverWallet: state.driverWallet,
+      driverActiveOrder: state.driverActiveOrder,
+      driverProfile: state.driverProfile,
+    }
+  }
+
+  if (orderId && activeOrder.sourceOrderId !== orderId) {
+    return {
+      driverWallet: state.driverWallet,
+      driverActiveOrder: state.driverActiveOrder,
+      driverProfile: state.driverProfile,
+    }
+  }
+
+  if (activeOrder.commissionCharged || state.driverWallet.chargedOrderIds.includes(activeOrder.sourceOrderId)) {
+    return {
+      driverWallet: state.driverWallet,
+      driverActiveOrder: state.driverActiveOrder,
+      driverProfile: state.driverProfile,
+    }
+  }
+
+  const commission = Math.round(activeOrder.price * 0.08)
+  const beforeBalance = state.driverWallet.balance
+  const afterBalance = beforeBalance - commission
+
+  const transaction = makeWalletTransaction({
+    type: 'COMMISSION_CHARGED',
+    amount: -commission,
+    title: 'Комиссия за заказ',
+    description: `${activeOrder.from} → ${activeOrder.to}`,
+    sourceOrderId: activeOrder.sourceOrderId,
+  })
+
+  const updatedWallet: DriverWallet = {
+    ...state.driverWallet,
+    balance: afterBalance,
+    transactions: [transaction, ...state.driverWallet.transactions],
+    chargedOrderIds: [...state.driverWallet.chargedOrderIds, activeOrder.sourceOrderId],
+  }
+
+  return {
+    driverWallet: updatedWallet,
+    driverActiveOrder: {
+      ...activeOrder,
+      commissionCharged: true,
+      completedBalanceBefore: beforeBalance,
+      completedBalanceAfter: afterBalance,
+    },
+    driverProfile: syncDriverProfileWithWallet(state.driverProfile, updatedWallet),
+  }
+}
+
 function createActiveRideRequest(state: AppState): AppState {
   const requestId = makeId('req')
   const request: RideRequest = {
@@ -575,7 +733,10 @@ function appReducer(state: AppState, action: AppAction): AppState {
         driverVerificationStatus: action.status,
         driverProfile:
           action.status === 'APPROVED' && state.driverProfile
-            ? { ...state.driverProfile, verificationStatus: 'APPROVED' }
+            ? syncDriverProfileWithWallet(
+                { ...state.driverProfile, verificationStatus: 'APPROVED' },
+                state.driverWallet,
+              )
             : state.driverProfile,
       }
     case 'setPendingPassengerFlow':
@@ -667,11 +828,24 @@ function appReducer(state: AppState, action: AppAction): AppState {
       }
     case 'demoApproveDriver': {
       const approvedProfile = makeDriverProfileFromApplication(state.driverApplicationDraft)
+      const wallet = {
+        ...state.driverWallet,
+        balance: state.driverWallet.balance || approvedProfile.balance,
+        minBalance: state.driverWallet.minBalance || approvedProfile.minBalance,
+      }
 
       return {
         ...state,
         driverVerificationStatus: 'APPROVED',
-        driverProfile: approvedProfile,
+        driverProfile: syncDriverProfileWithWallet(
+          {
+            ...approvedProfile,
+            balance: wallet.balance,
+            minBalance: wallet.minBalance,
+          },
+          wallet,
+        ),
+        driverWallet: wallet,
         currentScreen: 'driverDashboard',
         isMenuOpen: false,
         role: 'driver',
@@ -729,11 +903,189 @@ function appReducer(state: AppState, action: AppAction): AppState {
       return {
         ...state,
         driverProfile: state.driverProfile
-          ? { ...state.driverProfile, isOnline: !state.driverProfile.isOnline }
+          ? {
+              ...state.driverProfile,
+              isOnline:
+                state.driverWallet.balance >= state.driverWallet.minBalance
+                  ? !state.driverProfile.isOnline
+                  : false,
+            }
           : state.driverProfile,
+      }
+    case 'setDriverOnline':
+      return {
+        ...state,
+        driverProfile: state.driverProfile
+          ? {
+              ...state.driverProfile,
+              isOnline: action.online && state.driverWallet.balance >= state.driverWallet.minBalance,
+            }
+          : state.driverProfile,
+      }
+    case 'openTopUpForm':
+      return { ...state, isTopUpFormOpen: true }
+    case 'closeTopUpForm':
+      return {
+        ...state,
+        isTopUpFormOpen: false,
+        topUpForm: {
+          amount: '',
+          method: 'KASPI',
+          referenceNumber: '',
+          screenshotAttached: false,
+        },
+      }
+    case 'updateTopUpForm':
+      return {
+        ...state,
+        topUpForm: { ...state.topUpForm, ...action.patch },
+      }
+    case 'submitTopUpRequest': {
+      const amount = Number(state.topUpForm.amount)
+      if (!Number.isFinite(amount) || amount <= 0 || !state.topUpForm.referenceNumber.trim()) {
+        return state
+      }
+
+      const request = createTopUpRequestFromForm(state.topUpForm)
+
+      return {
+        ...state,
+        driverWallet: {
+          ...state.driverWallet,
+          topUpRequests: [request, ...state.driverWallet.topUpRequests],
+        },
+        isTopUpFormOpen: false,
+        topUpForm: {
+          amount: '',
+          method: 'KASPI',
+          referenceNumber: '',
+          screenshotAttached: false,
+        },
+      }
+    }
+    case 'demoApproveTopUpRequest': {
+      const request = state.driverWallet.topUpRequests.find((item) => item.id === action.requestId)
+      if (!request || request.status !== 'PENDING_REVIEW') return state
+
+      const updatedRequest = {
+        ...request,
+        status: 'APPROVED' as const,
+        reviewedAt: new Date().toISOString(),
+      }
+
+      const updatedWallet: DriverWallet = {
+        ...state.driverWallet,
+        balance: state.driverWallet.balance + request.amount,
+        transactions: [
+          makeWalletTransaction({
+            type: 'TOP_UP_APPROVED',
+            amount: request.amount,
+            title: 'Пополнение баланса',
+            description: `${formatTopUpMethod(request.method)} · ${request.referenceNumber}`,
+            sourceTopUpRequestId: request.id,
+          }),
+          ...state.driverWallet.transactions,
+        ],
+        topUpRequests: state.driverWallet.topUpRequests.map((item) =>
+          item.id === request.id ? updatedRequest : item,
+        ),
+      }
+
+      return {
+        ...state,
+        driverWallet: updatedWallet,
+        driverProfile: syncDriverProfileWithWallet(state.driverProfile, updatedWallet),
+      }
+    }
+    case 'demoRejectTopUpRequest': {
+      const request = state.driverWallet.topUpRequests.find((item) => item.id === action.requestId)
+      if (!request || request.status !== 'PENDING_REVIEW') return state
+
+      return {
+        ...state,
+        driverWallet: {
+          ...state.driverWallet,
+          topUpRequests: state.driverWallet.topUpRequests.map((item) =>
+            item.id === request.id
+              ? {
+                  ...item,
+                  status: 'REJECTED',
+                  reviewedAt: new Date().toISOString(),
+                  rejectReason: 'Платеж не найден',
+                }
+              : item,
+          ),
+        },
+      }
+    }
+    case 'chargeCommissionForCompletedOrder': {
+      const result = chargeCommissionIfNeeded(state, action.orderId)
+
+      if (result.driverWallet === state.driverWallet && result.driverActiveOrder === state.driverActiveOrder) {
+        return state
+      }
+
+      const lowBalance = result.driverWallet.balance < result.driverWallet.minBalance
+
+      return {
+        ...state,
+        driverWallet: result.driverWallet,
+        driverActiveOrder: result.driverActiveOrder
+          ? { ...result.driverActiveOrder, status: 'COMPLETED' }
+          : result.driverActiveOrder,
+        driverProfile: lowBalance
+          ? result.driverProfile
+            ? { ...result.driverProfile, isOnline: false }
+            : result.driverProfile
+          : result.driverProfile,
+      }
+    }
+    case 'refundCommissionDemo': {
+      const activeOrder = state.driverActiveOrder
+      if (!activeOrder || activeOrder.sourceOrderId !== action.orderId) return state
+
+      const commission = Math.round(activeOrder.price * 0.08)
+      const alreadyRefunded = state.driverWallet.transactions.some(
+        (item) => item.type === 'COMMISSION_REFUND' && item.sourceOrderId === action.orderId,
+      )
+
+      if (alreadyRefunded) return state
+
+      const updatedWallet: DriverWallet = {
+        ...state.driverWallet,
+        balance: state.driverWallet.balance + commission,
+        transactions: [
+          makeWalletTransaction({
+            type: 'COMMISSION_REFUND',
+            amount: commission,
+            title: 'Возврат комиссии',
+            description: `${activeOrder.from} → ${activeOrder.to}`,
+            sourceOrderId: action.orderId,
+          }),
+          ...state.driverWallet.transactions,
+        ],
+      }
+
+      return {
+        ...state,
+        driverWallet: updatedWallet,
+        driverProfile: syncDriverProfileWithWallet(state.driverProfile, updatedWallet),
+      }
+    }
+    case 'blockDriverOrdersIfLowBalance':
+      return {
+        ...state,
+        driverProfile:
+          state.driverProfile && state.driverWallet.balance < state.driverWallet.minBalance
+            ? { ...state.driverProfile, isOnline: false }
+            : state.driverProfile,
       }
     case 'openDriverCounterOfferSheet': {
       const order = state.driverFeedOrders.find((item) => item.id === action.orderId)
+
+      if (!canAccessDriverOrders(state) || state.driverActiveOrder) {
+        return state
+      }
 
       return {
         ...state,
@@ -752,7 +1104,7 @@ function appReducer(state: AppState, action: AppAction): AppState {
         driverCounterOfferComment: '',
       }
     case 'sendDriverCounterOffer': {
-      if (!state.driverCounterOfferOrderId) return state
+      if (!state.driverCounterOfferOrderId || !canAccessDriverOrders(state) || state.driverActiveOrder) return state
       const order = state.driverFeedOrders.find(
         (item) => item.id === state.driverCounterOfferOrderId,
       )
@@ -785,7 +1137,7 @@ function appReducer(state: AppState, action: AppAction): AppState {
       }
     }
     case 'acceptDemoCounterOfferAsPassenger': {
-      if (state.driverActiveOrder) return state
+      if (state.driverActiveOrder || !canAccessDriverOrders(state)) return state
 
       const pendingOffer = state.driverCounterOffers.find((item) =>
         action.orderId ? item.orderId === action.orderId : item.status === 'pending',
@@ -812,7 +1164,7 @@ function appReducer(state: AppState, action: AppAction): AppState {
       }
     }
     case 'acceptDriverFeedOrder': {
-      if (state.driverActiveOrder) return state
+      if (state.driverActiveOrder || !canAccessDriverOrders(state)) return state
 
       const order = state.driverFeedOrders.find((item) => item.id === action.orderId)
 
@@ -830,6 +1182,24 @@ function appReducer(state: AppState, action: AppAction): AppState {
       if (!state.driverActiveOrder) return state
 
       const nextStatus = nextDriverOrderStatus(state.driverActiveOrder.status)
+
+      if (state.driverActiveOrder.status === 'IN_PROGRESS' && nextStatus === 'COMPLETED') {
+        const result = chargeCommissionIfNeeded(state)
+        const lowBalance = result.driverWallet.balance < result.driverWallet.minBalance
+
+        return {
+          ...state,
+          driverWallet: result.driverWallet,
+          driverActiveOrder: result.driverActiveOrder
+            ? { ...result.driverActiveOrder, status: 'COMPLETED' }
+            : result.driverActiveOrder,
+          driverProfile: lowBalance
+            ? result.driverProfile
+              ? { ...result.driverProfile, isOnline: false }
+              : result.driverProfile
+            : result.driverProfile,
+        }
+      }
 
       return {
         ...state,
@@ -1170,6 +1540,7 @@ const initialState: AppState = {
   parcelDraft: defaultParcelDraft(),
   driverApplicationDraft: defaultDriverApplicationDraft(),
   driverRegistrationStep: 1,
+  driverWallet: defaultDriverWallet(),
   driverFeedOrders: defaultDriverFeedOrders(),
   driverActiveOrder: null,
   driverCounterOffers: [],
@@ -1177,6 +1548,13 @@ const initialState: AppState = {
   driverCounterOfferOrderId: null,
   driverCounterOfferPrice: '',
   driverCounterOfferComment: '',
+  isTopUpFormOpen: false,
+  topUpForm: {
+    amount: '',
+    method: 'KASPI',
+    referenceNumber: '',
+    screenshotAttached: false,
+  },
   activeRideRequest: null,
   driverOffers: [],
   activeRide: null,
@@ -1231,6 +1609,21 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         dispatch({ type: 'editDriverApplicationAfterChanges' }),
       toggleDriverOnlineStatus: () =>
         dispatch({ type: 'toggleDriverOnlineStatus' }),
+      setDriverOnline: (online) => dispatch({ type: 'setDriverOnline', online }),
+      openTopUpForm: () => dispatch({ type: 'openTopUpForm' }),
+      closeTopUpForm: () => dispatch({ type: 'closeTopUpForm' }),
+      updateTopUpForm: (patch) => dispatch({ type: 'updateTopUpForm', patch }),
+      submitTopUpRequest: () => dispatch({ type: 'submitTopUpRequest' }),
+      demoApproveTopUpRequest: (requestId) =>
+        dispatch({ type: 'demoApproveTopUpRequest', requestId }),
+      demoRejectTopUpRequest: (requestId) =>
+        dispatch({ type: 'demoRejectTopUpRequest', requestId }),
+      chargeCommissionForCompletedOrder: (orderId) =>
+        dispatch({ type: 'chargeCommissionForCompletedOrder', orderId }),
+      refundCommissionDemo: (orderId) =>
+        dispatch({ type: 'refundCommissionDemo', orderId }),
+      blockDriverOrdersIfLowBalance: () =>
+        dispatch({ type: 'blockDriverOrdersIfLowBalance' }),
       openDriverCounterOfferSheet: (orderId) =>
         dispatch({ type: 'openDriverCounterOfferSheet', orderId }),
       closeDriverCounterOfferSheet: () =>

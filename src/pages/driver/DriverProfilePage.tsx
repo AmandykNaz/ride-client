@@ -5,7 +5,12 @@ import { useAppActions, useAppState } from '../../providers/AppStateProvider'
 import { PageCard } from '../../shared/ui/PageCard'
 
 export default function DriverProfilePage() {
-  const { driverVerificationStatus, driverProfile, driverApplicationDraft } = useAppState()
+  const {
+    driverVerificationStatus,
+    driverProfile,
+    driverApplicationDraft,
+    driverWallet,
+  } = useAppState()
   const actions = useAppActions()
   const documentRows: Array<[string, boolean]> = [
     ['ВУ лицевая', driverApplicationDraft.documents.driverLicenseFront],
@@ -170,7 +175,7 @@ export default function DriverProfilePage() {
           <div className="rounded-2xl bg-surface-soft p-4">
             <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">Баланс</p>
             <p className="mt-2 text-sm font-semibold text-ink">
-              {formatKzt(driverProfile?.balance ?? 0)}
+              {formatKzt(driverWallet.balance)}
             </p>
           </div>
           <div className="rounded-2xl bg-surface-soft p-4">
