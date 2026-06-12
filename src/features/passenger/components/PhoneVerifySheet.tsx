@@ -75,7 +75,7 @@ export function PhoneVerifySheet() {
             onClick={handleSubmit}
             className="rounded-2xl bg-accent px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-accent/20"
           >
-            Подтвердить и создать заявку
+            Подтвердить и продолжить
           </button>
         </div>
       </div>

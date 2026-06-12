@@ -3,6 +3,7 @@ import { createContext, useContext, useReducer, type ReactNode } from 'react'
 import { defaultScreenByRole } from '../navigation/navigation'
 import type {
   ActiveRide,
+  ActiveParcelStatus,
   ActiveRideStatus,
   AppScreen,
   DriverOffer,
@@ -10,6 +11,10 @@ import type {
   PassengerHistoryItem,
   PassengerProfile,
   PassengerStatus,
+  ParcelDraft,
+  ParcelOrder,
+  ParcelRequest,
+  ParcelRequestStatus,
   RideDraft,
   RideRequest,
   RideRequestStatus,
@@ -17,6 +22,7 @@ import type {
 } from '../types/domain'
 
 type PassengerOrdersTab = 'rides' | 'parcels' | 'buses'
+type PassengerFlow = 'ride' | 'parcel' | null
 
 type AppState = {
   role: UserRole
@@ -26,12 +32,17 @@ type AppState = {
   isMenuOpen: boolean
   passengerProfile: PassengerProfile | null
   rideDraft: RideDraft
+  parcelDraft: ParcelDraft
   activeRideRequest: RideRequest | null
   driverOffers: DriverOffer[]
   activeRide: ActiveRide | null
+  activeParcelRequest: ParcelRequest | null
+  parcelOffers: DriverOffer[]
+  activeParcelOrder: ParcelOrder | null
   passengerHistory: PassengerHistoryItem[]
   passengerOrdersTab: PassengerOrdersTab
   verifiedPhone: string
+  pendingPassengerFlow: PassengerFlow
   isPhoneVerifySheetOpen: boolean
   isPassengerOnboardingOpen: boolean
   isPassengerRatingOpen: boolean
@@ -47,7 +58,9 @@ type AppContextValue = {
     setRole: (role: UserRole, screen?: AppScreen) => void
     setPassengerStatus: (status: PassengerStatus) => void
     setDriverVerificationStatus: (status: DriverVerificationStatus) => void
+    setPendingPassengerFlow: (flow: PassengerFlow) => void
     updateRideDraft: (patch: Partial<RideDraft>) => void
+    updateParcelDraft: (patch: Partial<ParcelDraft>) => void
     openPhoneVerifySheet: () => void
     closePhoneVerifySheet: () => void
     openPassengerOnboarding: () => void
@@ -57,14 +70,21 @@ type AppContextValue = {
     setPassengerOrdersTab: (tab: PassengerOrdersTab) => void
     setVerifiedPhone: (phone: string) => void
     startRideSearch: () => void
+    startParcelSearch: () => void
     createRideFromDraft: () => void
+    createParcelFromDraft: () => void
     acceptOffer: (offerId: string) => void
+    acceptParcelOffer: (offerId: string) => void
     setActiveRideStatus: (status: RideRequestStatus) => void
+    setActiveParcelStatus: (status: ParcelRequestStatus) => void
     cancelActiveRide: () => void
+    cancelActiveParcel: () => void
     setPassengerProfile: (profile: PassengerProfile) => void
     completeRideAndOpenRating: () => void
+    completeParcelAndOpenHistory: () => void
     submitRideRating: (rating: number, comment: string) => void
     repeatRide: (ride: PassengerHistoryItem) => void
+    repeatParcel: (parcel: PassengerHistoryItem) => void
   }
 }
 
@@ -79,7 +99,9 @@ type AppAction =
       type: 'setDriverVerificationStatus'
       status: DriverVerificationStatus
     }
+  | { type: 'setPendingPassengerFlow'; flow: PassengerFlow }
   | { type: 'updateRideDraft'; patch: Partial<RideDraft> }
+  | { type: 'updateParcelDraft'; patch: Partial<ParcelDraft> }
   | { type: 'openPhoneVerifySheet' }
   | { type: 'closePhoneVerifySheet' }
   | { type: 'openPassengerOnboarding' }
@@ -90,13 +112,20 @@ type AppAction =
   | { type: 'setVerifiedPhone'; phone: string }
   | { type: 'setPassengerProfile'; profile: PassengerProfile }
   | { type: 'startRideSearch' }
+  | { type: 'startParcelSearch' }
   | { type: 'createRideFromDraft' }
+  | { type: 'createParcelFromDraft' }
   | { type: 'acceptOffer'; offerId: string }
+  | { type: 'acceptParcelOffer'; offerId: string }
   | { type: 'setActiveRideStatus'; status: RideRequestStatus }
+  | { type: 'setActiveParcelStatus'; status: ParcelRequestStatus }
   | { type: 'cancelActiveRide' }
+  | { type: 'cancelActiveParcel' }
   | { type: 'completeRideAndOpenRating' }
+  | { type: 'completeParcelAndOpenHistory' }
   | { type: 'submitRideRating'; rating: number; comment: string }
   | { type: 'repeatRide'; ride: PassengerHistoryItem }
+  | { type: 'repeatParcel'; parcel: PassengerHistoryItem }
 
 function assertNever(value: never): never {
   throw new Error(`Unexpected action: ${JSON.stringify(value)}`)
@@ -116,6 +145,22 @@ function defaultRideDraft(): RideDraft {
     passengersCount: 1,
     comment: '',
     price: 12000,
+  }
+}
+
+function defaultParcelDraft(): ParcelDraft {
+  return {
+    senderName: '',
+    senderPhone: '',
+    receiverName: '',
+    receiverPhone: '',
+    from: 'Алматы',
+    to: 'Шымкент',
+    size: 'small',
+    weightKg: 2,
+    description: '',
+    photoAttached: false,
+    price: 6000,
   }
 }
 
@@ -166,6 +211,53 @@ function makeMockOffers(price: number): DriverOffer[] {
   ]
 }
 
+function makeMockParcelOffers(price: number): DriverOffer[] {
+  return [
+    {
+      id: makeId('parcel-offer'),
+      driverName: 'Ерлан',
+      rating: 4.9,
+      tripsCount: 171,
+      carModel: 'Toyota Prius',
+      carColor: 'Белый',
+      plate: '502 KAZ 02',
+      etaMinutes: 11,
+      originalPrice: price,
+      offeredPrice: price,
+      isCustomOffer: false,
+      comment: 'Аккуратная доставка, есть место в багажнике.',
+    },
+    {
+      id: makeId('parcel-offer'),
+      driverName: 'Мадина',
+      rating: 5,
+      tripsCount: 88,
+      carModel: 'Hyundai Tucson',
+      carColor: 'Черный',
+      plate: '778 MDM 01',
+      etaMinutes: 16,
+      originalPrice: price,
+      offeredPrice: price - 500,
+      isCustomOffer: true,
+      comment: 'Водитель предложил цену ниже обычной.',
+    },
+    {
+      id: makeId('parcel-offer'),
+      driverName: 'Нурсултан',
+      rating: 4.8,
+      tripsCount: 232,
+      carModel: 'Kia Sportage',
+      carColor: 'Серый',
+      plate: '313 NUR 02',
+      etaMinutes: 8,
+      originalPrice: price,
+      offeredPrice: price + 300,
+      isCustomOffer: false,
+      comment: 'Быстрый выезд по маршруту.',
+    },
+  ]
+}
+
 function createActiveRideRequest(state: AppState): AppState {
   const requestId = makeId('req')
   const request: RideRequest = {
@@ -179,6 +271,24 @@ function createActiveRideRequest(state: AppState): AppState {
     activeRideRequest: request,
     driverOffers: makeMockOffers(state.rideDraft.price),
     currentScreen: 'passengerOffers',
+    isPhoneVerifySheetOpen: false,
+    isPassengerOnboardingOpen: false,
+  }
+}
+
+function createActiveParcelRequest(state: AppState): AppState {
+  const requestId = makeId('parcel-req')
+  const request: ParcelRequest = {
+    id: requestId,
+    status: 'SEARCHING',
+    ...state.parcelDraft,
+  }
+
+  return {
+    ...state,
+    activeParcelRequest: request,
+    parcelOffers: makeMockParcelOffers(state.parcelDraft.price),
+    currentScreen: 'parcelOffers',
     isPhoneVerifySheetOpen: false,
     isPassengerOnboardingOpen: false,
   }
@@ -205,8 +315,12 @@ function appReducer(state: AppState, action: AppAction): AppState {
       return { ...state, passengerStatus: action.status }
     case 'setDriverVerificationStatus':
       return { ...state, driverVerificationStatus: action.status }
+    case 'setPendingPassengerFlow':
+      return { ...state, pendingPassengerFlow: action.flow }
     case 'updateRideDraft':
       return { ...state, rideDraft: { ...state.rideDraft, ...action.patch } }
+    case 'updateParcelDraft':
+      return { ...state, parcelDraft: { ...state.parcelDraft, ...action.patch } }
     case 'openPhoneVerifySheet':
       return { ...state, isPhoneVerifySheetOpen: true }
     case 'closePhoneVerifySheet':
@@ -229,21 +343,18 @@ function appReducer(state: AppState, action: AppAction): AppState {
         passengerProfile: action.profile,
         passengerStatus: 'PHONE_VERIFIED',
       }
-    case 'createRideFromDraft': {
-      const requestId = makeId('req')
-      return {
-        ...state,
-        activeRideRequest: {
-          id: requestId,
-          status: 'SEARCHING',
-          ...state.rideDraft,
-        },
-        driverOffers: makeMockOffers(state.rideDraft.price),
-        currentScreen: 'passengerOffers',
-      }
-    }
+    case 'createRideFromDraft':
     case 'startRideSearch':
-      return createActiveRideRequest(state)
+      return {
+        ...createActiveRideRequest(state),
+        pendingPassengerFlow: null,
+      }
+    case 'createParcelFromDraft':
+    case 'startParcelSearch':
+      return {
+        ...createActiveParcelRequest(state),
+        pendingPassengerFlow: null,
+      }
     case 'acceptOffer': {
       if (!state.activeRideRequest) return state
       const offer = state.driverOffers.find((item) => item.id === action.offerId)
@@ -274,6 +385,39 @@ function appReducer(state: AppState, action: AppAction): AppState {
         currentScreen: 'passengerActiveRide',
       }
     }
+    case 'acceptParcelOffer': {
+      if (!state.activeParcelRequest) return state
+      const offer = state.parcelOffers.find((item) => item.id === action.offerId)
+
+      if (!offer) return state
+
+      return {
+        ...state,
+        activeParcelRequest: {
+          ...state.activeParcelRequest,
+          status: 'ACCEPTED',
+          selectedOfferId: offer.id,
+        },
+        activeParcelOrder: {
+          id: makeId('parcel'),
+          requestId: state.activeParcelRequest.id,
+          status: 'DRIVER_COMING',
+          driverName: offer.driverName,
+          driverPhone: '+7 700 000 00 00',
+          driverRating: offer.rating,
+          carModel: offer.carModel,
+          carColor: offer.carColor,
+          plate: offer.plate,
+          from: state.parcelDraft.from,
+          to: state.parcelDraft.to,
+          price: offer.isCustomOffer ? offer.offeredPrice : offer.originalPrice,
+          receiverName: state.parcelDraft.receiverName,
+          receiverPhone: state.parcelDraft.receiverPhone,
+          description: state.parcelDraft.description,
+        },
+        currentScreen: 'activeParcel',
+      }
+    }
     case 'setActiveRideStatus':
       if (!state.activeRideRequest) return state
       return {
@@ -285,6 +429,21 @@ function appReducer(state: AppState, action: AppAction): AppState {
               status: action.status as ActiveRideStatus,
             }
           : state.activeRide,
+      }
+    case 'setActiveParcelStatus':
+      if (!state.activeParcelRequest) return state
+      return {
+        ...state,
+        activeParcelRequest: {
+          ...state.activeParcelRequest,
+          status: action.status,
+        },
+        activeParcelOrder: state.activeParcelOrder
+          ? {
+              ...state.activeParcelOrder,
+              status: action.status as ActiveParcelStatus,
+            }
+          : state.activeParcelOrder,
       }
     case 'cancelActiveRide': {
       const cancelledHistory: PassengerHistoryItem | null = state.activeRideRequest
@@ -312,6 +471,37 @@ function appReducer(state: AppState, action: AppAction): AppState {
         passengerOrdersTab: 'rides',
       }
     }
+    case 'cancelActiveParcel': {
+      const cancelledHistory: PassengerHistoryItem | null = state.activeParcelRequest
+        ? {
+            id: makeId('hist'),
+            category: 'parcel',
+            from: state.activeParcelRequest.from,
+            to: state.activeParcelRequest.to,
+            date: new Date().toISOString().slice(0, 10),
+            price: state.activeParcelRequest.price,
+            status: 'cancelled',
+            driverName: state.activeParcelOrder?.driverName,
+            receiverName: state.activeParcelRequest.receiverName,
+            receiverPhone: state.activeParcelRequest.receiverPhone,
+            description: state.activeParcelRequest.description,
+            size: state.activeParcelRequest.size,
+            weightKg: state.activeParcelRequest.weightKg,
+          }
+        : null
+
+      return {
+        ...state,
+        passengerHistory: cancelledHistory
+          ? [cancelledHistory, ...state.passengerHistory]
+          : state.passengerHistory,
+        activeParcelRequest: null,
+        activeParcelOrder: null,
+        parcelOffers: [],
+        currentScreen: 'passengerOrders',
+        passengerOrdersTab: 'parcels',
+      }
+    }
     case 'completeRideAndOpenRating':
       return {
         ...state,
@@ -323,6 +513,39 @@ function appReducer(state: AppState, action: AppAction): AppState {
           : state.activeRideRequest,
         isPassengerRatingOpen: true,
       }
+    case 'completeParcelAndOpenHistory': {
+      if (!state.activeParcelRequest || !state.activeParcelOrder) return state
+      const completedParcelOrder = {
+        ...state.activeParcelOrder,
+        status: 'COMPLETED' as ActiveParcelStatus,
+      }
+
+      const completedHistory: PassengerHistoryItem = {
+        id: makeId('hist'),
+        category: 'parcel',
+        from: state.activeParcelRequest.from,
+        to: state.activeParcelRequest.to,
+        date: new Date().toISOString().slice(0, 10),
+        price: completedParcelOrder.price,
+        status: 'completed',
+        driverName: completedParcelOrder.driverName,
+        receiverName: state.activeParcelRequest.receiverName,
+        receiverPhone: state.activeParcelRequest.receiverPhone,
+        description: state.activeParcelRequest.description,
+        size: state.activeParcelRequest.size,
+        weightKg: state.activeParcelRequest.weightKg,
+      }
+
+      return {
+        ...state,
+        passengerHistory: [completedHistory, ...state.passengerHistory],
+        activeParcelRequest: null,
+        activeParcelOrder: null,
+        parcelOffers: [],
+        currentScreen: 'passengerOrders',
+        passengerOrdersTab: 'parcels',
+      }
+    }
     case 'submitRideRating': {
       if (!state.activeRideRequest) return state
 
@@ -373,6 +596,28 @@ function appReducer(state: AppState, action: AppAction): AppState {
         passengerOrdersTab: 'rides',
       }
     }
+    case 'repeatParcel': {
+      const parcelDraft: ParcelDraft = {
+        senderName: state.parcelDraft.senderName,
+        senderPhone: state.parcelDraft.senderPhone,
+        receiverName: action.parcel.receiverName ?? state.parcelDraft.receiverName,
+        receiverPhone: action.parcel.receiverPhone ?? state.parcelDraft.receiverPhone,
+        from: action.parcel.from,
+        to: action.parcel.to,
+        size: state.parcelDraft.size,
+        weightKg: state.parcelDraft.weightKg,
+        description: action.parcel.description ?? '',
+        photoAttached: state.parcelDraft.photoAttached,
+        price: action.parcel.price,
+      }
+
+      return {
+        ...state,
+        parcelDraft,
+        currentScreen: 'passengerParcels',
+        passengerOrdersTab: 'parcels',
+      }
+    }
     default:
       return assertNever(action)
   }
@@ -386,12 +631,17 @@ const initialState: AppState = {
   isMenuOpen: false,
   passengerProfile: null,
   rideDraft: defaultRideDraft(),
+  parcelDraft: defaultParcelDraft(),
   activeRideRequest: null,
   driverOffers: [],
   activeRide: null,
+  activeParcelRequest: null,
+  parcelOffers: [],
+  activeParcelOrder: null,
   passengerHistory: [],
   passengerOrdersTab: 'rides',
   verifiedPhone: '',
+  pendingPassengerFlow: null,
   isPhoneVerifySheetOpen: false,
   isPassengerOnboardingOpen: false,
   isPassengerRatingOpen: false,
@@ -415,7 +665,11 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         dispatch({ type: 'setPassengerStatus', status }),
       setDriverVerificationStatus: (status) =>
         dispatch({ type: 'setDriverVerificationStatus', status }),
+      setPendingPassengerFlow: (flow) =>
+        dispatch({ type: 'setPendingPassengerFlow', flow }),
       updateRideDraft: (patch) => dispatch({ type: 'updateRideDraft', patch }),
+      updateParcelDraft: (patch) =>
+        dispatch({ type: 'updateParcelDraft', patch }),
       openPhoneVerifySheet: () => dispatch({ type: 'openPhoneVerifySheet' }),
       closePhoneVerifySheet: () => dispatch({ type: 'closePhoneVerifySheet' }),
       openPassengerOnboarding: () => dispatch({ type: 'openPassengerOnboarding' }),
@@ -426,18 +680,28 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         dispatch({ type: 'setPassengerOrdersTab', tab }),
       setVerifiedPhone: (phone) => dispatch({ type: 'setVerifiedPhone', phone }),
       startRideSearch: () => dispatch({ type: 'startRideSearch' }),
+      startParcelSearch: () => dispatch({ type: 'startParcelSearch' }),
       createRideFromDraft: () => dispatch({ type: 'createRideFromDraft' }),
+      createParcelFromDraft: () => dispatch({ type: 'createParcelFromDraft' }),
       acceptOffer: (offerId) => dispatch({ type: 'acceptOffer', offerId }),
+      acceptParcelOffer: (offerId) =>
+        dispatch({ type: 'acceptParcelOffer', offerId }),
       setActiveRideStatus: (status) =>
         dispatch({ type: 'setActiveRideStatus', status }),
+      setActiveParcelStatus: (status) =>
+        dispatch({ type: 'setActiveParcelStatus', status }),
       cancelActiveRide: () => dispatch({ type: 'cancelActiveRide' }),
+      cancelActiveParcel: () => dispatch({ type: 'cancelActiveParcel' }),
       setPassengerProfile: (profile) =>
         dispatch({ type: 'setPassengerProfile', profile }),
       completeRideAndOpenRating: () =>
         dispatch({ type: 'completeRideAndOpenRating' }),
+      completeParcelAndOpenHistory: () =>
+        dispatch({ type: 'completeParcelAndOpenHistory' }),
       submitRideRating: (rating, comment) =>
         dispatch({ type: 'submitRideRating', rating, comment }),
       repeatRide: (ride) => dispatch({ type: 'repeatRide', ride }),
+      repeatParcel: (parcel) => dispatch({ type: 'repeatParcel', parcel }),
     },
   }
 

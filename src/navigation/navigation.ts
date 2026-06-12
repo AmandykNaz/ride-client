@@ -50,6 +50,14 @@ export const screenMeta = {
     title: 'Активная поездка',
     subtitle: 'Текущий статус поездки',
   },
+  parcelOffers: {
+    title: 'Поиск курьера',
+    subtitle: 'Предложения и ожидание',
+  },
+  activeParcel: {
+    title: 'Активная доставка',
+    subtitle: 'Текущий статус посылки',
+  },
   passengerParcels: {
     title: 'Посылки',
     subtitle: 'Отправка и получение',

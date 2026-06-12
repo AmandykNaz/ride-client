@@ -55,6 +55,46 @@ export type RideDraft = {
   price: number
 }
 
+export type ParcelSize = 'small' | 'medium' | 'large'
+
+export type ParcelDraft = {
+  senderName: string
+  senderPhone: string
+  receiverName: string
+  receiverPhone: string
+  from: string
+  to: string
+  size: ParcelSize
+  weightKg?: number
+  description: string
+  photoAttached: boolean
+  price: number
+}
+
+export type ParcelRequest = ParcelDraft & {
+  id: string
+  status: ParcelRequestStatus
+  selectedOfferId?: string
+}
+
+export type ParcelOrder = {
+  id: string
+  requestId: string
+  status: ActiveParcelStatus
+  driverName: string
+  driverPhone: string
+  driverRating: number
+  carModel: string
+  carColor: string
+  plate: string
+  from: string
+  to: string
+  price: number
+  receiverName: string
+  receiverPhone: string
+  description: string
+}
+
 export type DriverOffer = {
   id: string
   driverName: string
@@ -96,6 +136,13 @@ export type ActiveRideStatus = Exclude<
   'DRAFT' | 'SEARCHING' | 'OFFERED' | 'CANCELLED'
 >
 
+export type ParcelRequestStatus = RideRequestStatus
+
+export type ActiveParcelStatus = Exclude<
+  ParcelRequestStatus,
+  'DRAFT' | 'SEARCHING' | 'OFFERED' | 'CANCELLED'
+>
+
 export type PassengerHistoryItem = {
   id: string
   category: RideHistoryCategory
@@ -105,12 +152,19 @@ export type PassengerHistoryItem = {
   price: number
   status: RideHistoryStatus
   driverName?: string
+  receiverName?: string
+  receiverPhone?: string
+  description?: string
+  size?: ParcelSize
+  weightKg?: number
 }
 
 export type AppScreen =
   | 'passengerOrder'
   | 'passengerOffers'
   | 'passengerActiveRide'
+  | 'parcelOffers'
+  | 'activeParcel'
   | 'passengerParcels'
   | 'passengerOrders'
   | 'passengerProfile'

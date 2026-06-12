@@ -4,7 +4,7 @@ import { useAppActions, useAppState } from '../../../providers/AppStateProvider'
 import { OverlaySheet } from '../../../shared/ui/OverlaySheet'
 
 export function PassengerOnboardingModal() {
-  const { isPassengerOnboardingOpen, verifiedPhone } = useAppState()
+  const { isPassengerOnboardingOpen, verifiedPhone, pendingPassengerFlow } = useAppState()
   const actions = useAppActions()
   const [name, setName] = useState('')
   const [city, setCity] = useState('')
@@ -21,6 +21,11 @@ export function PassengerOnboardingModal() {
       tripsCount: 0,
     })
     actions.closePassengerOnboarding()
+    if (pendingPassengerFlow === 'parcel') {
+      actions.startParcelSearch()
+      return
+    }
+
     actions.startRideSearch()
   }
 

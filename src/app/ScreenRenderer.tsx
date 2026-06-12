@@ -7,8 +7,10 @@ import DriverDashboardPage from '../pages/driver/DriverDashboardPage'
 import DriverFeedPage from '../pages/driver/DriverFeedPage'
 import DriverProfilePage from '../pages/driver/DriverProfilePage'
 import PassengerActiveRidePage from '../pages/passenger/PassengerActiveRidePage'
+import PassengerActiveParcelPage from '../pages/passenger/PassengerActiveParcelPage'
 import PassengerOrderPage from '../pages/passenger/PassengerOrderPage'
 import PassengerOffersPage from '../pages/passenger/PassengerOffersPage'
+import PassengerParcelOffersPage from '../pages/passenger/PassengerParcelOffersPage'
 import PassengerOrdersPage from '../pages/passenger/PassengerOrdersPage'
 import PassengerParcelsPage from '../pages/passenger/PassengerParcelsPage'
 import PassengerProfilePage from '../pages/passenger/PassengerProfilePage'
@@ -20,6 +22,8 @@ const screenComponents: Record<AppScreen, ComponentType> = {
   passengerOrder: PassengerOrderPage,
   passengerOffers: PassengerOffersPage,
   passengerActiveRide: PassengerActiveRidePage,
+  parcelOffers: PassengerParcelOffersPage,
+  activeParcel: PassengerActiveParcelPage,
   passengerParcels: PassengerParcelsPage,
   passengerOrders: PassengerOrdersPage,
   passengerProfile: PassengerProfilePage,

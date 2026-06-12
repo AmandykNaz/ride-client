@@ -28,6 +28,7 @@ export default function PassengerOrderPage() {
 
   const handleSearch = () => {
     if (passengerStatus === 'GUEST') {
+      actions.setPendingPassengerFlow('ride')
       actions.openPhoneVerifySheet()
       return
     }
