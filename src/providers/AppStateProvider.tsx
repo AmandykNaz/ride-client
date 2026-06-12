@@ -6,7 +6,11 @@ import type {
   ActiveParcelStatus,
   ActiveRideStatus,
   AppScreen,
+  DriverApplicationDraft,
+  DriverApplicationStep,
   DriverOffer,
+  DriverProfile,
+  DriverVehicle,
   DriverVerificationStatus,
   PassengerHistoryItem,
   PassengerProfile,
@@ -31,8 +35,11 @@ type AppState = {
   currentScreen: AppScreen
   isMenuOpen: boolean
   passengerProfile: PassengerProfile | null
+  driverProfile: DriverProfile | null
   rideDraft: RideDraft
   parcelDraft: ParcelDraft
+  driverApplicationDraft: DriverApplicationDraft
+  driverRegistrationStep: DriverApplicationStep
   activeRideRequest: RideRequest | null
   driverOffers: DriverOffer[]
   activeRide: ActiveRide | null
@@ -59,6 +66,21 @@ type AppContextValue = {
     setPassengerStatus: (status: PassengerStatus) => void
     setDriverVerificationStatus: (status: DriverVerificationStatus) => void
     setPendingPassengerFlow: (flow: PassengerFlow) => void
+    startDriverRegistration: () => void
+    updateDriverApplicationField: <K extends keyof DriverApplicationDraft>(
+      field: K,
+      value: DriverApplicationDraft[K],
+    ) => void
+    uploadDriverDocumentMock: (field: keyof DriverApplicationDraft['documents']) => void
+    nextDriverRegistrationStep: () => void
+    prevDriverRegistrationStep: () => void
+    submitDriverApplication: () => void
+    demoApproveDriver: () => void
+    demoRequestDriverChanges: (comment?: string) => void
+    demoBlockDriver: (comment?: string) => void
+    returnToPassengerMode: () => void
+    editDriverApplicationAfterChanges: () => void
+    toggleDriverOnlineStatus: () => void
     updateRideDraft: (patch: Partial<RideDraft>) => void
     updateParcelDraft: (patch: Partial<ParcelDraft>) => void
     openPhoneVerifySheet: () => void
@@ -100,6 +122,25 @@ type AppAction =
       status: DriverVerificationStatus
     }
   | { type: 'setPendingPassengerFlow'; flow: PassengerFlow }
+  | { type: 'startDriverRegistration' }
+  | {
+      type: 'updateDriverApplicationField'
+      field: keyof DriverApplicationDraft
+      value: DriverApplicationDraft[keyof DriverApplicationDraft]
+    }
+  | {
+      type: 'uploadDriverDocumentMock'
+      field: keyof DriverApplicationDraft['documents']
+    }
+  | { type: 'nextDriverRegistrationStep' }
+  | { type: 'prevDriverRegistrationStep' }
+  | { type: 'submitDriverApplication' }
+  | { type: 'demoApproveDriver' }
+  | { type: 'demoRequestDriverChanges'; comment?: string }
+  | { type: 'demoBlockDriver'; comment?: string }
+  | { type: 'returnToPassengerMode' }
+  | { type: 'editDriverApplicationAfterChanges' }
+  | { type: 'toggleDriverOnlineStatus' }
   | { type: 'updateRideDraft'; patch: Partial<RideDraft> }
   | { type: 'updateParcelDraft'; patch: Partial<ParcelDraft> }
   | { type: 'openPhoneVerifySheet' }
@@ -161,6 +202,69 @@ function defaultParcelDraft(): ParcelDraft {
     description: '',
     photoAttached: false,
     price: 6000,
+  }
+}
+
+function defaultDriverApplicationDraft(): DriverApplicationDraft {
+  return {
+    step: 1,
+    fullName: '',
+    phone: '',
+    city: '',
+    frequentRoutes: '',
+    vehicleBrand: '',
+    vehicleModel: '',
+    vehicleYear: '',
+    vehiclePlate: '',
+    vehicleColor: '',
+    vehicleSeats: '',
+    vehicleBodyType: 'sedan',
+    documents: {
+      driverLicenseFront: false,
+      driverLicenseBack: false,
+      vehicleRegistration: false,
+      carFrontPhoto: false,
+      carBackPhoto: false,
+      interiorPhoto: false,
+      trunkPhoto: false,
+    },
+  }
+}
+
+function makeDriverProfileFromApplication(
+  application: DriverApplicationDraft,
+): DriverProfile {
+  const vehicle: DriverVehicle = {
+    brand: application.vehicleBrand,
+    model: application.vehicleModel,
+    year: application.vehicleYear,
+    plate: application.vehiclePlate,
+    color: application.vehicleColor,
+    seats: application.vehicleSeats,
+    bodyType: application.vehicleBodyType,
+  }
+
+  return {
+    id: `driver-${Date.now()}`,
+    fullName: application.fullName,
+    phone: application.phone,
+    city: application.city,
+    rating: 5,
+    tripsCount: 0,
+    verificationStatus: 'APPROVED',
+    balance: 0,
+    minBalance: 1000,
+    isOnline: false,
+    vehicle,
+  }
+}
+
+function cloneDriverApplicationDraft(
+  application: DriverApplicationDraft,
+): DriverApplicationDraft {
+  return {
+    ...application,
+    documents: { ...application.documents },
   }
 }
 
@@ -314,9 +418,168 @@ function appReducer(state: AppState, action: AppAction): AppState {
     case 'setPassengerStatus':
       return { ...state, passengerStatus: action.status }
     case 'setDriverVerificationStatus':
-      return { ...state, driverVerificationStatus: action.status }
+      return {
+        ...state,
+        driverVerificationStatus: action.status,
+        driverProfile:
+          action.status === 'APPROVED' && state.driverProfile
+            ? { ...state.driverProfile, verificationStatus: 'APPROVED' }
+            : state.driverProfile,
+      }
     case 'setPendingPassengerFlow':
       return { ...state, pendingPassengerFlow: action.flow }
+    case 'startDriverRegistration':
+      return {
+        ...state,
+        role: 'driver',
+        currentScreen: 'driverRegistration',
+        isMenuOpen: false,
+        driverVerificationStatus: 'DRAFT',
+        driverRegistrationStep: 1,
+        driverApplicationDraft: {
+          ...cloneDriverApplicationDraft(state.driverApplicationDraft),
+          step: 1,
+          fullName:
+            state.driverProfile?.fullName || state.driverApplicationDraft.fullName,
+          phone: state.driverProfile?.phone || state.driverApplicationDraft.phone,
+          city: state.driverProfile?.city || state.driverApplicationDraft.city,
+        },
+      }
+    case 'updateDriverApplicationField': {
+      if (action.field === 'documents') {
+        return state
+      }
+
+      return {
+        ...state,
+        driverApplicationDraft: {
+          ...state.driverApplicationDraft,
+          [action.field]: action.value,
+        } as DriverApplicationDraft,
+      }
+    }
+    case 'uploadDriverDocumentMock':
+      return {
+        ...state,
+        driverApplicationDraft: {
+          ...state.driverApplicationDraft,
+          documents: {
+            ...state.driverApplicationDraft.documents,
+            [action.field]: !state.driverApplicationDraft.documents[action.field],
+          },
+        },
+      }
+    case 'nextDriverRegistrationStep':
+      return {
+        ...state,
+        driverRegistrationStep: Math.min(
+          5,
+          (state.driverRegistrationStep + 1) as DriverApplicationStep,
+        ) as DriverApplicationStep,
+        driverApplicationDraft: {
+          ...state.driverApplicationDraft,
+          step: Math.min(
+            5,
+            (state.driverRegistrationStep + 1) as DriverApplicationStep,
+          ) as DriverApplicationStep,
+        },
+        driverVerificationStatus: 'DRAFT',
+        currentScreen: 'driverRegistration',
+      }
+    case 'prevDriverRegistrationStep':
+      return {
+        ...state,
+        driverRegistrationStep: Math.max(
+          1,
+          (state.driverRegistrationStep - 1) as DriverApplicationStep,
+        ) as DriverApplicationStep,
+        driverApplicationDraft: {
+          ...state.driverApplicationDraft,
+          step: Math.max(
+            1,
+            (state.driverRegistrationStep - 1) as DriverApplicationStep,
+          ) as DriverApplicationStep,
+        },
+        currentScreen: 'driverRegistration',
+      }
+    case 'submitDriverApplication':
+      return {
+        ...state,
+        driverVerificationStatus: 'PENDING_REVIEW',
+        driverApplicationDraft: {
+          ...state.driverApplicationDraft,
+          submittedAt: new Date().toISOString(),
+        },
+        currentScreen: 'driverDashboard',
+        isMenuOpen: false,
+      }
+    case 'demoApproveDriver': {
+      const approvedProfile = makeDriverProfileFromApplication(state.driverApplicationDraft)
+
+      return {
+        ...state,
+        driverVerificationStatus: 'APPROVED',
+        driverProfile: approvedProfile,
+        currentScreen: 'driverDashboard',
+        isMenuOpen: false,
+        role: 'driver',
+      }
+    }
+    case 'demoRequestDriverChanges':
+      return {
+        ...state,
+        driverVerificationStatus: 'NEEDS_CHANGES',
+        driverApplicationDraft: {
+          ...state.driverApplicationDraft,
+          moderatorComment:
+            action.comment ??
+            'Проверьте фото документов и заполните госномер без сокращений.',
+        },
+        currentScreen: 'driverDashboard',
+        isMenuOpen: false,
+        role: 'driver',
+      }
+    case 'demoBlockDriver':
+      return {
+        ...state,
+        driverVerificationStatus: 'BLOCKED',
+        driverApplicationDraft: {
+          ...state.driverApplicationDraft,
+          moderatorComment:
+            action.comment ?? 'Временная блокировка за нарушение правил модерации.',
+        },
+        currentScreen: 'driverDashboard',
+        isMenuOpen: false,
+        role: 'driver',
+      }
+    case 'returnToPassengerMode':
+      return {
+        ...state,
+        role: 'passenger',
+        currentScreen: defaultScreenByRole.passenger,
+        isMenuOpen: false,
+      }
+    case 'editDriverApplicationAfterChanges':
+      return {
+        ...state,
+        driverVerificationStatus: 'DRAFT',
+        currentScreen: 'driverRegistration',
+        driverRegistrationStep: Math.max(
+          2,
+          state.driverApplicationDraft.step,
+        ) as DriverApplicationStep,
+        driverApplicationDraft: {
+          ...state.driverApplicationDraft,
+          step: Math.max(2, state.driverApplicationDraft.step) as DriverApplicationStep,
+        } as DriverApplicationDraft,
+      }
+    case 'toggleDriverOnlineStatus':
+      return {
+        ...state,
+        driverProfile: state.driverProfile
+          ? { ...state.driverProfile, isOnline: !state.driverProfile.isOnline }
+          : state.driverProfile,
+      }
     case 'updateRideDraft':
       return { ...state, rideDraft: { ...state.rideDraft, ...action.patch } }
     case 'updateParcelDraft':
@@ -630,8 +893,11 @@ const initialState: AppState = {
   currentScreen: defaultScreenByRole.passenger,
   isMenuOpen: false,
   passengerProfile: null,
+  driverProfile: null,
   rideDraft: defaultRideDraft(),
   parcelDraft: defaultParcelDraft(),
+  driverApplicationDraft: defaultDriverApplicationDraft(),
+  driverRegistrationStep: 1,
   activeRideRequest: null,
   driverOffers: [],
   activeRide: null,
@@ -667,6 +933,25 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         dispatch({ type: 'setDriverVerificationStatus', status }),
       setPendingPassengerFlow: (flow) =>
         dispatch({ type: 'setPendingPassengerFlow', flow }),
+      startDriverRegistration: () => dispatch({ type: 'startDriverRegistration' }),
+      updateDriverApplicationField: (field, value) =>
+        dispatch({ type: 'updateDriverApplicationField', field, value }),
+      uploadDriverDocumentMock: (field) =>
+        dispatch({ type: 'uploadDriverDocumentMock', field }),
+      nextDriverRegistrationStep: () =>
+        dispatch({ type: 'nextDriverRegistrationStep' }),
+      prevDriverRegistrationStep: () =>
+        dispatch({ type: 'prevDriverRegistrationStep' }),
+      submitDriverApplication: () => dispatch({ type: 'submitDriverApplication' }),
+      demoApproveDriver: () => dispatch({ type: 'demoApproveDriver' }),
+      demoRequestDriverChanges: (comment) =>
+        dispatch({ type: 'demoRequestDriverChanges', comment }),
+      demoBlockDriver: (comment) => dispatch({ type: 'demoBlockDriver', comment }),
+      returnToPassengerMode: () => dispatch({ type: 'returnToPassengerMode' }),
+      editDriverApplicationAfterChanges: () =>
+        dispatch({ type: 'editDriverApplicationAfterChanges' }),
+      toggleDriverOnlineStatus: () =>
+        dispatch({ type: 'toggleDriverOnlineStatus' }),
       updateRideDraft: (patch) => dispatch({ type: 'updateRideDraft', patch }),
       updateParcelDraft: (patch) =>
         dispatch({ type: 'updateParcelDraft', patch }),

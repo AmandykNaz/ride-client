@@ -23,13 +23,24 @@ export function MobileShell({ children, overlay }: MobileShellProps) {
   const bottomNav =
     state.role === 'driver' ? driverBottomNav : passengerBottomNav
   const drawerItems =
-    state.role === 'driver' ? driverDrawerItems : passengerDrawerItems
+    state.role === 'driver'
+      ? driverDrawerItems
+      : passengerDrawerItems.map((item) =>
+          item.role === 'driver' && state.driverVerificationStatus === 'APPROVED'
+            ? { ...item, label: 'Перейти в режим водителя' }
+            : item,
+        )
   const profileScreen: AppScreen =
     state.role === 'driver' ? 'driverProfile' : 'passengerProfile'
   const currentScreenMeta = screenMeta[state.currentScreen]
 
   const handleDrawerItem = (item: (typeof drawerItems)[number]) => {
     if (item.role) {
+      if (item.role === 'passenger') {
+        actions.returnToPassengerMode()
+        return
+      }
+
       actions.setRole(item.role, item.screen ?? defaultScreenByRole[item.role])
       return
     }

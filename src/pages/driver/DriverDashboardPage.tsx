@@ -1,27 +1,337 @@
-import { BadgeCheck } from 'lucide-react'
+import {
+  BadgeCheck,
+  CarFront,
+  CircleAlert,
+  ShieldCheck,
+  SlidersHorizontal,
+} from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 
+import { cn } from '../../lib/cn'
+import { formatKzt } from '../../lib/format'
+import { useAppActions, useAppState } from '../../providers/AppStateProvider'
 import { PageCard } from '../../shared/ui/PageCard'
-import { useAppState } from '../../providers/AppStateProvider'
+
+function StatusRow({
+  icon: Icon,
+  title,
+  value,
+}: {
+  icon: LucideIcon
+  title: string
+  value: string
+}) {
+  return (
+    <div className="flex items-center gap-3 rounded-2xl bg-surface-soft p-4">
+      <span className="grid h-10 w-10 place-items-center rounded-2xl bg-white">
+        <Icon className="h-5 w-5 text-accent" />
+      </span>
+      <div className="min-w-0">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">
+          {title}
+        </p>
+        <p className="mt-1 truncate text-sm font-semibold text-ink">{value}</p>
+      </div>
+    </div>
+  )
+}
 
 export default function DriverDashboardPage() {
-  const { driverVerificationStatus } = useAppState()
+  const {
+    driverVerificationStatus,
+    driverProfile,
+    driverApplicationDraft,
+    driverRegistrationStep,
+  } = useAppState()
+  const actions = useAppActions()
+
+  if (driverVerificationStatus === 'NOT_STARTED') {
+    return (
+      <div className="space-y-4">
+        <PageCard
+          eyebrow="Водитель"
+          title="Стать водителем AmanJol"
+          description="Начните регистрацию, чтобы открыть водительский кабинет."
+        >
+          <div className="grid gap-3">
+            <StatusRow icon={ShieldCheck} title="Преимущество" value="Минимальная комиссия после поездки" />
+            <StatusRow icon={CircleAlert} title="Требование" value="Права B и исправный автомобиль" />
+            <StatusRow icon={CarFront} title="Баланс" value="Минимальный баланс для доступа к заказам" />
+          </div>
+          <div className="rounded-2xl bg-surface-soft p-4 text-sm text-ink">
+            <p className="font-semibold">Что вы получаете</p>
+            <div className="mt-2 space-y-2 text-muted">
+              <p>• зарабатывайте на межгороде</p>
+              <p>• свободный график</p>
+              <p>• комиссия только после завершения поездки</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={actions.startDriverRegistration}
+            className="w-full rounded-2xl bg-accent px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-accent/20"
+          >
+            Начать регистрацию
+          </button>
+        </PageCard>
+      </div>
+    )
+  }
+
+  if (driverVerificationStatus === 'DRAFT') {
+    return (
+      <PageCard
+        eyebrow="Водитель"
+        title="Продолжите регистрацию"
+        description="Ваше заявление сохранено в черновике."
+      >
+        <StatusRow
+          icon={SlidersHorizontal}
+          title="Текущий шаг"
+          value={`Шаг ${driverRegistrationStep} из 5`}
+        />
+        <StatusRow
+          icon={CarFront}
+          title="ФИО"
+          value={driverApplicationDraft.fullName || 'Не заполнено'}
+        />
+        <button
+          type="button"
+          onClick={() => actions.setScreen('driverRegistration')}
+          className="w-full rounded-2xl bg-accent px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-accent/20"
+        >
+          Продолжить
+        </button>
+      </PageCard>
+    )
+  }
+
+  if (driverVerificationStatus === 'PENDING_REVIEW') {
+    return (
+      <div className="space-y-4">
+        <PageCard
+          eyebrow="Водитель"
+          title="Заявка на проверке"
+          description="Обычно проверка занимает до 24 часов."
+        >
+          <StatusRow icon={BadgeCheck} title="Статус" value="Заявка отправлена модератору" />
+          <div className="rounded-2xl bg-surface-soft p-4 text-sm text-muted">
+            Мы уведомим вас после проверки.
+          </div>
+          <button
+            type="button"
+            onClick={actions.returnToPassengerMode}
+            className="w-full rounded-2xl border border-border bg-white px-4 py-3 text-sm font-semibold text-ink"
+          >
+            Вернуться в пассажирский режим
+          </button>
+        </PageCard>
+
+        <div className="rounded-[28px] border border-dashed border-border bg-white p-4">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-muted">
+            Demo moderation controls
+          </p>
+          <div className="mt-3 grid gap-2 sm:grid-cols-3">
+            <button
+              type="button"
+              onClick={actions.demoApproveDriver}
+              className="rounded-2xl bg-accent px-4 py-3 text-sm font-semibold text-white"
+            >
+              Одобрить водителя
+            </button>
+            <button
+              type="button"
+              onClick={() => actions.demoRequestDriverChanges('Нужно уточнить фото документов и госномер.')}
+              className="rounded-2xl border border-border bg-white px-4 py-3 text-sm font-semibold text-ink"
+            >
+              Запросить исправления
+            </button>
+            <button
+              type="button"
+              onClick={() => actions.demoBlockDriver('Заявка заблокирована в демо-режиме.')}
+              className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700"
+            >
+              Заблокировать
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (driverVerificationStatus === 'NEEDS_CHANGES') {
+    return (
+      <PageCard
+        eyebrow="Водитель"
+        title="Нужно исправить данные"
+        description="Модератор запросил уточнения по заявке."
+      >
+        <StatusRow
+          icon={CircleAlert}
+          title="Причина"
+          value={driverApplicationDraft.moderatorComment || 'Не указана'}
+        />
+        <div className="grid gap-2 sm:grid-cols-2">
+          <button
+            type="button"
+            onClick={actions.editDriverApplicationAfterChanges}
+            className="rounded-2xl bg-accent px-4 py-3 text-sm font-semibold text-white"
+          >
+            Исправить данные
+          </button>
+          <button
+            type="button"
+            onClick={actions.returnToPassengerMode}
+            className="rounded-2xl border border-border bg-white px-4 py-3 text-sm font-semibold text-ink"
+          >
+            Вернуться в пассажирский режим
+          </button>
+        </div>
+      </PageCard>
+    )
+  }
+
+  if (driverVerificationStatus === 'BLOCKED') {
+    return (
+      <PageCard
+        eyebrow="Водитель"
+        title="Водительский доступ заблокирован"
+        description="Статус ограничивает доступ к водительскому кабинету."
+      >
+        <StatusRow
+          icon={CircleAlert}
+          title="Причина"
+          value={driverApplicationDraft.moderatorComment || 'Блокировка в демо-режиме'}
+        />
+        <div className="grid gap-2 sm:grid-cols-2">
+          <button
+            type="button"
+            onClick={() => actions.setScreen('support')}
+            className="rounded-2xl bg-accent px-4 py-3 text-sm font-semibold text-white"
+          >
+            Связаться с поддержкой
+          </button>
+          <button
+            type="button"
+            onClick={actions.returnToPassengerMode}
+            className="rounded-2xl border border-border bg-white px-4 py-3 text-sm font-semibold text-ink"
+          >
+            Вернуться в пассажирский режим
+          </button>
+        </div>
+      </PageCard>
+    )
+  }
 
   return (
     <PageCard
       eyebrow="Водитель"
       title="Кабинет водителя"
-      description="Точка входа в будущий водительский кабинет. Пока здесь только макет без бизнес-логики."
+      description="Ваш профиль подтверждён. Можно включать онлайн-режим и пользоваться кабинетом."
     >
-      <div className="flex items-center gap-3 rounded-2xl bg-surface-soft p-4">
-        <BadgeCheck className="h-5 w-5 text-accent" />
-        <div>
+      <StatusRow icon={BadgeCheck} title="Статус" value="Проверен" />
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div className="rounded-2xl bg-surface-soft p-4">
           <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">
-            DriverVerificationStatus
+            Имя
           </p>
-          <p className="mt-1 text-sm font-semibold text-ink">
-            {driverVerificationStatus}
+          <p className="mt-2 text-sm font-semibold text-ink">
+            {driverProfile?.fullName || driverApplicationDraft.fullName}
           </p>
         </div>
+        <div className="rounded-2xl bg-surface-soft p-4">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">
+            Телефон
+          </p>
+          <p className="mt-2 text-sm font-semibold text-ink">
+            {driverProfile?.phone || driverApplicationDraft.phone}
+          </p>
+        </div>
+        <div className="rounded-2xl bg-surface-soft p-4">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">
+            Город
+          </p>
+          <p className="mt-2 text-sm font-semibold text-ink">
+            {driverProfile?.city || driverApplicationDraft.city}
+          </p>
+        </div>
+        <div className="rounded-2xl bg-surface-soft p-4">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">
+            Авто
+          </p>
+          <p className="mt-2 text-sm font-semibold text-ink">
+            {driverProfile?.vehicle?.brand || driverApplicationDraft.vehicleBrand}{' '}
+            {driverProfile?.vehicle?.model || driverApplicationDraft.vehicleModel}
+          </p>
+          <p className="mt-1 text-sm text-muted">
+            {driverProfile?.vehicle?.plate || driverApplicationDraft.vehiclePlate}
+          </p>
+        </div>
+        <div className="rounded-2xl bg-surface-soft p-4">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">
+            Баланс
+          </p>
+          <p className="mt-2 text-sm font-semibold text-ink">
+            {formatKzt(driverProfile?.balance ?? 0)}
+          </p>
+        </div>
+        <div className="rounded-2xl bg-surface-soft p-4">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">
+            Минимум
+          </p>
+          <p className="mt-2 text-sm font-semibold text-ink">
+            {formatKzt(driverProfile?.minBalance ?? 1000)}
+          </p>
+        </div>
+      </div>
+
+      <div className="rounded-2xl border border-border bg-white p-4">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">
+              Режим
+            </p>
+            <p className="mt-1 text-sm font-semibold text-ink">
+              {driverProfile?.isOnline ? 'Online' : 'Offline'}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={actions.toggleDriverOnlineStatus}
+            className={cn(
+              'rounded-2xl px-4 py-3 text-sm font-semibold',
+              driverProfile?.isOnline
+                ? 'bg-emerald-100 text-emerald-700'
+                : 'bg-slate-100 text-slate-700',
+            )}
+          >
+            {driverProfile?.isOnline ? 'Онлайн' : 'Оффлайн'}
+          </button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-3 gap-2">
+        <button
+          type="button"
+          onClick={() => actions.setScreen('driverFeed')}
+          className="rounded-2xl border border-border bg-white px-3 py-3 text-sm font-semibold text-ink"
+        >
+          Лента заказов
+        </button>
+        <button
+          type="button"
+          onClick={() => actions.setScreen('driverBalance')}
+          className="rounded-2xl border border-border bg-white px-3 py-3 text-sm font-semibold text-ink"
+        >
+          Баланс
+        </button>
+        <button
+          type="button"
+          onClick={() => actions.setScreen('driverProfile')}
+          className="rounded-2xl border border-border bg-white px-3 py-3 text-sm font-semibold text-ink"
+        >
+          Профиль
+        </button>
       </div>
     </PageCard>
   )

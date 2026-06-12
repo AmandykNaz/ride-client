@@ -5,6 +5,7 @@ import BusesComingSoonPage from '../pages/BusesComingSoonPage'
 import DriverBalancePage from '../pages/driver/DriverBalancePage'
 import DriverDashboardPage from '../pages/driver/DriverDashboardPage'
 import DriverFeedPage from '../pages/driver/DriverFeedPage'
+import DriverRegistrationPage from '../pages/driver/DriverRegistrationPage'
 import DriverProfilePage from '../pages/driver/DriverProfilePage'
 import PassengerActiveRidePage from '../pages/passenger/PassengerActiveRidePage'
 import PassengerActiveParcelPage from '../pages/passenger/PassengerActiveParcelPage'
@@ -27,6 +28,7 @@ const screenComponents: Record<AppScreen, ComponentType> = {
   passengerParcels: PassengerParcelsPage,
   passengerOrders: PassengerOrdersPage,
   passengerProfile: PassengerProfilePage,
+  driverRegistration: DriverRegistrationPage,
   driverDashboard: DriverDashboardPage,
   driverFeed: DriverFeedPage,
   driverBalance: DriverBalancePage,

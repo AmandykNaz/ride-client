@@ -86,6 +86,10 @@ export const screenMeta = {
     title: 'Профиль',
     subtitle: 'Режим водителя',
   },
+  driverRegistration: {
+    title: 'Регистрация водителя',
+    subtitle: 'Пошаговая заявка',
+  },
   safety: {
     title: 'Безопасность',
     subtitle: 'Проверки и доступ',

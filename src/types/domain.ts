@@ -44,6 +44,62 @@ export type PassengerProfile = {
   tripsCount: number
 }
 
+export type DriverVehicleBodyType = 'sedan' | 'suv' | 'minivan' | 'alphard'
+
+export type DriverVehicle = {
+  brand: string
+  model: string
+  year: string
+  plate: string
+  color: string
+  seats: string
+  bodyType: DriverVehicleBodyType
+}
+
+export type DriverProfile = {
+  id?: string
+  fullName: string
+  phone: string
+  city: string
+  rating: number
+  tripsCount: number
+  verificationStatus: DriverVerificationStatus
+  balance: number
+  minBalance: number
+  isOnline: boolean
+  vehicle?: DriverVehicle
+}
+
+export type DriverApplicationDocuments = {
+  driverLicenseFront: boolean
+  driverLicenseBack: boolean
+  vehicleRegistration: boolean
+  carFrontPhoto: boolean
+  carBackPhoto: boolean
+  interiorPhoto: boolean
+  trunkPhoto: boolean
+}
+
+export type DriverApplicationStep = 1 | 2 | 3 | 4 | 5
+
+export type DriverApplicationDraft = {
+  step: DriverApplicationStep
+  fullName: string
+  phone: string
+  city: string
+  frequentRoutes: string
+  vehicleBrand: string
+  vehicleModel: string
+  vehicleYear: string
+  vehiclePlate: string
+  vehicleColor: string
+  vehicleSeats: string
+  vehicleBodyType: DriverVehicleBodyType
+  documents: DriverApplicationDocuments
+  submittedAt?: string
+  moderatorComment?: string
+}
+
 export type RideDraft = {
   from: string
   to: string
@@ -168,6 +224,7 @@ export type AppScreen =
   | 'passengerParcels'
   | 'passengerOrders'
   | 'passengerProfile'
+  | 'driverRegistration'
   | 'driverDashboard'
   | 'driverFeed'
   | 'driverBalance'
