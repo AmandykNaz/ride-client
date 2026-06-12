@@ -4,6 +4,7 @@ import type { AppScreen } from '../types/domain'
 import BusesComingSoonPage from '../pages/BusesComingSoonPage'
 import DriverBalancePage from '../pages/driver/DriverBalancePage'
 import DriverDashboardPage from '../pages/driver/DriverDashboardPage'
+import DriverActiveOrderPage from '../pages/driver/DriverActiveOrderPage'
 import DriverFeedPage from '../pages/driver/DriverFeedPage'
 import DriverRegistrationPage from '../pages/driver/DriverRegistrationPage'
 import DriverProfilePage from '../pages/driver/DriverProfilePage'
@@ -31,6 +32,7 @@ const screenComponents: Record<AppScreen, ComponentType> = {
   driverRegistration: DriverRegistrationPage,
   driverDashboard: DriverDashboardPage,
   driverFeed: DriverFeedPage,
+  driverOrders: DriverActiveOrderPage,
   driverBalance: DriverBalancePage,
   driverProfile: DriverProfilePage,
   safety: SafetyPage,

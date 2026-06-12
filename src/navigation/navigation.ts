@@ -78,6 +78,10 @@ export const screenMeta = {
     title: 'Лента',
     subtitle: 'Новые заказы рядом',
   },
+  driverOrders: {
+    title: 'Активный заказ',
+    subtitle: 'Текущий статус выполнения',
+  },
   driverBalance: {
     title: 'Баланс',
     subtitle: 'Доход и выплаты',

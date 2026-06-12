@@ -100,6 +100,74 @@ export type DriverApplicationDraft = {
   moderatorComment?: string
 }
 
+export type DriverFeedOrderCategory = 'ride' | 'parcel'
+
+export type DriverFeedOrderStatus = 'available' | 'offered' | 'accepted' | 'cancelled'
+
+export type DriverFeedOrder = {
+  id: string
+  category: DriverFeedOrderCategory
+  title: string
+  from: string
+  to: string
+  date: string
+  time: string
+  requestedPrice: number
+  passengersCount?: number
+  rideType?: TripType
+  parcelSize?: ParcelSize
+  parcelDescription?: string
+  senderName?: string
+  receiverName?: string
+  receiverPhone?: string
+  clientName: string
+  clientPhone: string
+  comment?: string
+  createdMinutesAgo: number
+  status: DriverFeedOrderStatus
+}
+
+export type DriverCounterOfferStatus = 'pending' | 'accepted' | 'rejected'
+
+export type DriverCounterOffer = {
+  id: string
+  orderId: string
+  driverName: string
+  offeredPrice: number
+  originalPrice: number
+  comment: string
+  status: DriverCounterOfferStatus
+}
+
+export type DriverActiveOrderStatus =
+  | 'GOING_TO_CLIENT'
+  | 'ARRIVED'
+  | 'IN_PROGRESS'
+  | 'COMPLETED'
+  | 'CANCELLED'
+
+export type DriverActiveOrder = {
+  id: string
+  sourceOrderId: string
+  category: DriverFeedOrderCategory
+  status: DriverActiveOrderStatus
+  from: string
+  to: string
+  price: number
+  clientName: string
+  clientPhone: string
+  requestedPrice: number
+  driverOfferedPrice?: number
+  commissionPreview: number
+  rideType?: TripType
+  passengersCount?: number
+  parcelSize?: ParcelSize
+  parcelDescription?: string
+  senderName?: string
+  receiverName?: string
+  receiverPhone?: string
+}
+
 export type RideDraft = {
   from: string
   to: string
@@ -227,6 +295,7 @@ export type AppScreen =
   | 'driverRegistration'
   | 'driverDashboard'
   | 'driverFeed'
+  | 'driverOrders'
   | 'driverBalance'
   | 'driverProfile'
   | 'safety'

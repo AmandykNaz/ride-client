@@ -6,8 +6,12 @@ import type {
   ActiveParcelStatus,
   ActiveRideStatus,
   AppScreen,
+  DriverActiveOrder,
+  DriverActiveOrderStatus,
   DriverApplicationDraft,
   DriverApplicationStep,
+  DriverCounterOffer,
+  DriverFeedOrder,
   DriverOffer,
   DriverProfile,
   DriverVehicle,
@@ -40,6 +44,13 @@ type AppState = {
   parcelDraft: ParcelDraft
   driverApplicationDraft: DriverApplicationDraft
   driverRegistrationStep: DriverApplicationStep
+  driverFeedOrders: DriverFeedOrder[]
+  driverActiveOrder: DriverActiveOrder | null
+  driverCounterOffers: DriverCounterOffer[]
+  isDriverCounterOfferSheetOpen: boolean
+  driverCounterOfferOrderId: string | null
+  driverCounterOfferPrice: string
+  driverCounterOfferComment: string
   activeRideRequest: RideRequest | null
   driverOffers: DriverOffer[]
   activeRide: ActiveRide | null
@@ -81,6 +92,14 @@ type AppContextValue = {
     returnToPassengerMode: () => void
     editDriverApplicationAfterChanges: () => void
     toggleDriverOnlineStatus: () => void
+    openDriverCounterOfferSheet: (orderId: string) => void
+    closeDriverCounterOfferSheet: () => void
+    sendDriverCounterOffer: (price: number, comment: string) => void
+    acceptDemoCounterOfferAsPassenger: (orderId?: string) => void
+    acceptDriverFeedOrder: (orderId: string) => void
+    driverOrderNextStatus: () => void
+    cancelDriverActiveOrder: () => void
+    clearCompletedDriverOrder: () => void
     updateRideDraft: (patch: Partial<RideDraft>) => void
     updateParcelDraft: (patch: Partial<ParcelDraft>) => void
     openPhoneVerifySheet: () => void
@@ -141,6 +160,14 @@ type AppAction =
   | { type: 'returnToPassengerMode' }
   | { type: 'editDriverApplicationAfterChanges' }
   | { type: 'toggleDriverOnlineStatus' }
+  | { type: 'openDriverCounterOfferSheet'; orderId: string }
+  | { type: 'closeDriverCounterOfferSheet' }
+  | { type: 'sendDriverCounterOffer'; price: number; comment: string }
+  | { type: 'acceptDemoCounterOfferAsPassenger'; orderId?: string }
+  | { type: 'acceptDriverFeedOrder'; orderId: string }
+  | { type: 'driverOrderNextStatus' }
+  | { type: 'cancelDriverActiveOrder' }
+  | { type: 'clearCompletedDriverOrder' }
   | { type: 'updateRideDraft'; patch: Partial<RideDraft> }
   | { type: 'updateParcelDraft'; patch: Partial<ParcelDraft> }
   | { type: 'openPhoneVerifySheet' }
@@ -362,6 +389,131 @@ function makeMockParcelOffers(price: number): DriverOffer[] {
   ]
 }
 
+function defaultDriverFeedOrders(): DriverFeedOrder[] {
+  return [
+    {
+      id: 'feed-ride-1',
+      category: 'ride',
+      title: 'Межгород Алматы → Астана',
+      from: 'Алматы',
+      to: 'Астана',
+      date: '2026-06-12',
+      time: '09:30',
+      requestedPrice: 14500,
+      passengersCount: 2,
+      rideType: 'shared',
+      clientName: 'Айгерим',
+      clientPhone: '+7 701 234 56 78',
+      comment: 'Можно сделать короткую остановку на кофе.',
+      createdMinutesAgo: 8,
+      status: 'available',
+    },
+    {
+      id: 'feed-parcel-1',
+      category: 'parcel',
+      title: 'Посылка Алматы → Караганда',
+      from: 'Алматы',
+      to: 'Караганда',
+      date: '2026-06-12',
+      time: '11:00',
+      requestedPrice: 6200,
+      parcelSize: 'medium',
+      parcelDescription: 'Документы и небольшой короб.',
+      senderName: 'Данияр',
+      receiverName: 'Салтанат',
+      receiverPhone: '+7 701 222 33 44',
+      clientName: 'Данияр',
+      clientPhone: '+7 707 555 22 11',
+      comment: 'Нужна аккуратная доставка без пересорта.',
+      createdMinutesAgo: 14,
+      status: 'available',
+    },
+    {
+      id: 'feed-ride-2',
+      category: 'ride',
+      title: 'Весь салон Шымкент → Тараз',
+      from: 'Шымкент',
+      to: 'Тараз',
+      date: '2026-06-12',
+      time: '15:20',
+      requestedPrice: 9800,
+      passengersCount: 3,
+      rideType: 'full',
+      clientName: 'Ержан',
+      clientPhone: '+7 708 111 44 55',
+      comment: 'Нужен полный салон для семьи с багажом.',
+      createdMinutesAgo: 21,
+      status: 'available',
+    },
+    {
+      id: 'feed-parcel-2',
+      category: 'parcel',
+      title: 'Посылка Астана → Павлодар',
+      from: 'Астана',
+      to: 'Павлодар',
+      date: '2026-06-12',
+      time: '18:10',
+      requestedPrice: 5400,
+      parcelSize: 'small',
+      parcelDescription: 'Подарочная коробка.',
+      senderName: 'Жанна',
+      receiverName: 'Марат',
+      receiverPhone: '+7 705 333 44 55',
+      clientName: 'Жанна',
+      clientPhone: '+7 705 888 09 77',
+      comment: 'Передать сегодня вечером.',
+      createdMinutesAgo: 5,
+      status: 'available',
+    },
+  ]
+}
+
+function makeDriverActiveOrder(
+  order: DriverFeedOrder,
+  price: number,
+  driverOfferedPrice?: number,
+): DriverActiveOrder {
+  return {
+    id: makeId('driver-order'),
+    sourceOrderId: order.id,
+    category: order.category,
+    status: 'GOING_TO_CLIENT',
+    from: order.from,
+    to: order.to,
+    price,
+    clientName: order.clientName,
+    clientPhone: order.clientPhone,
+    requestedPrice: order.requestedPrice,
+    driverOfferedPrice,
+    commissionPreview: Math.round(price * 0.08),
+    rideType: order.rideType,
+    passengersCount: order.passengersCount,
+    parcelSize: order.parcelSize,
+    parcelDescription: order.parcelDescription,
+    senderName: order.senderName,
+    receiverName: order.receiverName,
+    receiverPhone: order.receiverPhone,
+  }
+}
+
+function nextDriverOrderStatus(
+  status: DriverActiveOrderStatus,
+): DriverActiveOrderStatus {
+  switch (status) {
+    case 'GOING_TO_CLIENT':
+      return 'ARRIVED'
+    case 'ARRIVED':
+      return 'IN_PROGRESS'
+    case 'IN_PROGRESS':
+      return 'COMPLETED'
+    case 'COMPLETED':
+    case 'CANCELLED':
+      return status
+    default:
+      return status
+  }
+}
+
 function createActiveRideRequest(state: AppState): AppState {
   const requestId = makeId('req')
   const request: RideRequest = {
@@ -579,6 +731,126 @@ function appReducer(state: AppState, action: AppAction): AppState {
         driverProfile: state.driverProfile
           ? { ...state.driverProfile, isOnline: !state.driverProfile.isOnline }
           : state.driverProfile,
+      }
+    case 'openDriverCounterOfferSheet': {
+      const order = state.driverFeedOrders.find((item) => item.id === action.orderId)
+
+      return {
+        ...state,
+        isDriverCounterOfferSheetOpen: true,
+        driverCounterOfferOrderId: action.orderId,
+        driverCounterOfferPrice: order ? String(order.requestedPrice) : '',
+        driverCounterOfferComment: '',
+      }
+    }
+    case 'closeDriverCounterOfferSheet':
+      return {
+        ...state,
+        isDriverCounterOfferSheetOpen: false,
+        driverCounterOfferOrderId: null,
+        driverCounterOfferPrice: '',
+        driverCounterOfferComment: '',
+      }
+    case 'sendDriverCounterOffer': {
+      if (!state.driverCounterOfferOrderId) return state
+      const order = state.driverFeedOrders.find(
+        (item) => item.id === state.driverCounterOfferOrderId,
+      )
+
+      if (!order) return state
+
+      const offer: DriverCounterOffer = {
+        id: makeId('counter-offer'),
+        orderId: order.id,
+        driverName: state.driverProfile?.fullName || state.driverApplicationDraft.fullName || 'Демо водитель',
+        offeredPrice: action.price,
+        originalPrice: order.requestedPrice,
+        comment: action.comment,
+        status: 'pending',
+      }
+
+      return {
+        ...state,
+        driverFeedOrders: state.driverFeedOrders.map((item) =>
+          item.id === order.id ? { ...item, status: 'offered' } : item,
+        ),
+        driverCounterOffers: [
+          ...state.driverCounterOffers.filter((item) => item.orderId !== order.id),
+          offer,
+        ],
+        driverCounterOfferPrice: String(action.price),
+        driverCounterOfferComment: action.comment,
+        isDriverCounterOfferSheetOpen: false,
+        driverCounterOfferOrderId: null,
+      }
+    }
+    case 'acceptDemoCounterOfferAsPassenger': {
+      if (state.driverActiveOrder) return state
+
+      const pendingOffer = state.driverCounterOffers.find((item) =>
+        action.orderId ? item.orderId === action.orderId : item.status === 'pending',
+      )
+
+      if (!pendingOffer) return state
+
+      const order = state.driverFeedOrders.find((item) => item.id === pendingOffer.orderId)
+
+      if (!order) return state
+
+      return {
+        ...state,
+        driverCounterOffers: state.driverCounterOffers.map((item) =>
+          item.id === pendingOffer.id ? { ...item, status: 'accepted' } : item,
+        ),
+        driverFeedOrders: state.driverFeedOrders.map((item) =>
+          item.id === order.id ? { ...item, status: 'accepted' } : item,
+        ),
+        driverActiveOrder: makeDriverActiveOrder(order, pendingOffer.offeredPrice, pendingOffer.offeredPrice),
+        currentScreen: 'driverOrders',
+        isDriverCounterOfferSheetOpen: false,
+        driverCounterOfferOrderId: null,
+      }
+    }
+    case 'acceptDriverFeedOrder': {
+      if (state.driverActiveOrder) return state
+
+      const order = state.driverFeedOrders.find((item) => item.id === action.orderId)
+
+      if (!order) return state
+
+      return {
+        ...state,
+        driverFeedOrders: state.driverFeedOrders.filter((item) => item.id !== order.id),
+        driverActiveOrder: makeDriverActiveOrder(order, order.requestedPrice),
+        currentScreen: 'driverOrders',
+        isMenuOpen: false,
+      }
+    }
+    case 'driverOrderNextStatus': {
+      if (!state.driverActiveOrder) return state
+
+      const nextStatus = nextDriverOrderStatus(state.driverActiveOrder.status)
+
+      return {
+        ...state,
+        driverActiveOrder: {
+          ...state.driverActiveOrder,
+          status: nextStatus,
+        },
+      }
+    }
+    case 'cancelDriverActiveOrder':
+      return {
+        ...state,
+        driverActiveOrder: state.driverActiveOrder
+          ? { ...state.driverActiveOrder, status: 'CANCELLED' }
+          : state.driverActiveOrder,
+      }
+    case 'clearCompletedDriverOrder':
+      return {
+        ...state,
+        driverActiveOrder: null,
+        currentScreen: 'driverDashboard',
       }
     case 'updateRideDraft':
       return { ...state, rideDraft: { ...state.rideDraft, ...action.patch } }
@@ -898,6 +1170,13 @@ const initialState: AppState = {
   parcelDraft: defaultParcelDraft(),
   driverApplicationDraft: defaultDriverApplicationDraft(),
   driverRegistrationStep: 1,
+  driverFeedOrders: defaultDriverFeedOrders(),
+  driverActiveOrder: null,
+  driverCounterOffers: [],
+  isDriverCounterOfferSheetOpen: false,
+  driverCounterOfferOrderId: null,
+  driverCounterOfferPrice: '',
+  driverCounterOfferComment: '',
   activeRideRequest: null,
   driverOffers: [],
   activeRide: null,
@@ -952,6 +1231,21 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         dispatch({ type: 'editDriverApplicationAfterChanges' }),
       toggleDriverOnlineStatus: () =>
         dispatch({ type: 'toggleDriverOnlineStatus' }),
+      openDriverCounterOfferSheet: (orderId) =>
+        dispatch({ type: 'openDriverCounterOfferSheet', orderId }),
+      closeDriverCounterOfferSheet: () =>
+        dispatch({ type: 'closeDriverCounterOfferSheet' }),
+      sendDriverCounterOffer: (price, comment) =>
+        dispatch({ type: 'sendDriverCounterOffer', price, comment }),
+      acceptDemoCounterOfferAsPassenger: (orderId) =>
+        dispatch({ type: 'acceptDemoCounterOfferAsPassenger', orderId }),
+      acceptDriverFeedOrder: (orderId) =>
+        dispatch({ type: 'acceptDriverFeedOrder', orderId }),
+      driverOrderNextStatus: () => dispatch({ type: 'driverOrderNextStatus' }),
+      cancelDriverActiveOrder: () =>
+        dispatch({ type: 'cancelDriverActiveOrder' }),
+      clearCompletedDriverOrder: () =>
+        dispatch({ type: 'clearCompletedDriverOrder' }),
       updateRideDraft: (patch) => dispatch({ type: 'updateRideDraft', patch }),
       updateParcelDraft: (patch) =>
         dispatch({ type: 'updateParcelDraft', patch }),

@@ -8,7 +8,7 @@ import {
 import type { LucideIcon } from 'lucide-react'
 
 import { cn } from '../../lib/cn'
-import { formatKzt } from '../../lib/format'
+import { formatKzt, formatRoute } from '../../lib/format'
 import { useAppActions, useAppState } from '../../providers/AppStateProvider'
 import { PageCard } from '../../shared/ui/PageCard'
 
@@ -42,6 +42,7 @@ export default function DriverDashboardPage() {
     driverProfile,
     driverApplicationDraft,
     driverRegistrationStep,
+    driverActiveOrder,
   } = useAppState()
   const actions = useAppActions()
 
@@ -309,6 +310,44 @@ export default function DriverDashboardPage() {
           </button>
         </div>
       </div>
+
+      {driverActiveOrder ? (
+        <div className="rounded-[28px] border border-accent/15 bg-accent/5 p-4">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">
+                Активный заказ
+              </p>
+              <p className="mt-2 text-sm font-semibold text-ink">
+                {formatRoute(driverActiveOrder.from, driverActiveOrder.to)}
+              </p>
+              <p className="mt-1 text-sm text-muted">
+                {driverActiveOrder.category === 'ride' ? 'Поездка' : 'Посылка'} · {driverActiveOrder.status}
+              </p>
+            </div>
+            <span className="rounded-full bg-accent/10 px-3 py-1 text-xs font-semibold text-accent">
+              {formatKzt(driverActiveOrder.price)}
+            </span>
+          </div>
+
+          <div className="mt-4 grid gap-2 sm:grid-cols-2">
+            <button
+              type="button"
+              onClick={() => actions.setScreen('driverOrders')}
+              className="rounded-2xl bg-accent px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-accent/20"
+            >
+              Открыть активный заказ
+            </button>
+            <button
+              type="button"
+              onClick={() => actions.setScreen('driverFeed')}
+              className="rounded-2xl border border-border bg-white px-4 py-3 text-sm font-semibold text-ink"
+            >
+              Открыть ленту заказов
+            </button>
+          </div>
+        </div>
+      ) : null}
 
       <div className="grid grid-cols-3 gap-2">
         <button
