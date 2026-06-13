@@ -1,6 +1,11 @@
-import { createContext, useContext, useReducer, type ReactNode } from 'react'
+/* eslint-disable react-refresh/only-export-components */
+
+import { createContext, useContext, useEffect, useReducer, useRef, type ReactNode } from 'react'
 
 import { defaultScreenByRole } from '../navigation/navigation'
+import { BackendAuthError } from '../shared/api/backend'
+import { getRideAccessToken, clearRideAccessToken } from '../shared/auth/tokenStorage'
+import { getPassengerMe, toRidePassengerProfile } from '../features/passenger/api/passenger.api'
 import type {
   ActiveRide,
   ActiveParcelStatus,
@@ -87,6 +92,7 @@ type AppContextValue = {
     setScreen: (screen: AppScreen) => void
     setRole: (role: UserRole, screen?: AppScreen) => void
     setPassengerStatus: (status: PassengerStatus) => void
+    logout: () => void
     setDriverVerificationStatus: (status: DriverVerificationStatus) => void
     setPendingPassengerFlow: (flow: PassengerFlow) => void
     startDriverRegistration: () => void
@@ -158,6 +164,7 @@ type AppAction =
   | { type: 'setScreen'; screen: AppScreen }
   | { type: 'setRole'; role: UserRole; screen: AppScreen }
   | { type: 'setPassengerStatus'; status: PassengerStatus }
+  | { type: 'resetPassengerSession' }
   | {
       type: 'setDriverVerificationStatus'
       status: DriverVerificationStatus
@@ -727,6 +734,20 @@ function appReducer(state: AppState, action: AppAction): AppState {
       }
     case 'setPassengerStatus':
       return { ...state, passengerStatus: action.status }
+    case 'resetPassengerSession':
+      return {
+        ...state,
+        passengerStatus: 'GUEST',
+        passengerProfile: null,
+        verifiedPhone: '',
+        pendingPassengerFlow: null,
+        isPhoneVerifySheetOpen: false,
+        isPassengerOnboardingOpen: false,
+        isPassengerRatingOpen: false,
+        currentScreen: defaultScreenByRole.passenger,
+        role: 'passenger',
+        isMenuOpen: false,
+      }
     case 'setDriverVerificationStatus':
       return {
         ...state,
@@ -1574,6 +1595,43 @@ const AppStateContext = createContext<AppContextValue | null>(null)
 
 export function AppStateProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(appReducer, initialState)
+  const didHydrateRef = useRef(false)
+
+  useEffect(() => {
+    if (didHydrateRef.current) return
+    didHydrateRef.current = true
+
+    if (!getRideAccessToken()) return
+
+    let cancelled = false
+
+    const hydratePassengerSession = async () => {
+      try {
+        const me = await getPassengerMe()
+
+        if (cancelled) return
+
+        const profile = toRidePassengerProfile(me)
+        dispatch({ type: 'setPassengerProfile', profile })
+
+        if (profile.phone) {
+          dispatch({ type: 'setVerifiedPhone', phone: profile.phone })
+        }
+      } catch (error) {
+        if (cancelled) return
+
+        if (error instanceof BackendAuthError) {
+          dispatch({ type: 'resetPassengerSession' })
+        }
+      }
+    }
+
+    void hydratePassengerSession()
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const value: AppContextValue = {
     state,
@@ -1586,6 +1644,10 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         dispatch({ type: 'setRole', role, screen }),
       setPassengerStatus: (status) =>
         dispatch({ type: 'setPassengerStatus', status }),
+      logout: () => {
+        clearRideAccessToken()
+        dispatch({ type: 'resetPassengerSession' })
+      },
       setDriverVerificationStatus: (status) =>
         dispatch({ type: 'setDriverVerificationStatus', status }),
       setPendingPassengerFlow: (flow) =>

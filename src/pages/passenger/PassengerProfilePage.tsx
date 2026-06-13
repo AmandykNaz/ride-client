@@ -1,11 +1,12 @@
-import { ShieldCheck } from 'lucide-react'
+import { LogOut, ShieldCheck } from 'lucide-react'
 
 import { formatKzt } from '../../lib/format'
 import { PageCard } from '../../shared/ui/PageCard'
-import { useAppState } from '../../providers/AppStateProvider'
+import { useAppActions, useAppState } from '../../providers/AppStateProvider'
 
 export default function PassengerProfilePage() {
   const { passengerStatus, passengerProfile } = useAppState()
+  const actions = useAppActions()
 
   return (
     <PageCard
@@ -15,11 +16,11 @@ export default function PassengerProfilePage() {
     >
       {passengerProfile ? (
         <div className="space-y-3 rounded-2xl bg-surface-soft p-4">
-          <div className="flex items-center gap-3">
-            <ShieldCheck className="h-5 w-5 text-accent" />
-            <div>
-              <p className="text-sm font-semibold text-ink">{passengerProfile.name}</p>
-              <p className="text-sm text-muted">{passengerProfile.phone}</p>
+        <div className="flex items-center gap-3">
+          <ShieldCheck className="h-5 w-5 text-accent" />
+          <div>
+            <p className="text-sm font-semibold text-ink">{passengerProfile.name}</p>
+            <p className="text-sm text-muted">{passengerProfile.phone}</p>
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3 text-sm">
@@ -43,16 +44,38 @@ export default function PassengerProfilePage() {
           <div className="rounded-2xl bg-white p-3 text-sm text-muted">
             Баланс не подключен. {formatKzt(0)}
           </div>
+          {passengerStatus !== 'GUEST' ? (
+            <button
+              type="button"
+              onClick={actions.logout}
+              className="inline-flex items-center gap-2 rounded-2xl border border-border bg-white px-4 py-3 text-sm font-semibold text-ink"
+            >
+              <LogOut className="h-4 w-4" />
+              Выйти
+            </button>
+          ) : null}
         </div>
       ) : (
-        <div className="flex items-center gap-3 rounded-2xl bg-surface-soft p-4">
-          <ShieldCheck className="h-5 w-5 text-accent" />
-          <div>
-            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">
-              PassengerStatus
-            </p>
-            <p className="mt-1 text-sm font-semibold text-ink">{passengerStatus}</p>
+        <div className="space-y-3 rounded-2xl bg-surface-soft p-4">
+          <div className="flex items-center gap-3">
+            <ShieldCheck className="h-5 w-5 text-accent" />
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">
+                PassengerStatus
+              </p>
+              <p className="mt-1 text-sm font-semibold text-ink">{passengerStatus}</p>
+            </div>
           </div>
+          {passengerStatus !== 'GUEST' ? (
+            <button
+              type="button"
+              onClick={actions.logout}
+              className="inline-flex items-center gap-2 rounded-2xl border border-border bg-white px-4 py-3 text-sm font-semibold text-ink"
+            >
+              <LogOut className="h-4 w-4" />
+              Выйти
+            </button>
+          ) : null}
         </div>
       )}
     </PageCard>

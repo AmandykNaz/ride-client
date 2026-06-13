@@ -1,32 +1,68 @@
 import { useState } from 'react'
 
 import { useAppActions, useAppState } from '../../../providers/AppStateProvider'
+import { BackendAuthError } from '../../../shared/api/backend'
+import {
+  toRidePassengerProfile,
+  updatePassengerMe,
+} from '../api/passenger.api'
 import { OverlaySheet } from '../../../shared/ui/OverlaySheet'
 
 export function PassengerOnboardingModal() {
-  const { isPassengerOnboardingOpen, verifiedPhone, pendingPassengerFlow } = useAppState()
+  const {
+    isPassengerOnboardingOpen,
+    verifiedPhone,
+    pendingPassengerFlow,
+    passengerProfile,
+  } = useAppState()
   const actions = useAppActions()
-  const [name, setName] = useState('')
-  const [city, setCity] = useState('')
+  const [name, setName] = useState(() => passengerProfile?.name || '')
+  const [city, setCity] = useState(() => passengerProfile?.city || '')
+  const [error, setError] = useState('')
+  const [isSaving, setIsSaving] = useState(false)
 
-  const handleContinue = () => {
-    if (!name.trim() || !city.trim()) return
+  const handleContinue = async () => {
+    const normalizedName = name.trim()
+    const normalizedCity = city.trim()
 
-    actions.setPassengerProfile({
-      id: `passenger-${Date.now()}`,
-      name: name.trim(),
-      phone: verifiedPhone,
-      city: city.trim(),
-      rating: 5,
-      tripsCount: 0,
-    })
-    actions.closePassengerOnboarding()
-    if (pendingPassengerFlow === 'parcel') {
-      actions.startParcelSearch()
+    if (!normalizedName || !normalizedCity) {
+      setError('Заполните имя и город.')
       return
     }
 
-    actions.startRideSearch()
+    setError('')
+    setIsSaving(true)
+
+    try {
+      const response = await updatePassengerMe({
+        name: normalizedName,
+        city: normalizedCity,
+      })
+
+      const profile = toRidePassengerProfile(response, verifiedPhone || passengerProfile?.phone || '')
+
+      actions.setVerifiedPhone(profile.phone || verifiedPhone)
+      actions.setPassengerProfile(profile)
+      actions.closePassengerOnboarding()
+
+      if (pendingPassengerFlow === 'parcel') {
+        actions.startParcelSearch()
+        return
+      }
+
+      if (pendingPassengerFlow === 'ride') {
+        actions.startRideSearch()
+      }
+    } catch (saveError) {
+      if (saveError instanceof BackendAuthError) {
+        actions.logout()
+        return
+      }
+
+      setError(saveError instanceof Error ? saveError.message : 'Не удалось сохранить профиль.')
+    } finally {
+      setIsSaving(false)
+    }
   }
 
   return (
@@ -59,12 +95,15 @@ export function PassengerOnboardingModal() {
           Фото можно добавить позже
         </p>
 
+        {error ? <p className="rounded-2xl bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p> : null}
+
         <button
           type="button"
           onClick={handleContinue}
-          className="w-full rounded-2xl bg-accent px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-accent/20"
+          className="w-full rounded-2xl bg-accent px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-accent/20 disabled:opacity-60"
+          disabled={isSaving}
         >
-          Продолжить
+          {isSaving ? 'Сохраняем...' : 'Продолжить'}
         </button>
       </div>
     </OverlaySheet>
