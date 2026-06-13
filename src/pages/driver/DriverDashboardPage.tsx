@@ -44,6 +44,8 @@ export default function DriverDashboardPage() {
     driverRegistrationStep,
     driverActiveOrder,
     driverWallet,
+    driverFlowError,
+    isDriverActionLoading,
   } = useAppState()
   const actions = useAppActions()
 
@@ -231,6 +233,12 @@ export default function DriverDashboardPage() {
       title="Кабинет водителя"
       description="Ваш профиль подтверждён. Можно включать онлайн-режим и пользоваться кабинетом."
     >
+      {driverFlowError ? (
+        <div className="rounded-2xl bg-red-50 px-4 py-3 text-sm text-red-700">
+          {driverFlowError}
+        </div>
+      ) : null}
+
       <StatusRow icon={BadgeCheck} title="Статус" value="Проверен" />
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="rounded-2xl bg-surface-soft p-4">
@@ -327,11 +335,13 @@ export default function DriverDashboardPage() {
           <button
             type="button"
             onClick={actions.toggleDriverOnlineStatus}
+            disabled={isDriverActionLoading}
             className={cn(
               'rounded-2xl px-4 py-3 text-sm font-semibold',
               driverProfile?.isOnline
                 ? 'bg-emerald-100 text-emerald-700'
                 : 'bg-slate-100 text-slate-700',
+              isDriverActionLoading && 'cursor-not-allowed opacity-60',
             )}
           >
             {driverProfile?.isOnline ? 'Онлайн' : 'Оффлайн'}

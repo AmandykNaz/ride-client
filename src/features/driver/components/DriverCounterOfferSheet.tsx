@@ -11,6 +11,7 @@ export function DriverCounterOfferSheet() {
     driverCounterOffers,
     isDriverCounterOfferSheetOpen,
     driverCounterOfferOrderId,
+    isDriverActionLoading,
   } = useAppState()
   const actions = useAppActions()
   const selectedOrder = useMemo(
@@ -35,7 +36,9 @@ export function DriverCounterOfferSheet() {
         key={`${selectedOrder.id}:${selectedCounterOffer?.offeredPrice ?? selectedOrder.requestedPrice}:${selectedCounterOffer?.comment ?? ''}`}
         selectedOrder={selectedOrder}
         selectedCounterOffer={selectedCounterOffer}
+        isDriverActionLoading={isDriverActionLoading}
         onClose={actions.closeDriverCounterOfferSheet}
+        onWithdrawOffer={(offerId) => actions.withdrawDriverOffer(offerId)}
         onAcceptDemoCounterOffer={() =>
           actions.acceptDemoCounterOfferAsPassenger(selectedOrder.id)
         }
@@ -58,13 +61,17 @@ export function DriverCounterOfferSheet() {
 function CounterOfferForm({
   selectedOrder,
   selectedCounterOffer,
+  isDriverActionLoading,
   onClose,
+  onWithdrawOffer,
   onAcceptDemoCounterOffer,
   onSubmit,
 }: {
   selectedOrder: DriverFeedOrder
   selectedCounterOffer: DriverCounterOffer | null
+  isDriverActionLoading: boolean
   onClose: () => void
+  onWithdrawOffer: (offerId: string) => Promise<void>
   onAcceptDemoCounterOffer: () => void
   onSubmit: (price: string, comment: string, setError: (value: string) => void) => void
 }) {
@@ -118,13 +125,26 @@ function CounterOfferForm({
       {error ? <div className="rounded-2xl bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div> : null}
 
       {selectedCounterOffer?.status === 'pending' ? (
-        <button
-          type="button"
-          onClick={onAcceptDemoCounterOffer}
-          className="w-full rounded-2xl border border-accent/20 bg-accent/10 px-4 py-3 text-sm font-semibold text-accent"
-        >
-          Пассажир принял предложение
-        </button>
+        <div className="space-y-2">
+          <button
+            type="button"
+            onClick={onAcceptDemoCounterOffer}
+            className="w-full rounded-2xl border border-accent/20 bg-accent/10 px-4 py-3 text-sm font-semibold text-accent"
+          >
+            Пассажир принял предложение
+          </button>
+          <button
+            type="button"
+            disabled={isDriverActionLoading}
+            onClick={async () => {
+              await onWithdrawOffer(selectedCounterOffer.id)
+              onClose()
+            }}
+            className="w-full rounded-2xl border border-border bg-white px-4 py-3 text-sm font-semibold text-ink disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            Отозвать предложение
+          </button>
+        </div>
       ) : null}
 
       <div className="grid grid-cols-2 gap-2">

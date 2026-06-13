@@ -21,7 +21,13 @@ function getNextActionLabel(category: 'ride' | 'parcel', status: string) {
 }
 
 export default function DriverActiveOrderPage() {
-  const { driverActiveOrder, driverVerificationStatus, driverWallet } = useAppState()
+  const {
+    driverActiveOrder,
+    driverVerificationStatus,
+    driverWallet,
+    isDriverActionLoading,
+    driverFlowError,
+  } = useAppState()
   const actions = useAppActions()
 
   if (driverVerificationStatus !== 'APPROVED') {
@@ -74,6 +80,12 @@ export default function DriverActiveOrderPage() {
       title="Активный заказ"
       description="Управляйте статусами заказа без списания комиссии."
     >
+      {driverFlowError ? (
+        <div className="rounded-2xl bg-red-50 px-4 py-3 text-sm text-red-700">
+          {driverFlowError}
+        </div>
+      ) : null}
+
       <div className="rounded-2xl bg-surface-soft p-4">
         <div className="flex items-start justify-between gap-3">
           <div>
@@ -198,6 +210,7 @@ export default function DriverActiveOrderPage() {
             <button
               type="button"
               onClick={actions.driverOrderNextStatus}
+              disabled={isDriverActionLoading}
               className="rounded-2xl bg-accent px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-accent/20"
             >
               {nextActionLabel}
@@ -205,6 +218,7 @@ export default function DriverActiveOrderPage() {
             <button
               type="button"
               onClick={actions.cancelDriverActiveOrder}
+              disabled={isDriverActionLoading}
               className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700"
             >
               Отменить заказ

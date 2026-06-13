@@ -64,7 +64,7 @@ function Field({
 }
 
 export default function DriverRegistrationPage() {
-  const { driverApplicationDraft, driverRegistrationStep } = useAppState()
+  const { driverApplicationDraft, driverRegistrationStep, driverFlowError, isDriverActionLoading } = useAppState()
   const actions = useAppActions()
 
   const allRequiredDocsReady = requiredDocumentKeys.every(
@@ -110,7 +110,7 @@ export default function DriverRegistrationPage() {
         onClick={
           step === 5 ? actions.submitDriverApplication : actions.nextDriverRegistrationStep
         }
-        disabled={!canContinue}
+        disabled={!canContinue || isDriverActionLoading}
         className="flex-1 rounded-2xl bg-accent px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-accent/20 disabled:cursor-not-allowed disabled:opacity-60"
       >
         <span className="inline-flex items-center gap-2">
@@ -128,6 +128,12 @@ export default function DriverRegistrationPage() {
         title="Стать водителем AmanJol"
         description="Коротко о том, как работает водительский профиль в демо-прототипе."
       >
+        {driverFlowError ? (
+          <div className="rounded-2xl bg-red-50 px-4 py-3 text-sm text-red-700">
+            {driverFlowError}
+          </div>
+        ) : null}
+
         {stepButtons}
         <div className="space-y-3 rounded-2xl bg-surface-soft p-4 text-sm text-ink">
           <p>• зарабатывайте на межгороде</p>

@@ -33,6 +33,9 @@ export default function DriverFeedPage() {
     driverProfile,
     driverWallet,
     driverActiveOrder,
+    isDriverFeedLoading,
+    isDriverActionLoading,
+    driverFlowError,
   } = useAppState()
   const actions = useAppActions()
   const [feedFilter, setFeedFilter] = useState<FeedFilter>('all')
@@ -122,6 +125,18 @@ export default function DriverFeedPage() {
         title="Лента заказов"
         description="Заявки в демо-режиме. Комиссия пока только preview."
       >
+        {driverFlowError ? (
+          <div className="rounded-2xl bg-red-50 px-4 py-3 text-sm text-red-700">
+            {driverFlowError}
+          </div>
+        ) : null}
+
+        {isDriverFeedLoading ? (
+          <div className="rounded-2xl bg-surface-soft px-4 py-3 text-sm text-muted">
+            Загружаем ленту заказов...
+          </div>
+        ) : null}
+
         <div className="grid gap-3 sm:grid-cols-3">
           <div className="rounded-2xl bg-surface-soft p-4">
             <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">
@@ -177,11 +192,13 @@ export default function DriverFeedPage() {
         <button
           type="button"
           onClick={actions.toggleDriverOnlineStatus}
+          disabled={isDriverActionLoading}
           className={cn(
             'w-full rounded-2xl px-4 py-3 text-sm font-semibold',
             driverProfile?.isOnline
               ? 'bg-emerald-100 text-emerald-700'
               : 'bg-slate-100 text-slate-700',
+            isDriverActionLoading && 'cursor-not-allowed opacity-60',
           )}
         >
           {driverProfile?.isOnline ? 'Сейчас онлайн' : 'Сейчас оффлайн'}

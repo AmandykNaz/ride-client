@@ -1,6 +1,6 @@
 /* eslint-disable react-refresh/only-export-components */
 
-import { createContext, useContext, useEffect, useReducer, useRef, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useReducer, useRef, type ReactNode } from 'react'
 
 import { defaultScreenByRole } from '../navigation/navigation'
 import { BackendAuthError } from '../shared/api/backend'
@@ -19,6 +19,21 @@ import {
   mapOrderToActiveRide,
   rejectRideOffer,
 } from '../features/passenger/api/passenger-rides.api'
+import {
+  acceptRideRequestPrice,
+  counterOfferRideRequest,
+  createDriverApplication,
+  getActiveDriverOrder,
+  getDriverFeed,
+  getDriverMe,
+  getDriverOffers,
+  getDriverOrders,
+  submitDriverApplication as submitDriverApplicationApi,
+  setDriverOnline as setDriverOnlineApi,
+  updateDriverApplication,
+  updateDriverOrderStatus,
+  withdrawDriverOffer as withdrawDriverOfferApi,
+} from '../features/driver/api/driver.api'
 import type {
   RideOrder as PassengerRideOrder,
   RideOrderEvent as PassengerRideOrderEvent,
@@ -73,12 +88,16 @@ type AppState = {
   driverRegistrationStep: DriverApplicationStep
   driverWallet: DriverWallet
   driverFeedOrders: DriverFeedOrder[]
+  driverOrders: DriverActiveOrder[]
   driverActiveOrder: DriverActiveOrder | null
   driverCounterOffers: DriverCounterOffer[]
   isDriverCounterOfferSheetOpen: boolean
   driverCounterOfferOrderId: string | null
   driverCounterOfferPrice: string
   driverCounterOfferComment: string
+  isDriverFeedLoading: boolean
+  isDriverActionLoading: boolean
+  driverFlowError: string | null
   isTopUpFormOpen: boolean
   topUpForm: {
     amount: string
@@ -139,6 +158,11 @@ type AppContextValue = {
     editDriverApplicationAfterChanges: () => void
     toggleDriverOnlineStatus: () => void
     setDriverOnline: (online: boolean) => void
+    refreshDriverSnapshot: () => Promise<void>
+    refreshDriverFeed: () => Promise<void>
+    refreshDriverOffers: () => Promise<void>
+    refreshDriverOrders: () => Promise<void>
+    withdrawDriverOffer: (offerId: string) => Promise<void>
     openTopUpForm: () => void
     closeTopUpForm: () => void
     updateTopUpForm: (patch: Partial<AppState['topUpForm']>) => void
@@ -204,9 +228,27 @@ type AppAction =
   | { type: 'setRideOffersLoading'; loading: boolean }
   | { type: 'setRideActionLoading'; loading: boolean }
   | { type: 'setRideFlowError'; error: string | null }
+  | { type: 'setDriverFeedLoading'; loading: boolean }
+  | { type: 'setDriverActionLoading'; loading: boolean }
+  | { type: 'setDriverFlowError'; error: string | null }
   | { type: 'setPassengerRideRequests'; requests: PassengerRideRequest[] }
   | { type: 'setPassengerRideOrders'; orders: PassengerRideOrder[] }
   | { type: 'setActiveRideEvents'; events: PassengerRideOrderEvent[] }
+  | {
+      type: 'setDriverSnapshot'
+      driverVerificationStatus: DriverVerificationStatus
+      driverProfile: DriverProfile | null
+      driverApplicationDraft: DriverApplicationDraft
+      driverFeedOrders: DriverFeedOrder[]
+      driverOrders: DriverActiveOrder[]
+      driverCounterOffers: DriverCounterOffer[]
+      driverActiveOrder: DriverActiveOrder | null
+      currentScreen?: AppScreen
+    }
+  | { type: 'setDriverFeedOrders'; orders: DriverFeedOrder[] }
+  | { type: 'setDriverCounterOffers'; offers: DriverCounterOffer[] }
+  | { type: 'setDriverOrders'; orders: DriverActiveOrder[] }
+  | { type: 'setDriverActiveOrder'; order: DriverActiveOrder | null; currentScreen?: AppScreen }
   | {
       type: 'setPassengerRideSnapshot'
       passengerRideRequests: PassengerRideRequest[]
@@ -852,6 +894,22 @@ function appReducer(state: AppState, action: AppAction): AppState {
         ...state,
         passengerStatus: 'GUEST',
         passengerProfile: null,
+        driverVerificationStatus: 'NOT_STARTED',
+        driverProfile: null,
+        driverApplicationDraft: defaultDriverApplicationDraft(),
+        driverRegistrationStep: 1,
+        driverFeedOrders: defaultDriverFeedOrders(),
+        driverOrders: [],
+        driverActiveOrder: null,
+        driverCounterOffers: [],
+        isDriverCounterOfferSheetOpen: false,
+        driverCounterOfferOrderId: null,
+        driverCounterOfferPrice: '',
+        driverCounterOfferComment: '',
+        isDriverFeedLoading: false,
+        isDriverActionLoading: false,
+        driverFlowError: null,
+        driverWallet: defaultDriverWallet(),
         verifiedPhone: '',
         pendingPassengerFlow: null,
         passengerRideRequests: [],
@@ -885,12 +943,43 @@ function appReducer(state: AppState, action: AppAction): AppState {
       return { ...state, isRideActionLoading: action.loading }
     case 'setRideFlowError':
       return { ...state, rideFlowError: action.error }
+    case 'setDriverFeedLoading':
+      return { ...state, isDriverFeedLoading: action.loading }
+    case 'setDriverActionLoading':
+      return { ...state, isDriverActionLoading: action.loading }
+    case 'setDriverFlowError':
+      return { ...state, driverFlowError: action.error }
     case 'setPassengerRideRequests':
       return { ...state, passengerRideRequests: action.requests }
     case 'setPassengerRideOrders':
       return { ...state, passengerRideOrders: action.orders }
     case 'setActiveRideEvents':
       return { ...state, activeRideEvents: action.events }
+    case 'setDriverSnapshot':
+      return {
+        ...state,
+        driverVerificationStatus: action.driverVerificationStatus,
+        driverProfile: action.driverProfile,
+        driverApplicationDraft: action.driverApplicationDraft,
+        driverFeedOrders: action.driverFeedOrders,
+        driverOrders: action.driverOrders,
+        driverCounterOffers: action.driverCounterOffers,
+        driverActiveOrder: action.driverActiveOrder,
+        currentScreen: action.currentScreen ?? state.currentScreen,
+        driverFlowError: null,
+      }
+    case 'setDriverFeedOrders':
+      return { ...state, driverFeedOrders: action.orders }
+    case 'setDriverCounterOffers':
+      return { ...state, driverCounterOffers: action.offers }
+    case 'setDriverOrders':
+      return { ...state, driverOrders: action.orders }
+    case 'setDriverActiveOrder':
+      return {
+        ...state,
+        driverActiveOrder: action.order,
+        currentScreen: action.currentScreen ?? state.currentScreen,
+      }
     case 'setPassengerRideSnapshot':
       return {
         ...state,
@@ -1717,12 +1806,16 @@ const initialState: AppState = {
   driverRegistrationStep: 1,
   driverWallet: defaultDriverWallet(),
   driverFeedOrders: defaultDriverFeedOrders(),
+  driverOrders: [],
   driverActiveOrder: null,
   driverCounterOffers: [],
   isDriverCounterOfferSheetOpen: false,
   driverCounterOfferOrderId: null,
   driverCounterOfferPrice: '',
   driverCounterOfferComment: '',
+  isDriverFeedLoading: false,
+  isDriverActionLoading: false,
+  driverFlowError: null,
   isTopUpFormOpen: false,
   topUpForm: {
     amount: '',
@@ -1760,6 +1853,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(appReducer, initialState)
   const didHydrateRef = useRef(false)
   const loadedRideTokenRef = useRef<string | null>(null)
+  const loadedDriverTokenRef = useRef<string | null>(null)
+  const driverApplicationIdRef = useRef<string | null>(null)
 
   const refreshPassengerRideSnapshot = async () => {
     const token = getRideAccessToken()
@@ -1994,6 +2089,9 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
   const logoutPassengerSession = () => {
     clearRideAccessToken()
+    loadedRideTokenRef.current = null
+    loadedDriverTokenRef.current = null
+    driverApplicationIdRef.current = null
     dispatch({ type: 'resetPassengerSession' })
   }
 
@@ -2155,6 +2253,552 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  const refreshDriverFeed = useCallback(async (force = false) => {
+    if (!force && (state.driverVerificationStatus !== 'APPROVED' || !state.driverProfile?.isOnline)) {
+      return
+    }
+
+    dispatch({ type: 'setDriverFeedLoading', loading: true })
+    dispatch({ type: 'setDriverFlowError', error: null })
+
+    try {
+      const response = await getDriverFeed()
+      dispatch({ type: 'setDriverFeedOrders', orders: response.items })
+    } catch (error) {
+      if (error instanceof BackendAuthError) {
+        clearRideAccessToken()
+        dispatch({ type: 'resetPassengerSession' })
+        return
+      }
+
+      dispatch({
+        type: 'setDriverFlowError',
+        error: error instanceof Error ? error.message : 'Не удалось загрузить ленту водителя.',
+      })
+    } finally {
+      dispatch({ type: 'setDriverFeedLoading', loading: false })
+    }
+  }, [dispatch, state.driverProfile?.isOnline, state.driverVerificationStatus])
+
+  const refreshDriverOffers = useCallback(async (force = false) => {
+    if (!force && state.driverVerificationStatus !== 'APPROVED') {
+      return
+    }
+
+    try {
+      const response = await getDriverOffers()
+      dispatch({ type: 'setDriverCounterOffers', offers: response.items })
+    } catch (error) {
+      if (error instanceof BackendAuthError) {
+        clearRideAccessToken()
+        dispatch({ type: 'resetPassengerSession' })
+        return
+      }
+
+      dispatch({
+        type: 'setDriverFlowError',
+        error: error instanceof Error ? error.message : 'Не удалось загрузить предложения водителя.',
+      })
+    }
+  }, [dispatch, state.driverVerificationStatus])
+
+  const refreshDriverOrders = useCallback(async (force = false) => {
+    if (!force && state.driverVerificationStatus !== 'APPROVED') {
+      return
+    }
+
+    try {
+      const [ordersResponse, activeOrderResponse] = await Promise.all([
+        getDriverOrders(),
+        getActiveDriverOrder().catch(() => null),
+      ])
+
+      const activeOrder =
+        (activeOrderResponse &&
+        activeOrderResponse.status !== 'COMPLETED' &&
+        activeOrderResponse.status !== 'CANCELLED'
+          ? activeOrderResponse
+          : null) ??
+        ordersResponse.items.find(
+          (item) => item.status !== 'COMPLETED' && item.status !== 'CANCELLED',
+        ) ??
+        (state.driverActiveOrder &&
+        (state.driverActiveOrder.status === 'COMPLETED' || state.driverActiveOrder.status === 'CANCELLED')
+          ? state.driverActiveOrder
+          : null)
+
+      dispatch({ type: 'setDriverOrders', orders: ordersResponse.items })
+      dispatch({
+        type: 'setDriverActiveOrder',
+        order: activeOrder,
+        currentScreen:
+          activeOrder && state.currentScreen !== 'driverOrders'
+            ? 'driverOrders'
+            : state.currentScreen,
+      })
+    } catch (error) {
+      if (error instanceof BackendAuthError) {
+        clearRideAccessToken()
+        dispatch({ type: 'resetPassengerSession' })
+        return
+      }
+
+      dispatch({
+        type: 'setDriverFlowError',
+        error: error instanceof Error ? error.message : 'Не удалось загрузить заказы водителя.',
+      })
+    }
+  }, [dispatch, state.currentScreen, state.driverActiveOrder, state.driverVerificationStatus])
+
+  const refreshDriverSnapshot = useCallback(async () => {
+    const token = getRideAccessToken()
+
+    if (!token) {
+      loadedDriverTokenRef.current = null
+      return
+    }
+
+    try {
+      const me = await getDriverMe()
+      driverApplicationIdRef.current = me.applicationId ?? me.application?.id ?? null
+
+      const verificationStatus =
+        me.verificationStatus === 'NOT_STARTED' && state.driverVerificationStatus === 'DRAFT'
+          ? 'DRAFT'
+          : me.verificationStatus
+
+      dispatch({
+        type: 'setDriverSnapshot',
+        driverVerificationStatus: verificationStatus,
+        driverProfile: me.profile
+          ? {
+              ...me.profile,
+              verificationStatus,
+              isOnline: me.isOnline,
+            }
+          : state.driverProfile,
+        driverApplicationDraft: me.application ?? state.driverApplicationDraft,
+        driverFeedOrders: state.driverFeedOrders,
+        driverOrders: state.driverOrders,
+        driverCounterOffers: state.driverCounterOffers,
+        driverActiveOrder: state.driverActiveOrder,
+        currentScreen: state.currentScreen,
+      })
+
+      if (verificationStatus === 'APPROVED') {
+        await Promise.all([
+          refreshDriverFeed(true),
+          refreshDriverOffers(true),
+          refreshDriverOrders(true),
+        ])
+      }
+    } catch (error) {
+      if (error instanceof BackendAuthError) {
+        clearRideAccessToken()
+        dispatch({ type: 'resetPassengerSession' })
+        return
+      }
+
+      dispatch({
+        type: 'setDriverFlowError',
+        error: error instanceof Error ? error.message : 'Не удалось загрузить driver state.',
+      })
+    }
+  }, [
+    dispatch,
+    refreshDriverFeed,
+    refreshDriverOffers,
+    refreshDriverOrders,
+    state.currentScreen,
+    state.driverActiveOrder,
+    state.driverApplicationDraft,
+    state.driverCounterOffers,
+    state.driverFeedOrders,
+    state.driverOrders,
+    state.driverProfile,
+    state.driverVerificationStatus,
+  ])
+
+  const saveDriverApplication = async () => {
+    const application = state.driverApplicationDraft
+    const shouldUpdate = Boolean(driverApplicationIdRef.current)
+
+    if (shouldUpdate) {
+      await updateDriverApplication(application)
+      return
+    }
+
+    const created = await createDriverApplication(application)
+    driverApplicationIdRef.current = created.applicationId ?? created.application?.id ?? null
+  }
+
+  const submitDriverApplicationAction = async () => {
+    dispatch({ type: 'setDriverActionLoading', loading: true })
+    dispatch({ type: 'setDriverFlowError', error: null })
+
+    try {
+      await saveDriverApplication()
+      const submitted = await submitDriverApplicationApi()
+      driverApplicationIdRef.current = submitted.applicationId ?? submitted.application?.id ?? driverApplicationIdRef.current
+
+      dispatch({
+        type: 'setDriverSnapshot',
+        driverVerificationStatus: submitted.verificationStatus,
+        driverProfile: submitted.profile ?? state.driverProfile,
+        driverApplicationDraft: submitted.application ?? state.driverApplicationDraft,
+        driverFeedOrders: state.driverFeedOrders,
+        driverOrders: state.driverOrders,
+        driverCounterOffers: state.driverCounterOffers,
+        driverActiveOrder: state.driverActiveOrder,
+        currentScreen: 'driverDashboard',
+      })
+
+      void refreshDriverSnapshot()
+    } catch (error) {
+      if (error instanceof BackendAuthError) {
+        clearRideAccessToken()
+        dispatch({ type: 'resetPassengerSession' })
+        return
+      }
+
+      dispatch({
+        type: 'setDriverFlowError',
+        error: error instanceof Error ? error.message : 'Не удалось отправить заявку водителя.',
+      })
+    } finally {
+      dispatch({ type: 'setDriverActionLoading', loading: false })
+    }
+  }
+
+  const toggleDriverOnlineStatusAction = async () => {
+    if (!state.driverProfile) return
+
+    dispatch({ type: 'setDriverActionLoading', loading: true })
+    dispatch({ type: 'setDriverFlowError', error: null })
+
+    try {
+      const result = await setDriverOnlineApi(!state.driverProfile.isOnline)
+      dispatch({
+        type: 'setDriverSnapshot',
+        driverVerificationStatus: result.verificationStatus,
+        driverProfile: result.profile ?? state.driverProfile,
+        driverApplicationDraft: result.application ?? state.driverApplicationDraft,
+        driverFeedOrders: state.driverFeedOrders,
+        driverOrders: state.driverOrders,
+        driverCounterOffers: state.driverCounterOffers,
+        driverActiveOrder: state.driverActiveOrder,
+        currentScreen: state.currentScreen,
+      })
+
+      if (result.isOnline) {
+        void refreshDriverFeed(true)
+      }
+    } catch (error) {
+      if (error instanceof BackendAuthError) {
+        clearRideAccessToken()
+        dispatch({ type: 'resetPassengerSession' })
+        return
+      }
+
+      dispatch({
+        type: 'setDriverFlowError',
+        error: error instanceof Error ? error.message : 'Не удалось обновить online статус.',
+      })
+    } finally {
+      dispatch({ type: 'setDriverActionLoading', loading: false })
+    }
+  }
+
+  const setDriverOnlineAction = async (online: boolean) => {
+    if (!state.driverProfile) return
+    if (state.driverProfile.isOnline === online) return
+
+    dispatch({ type: 'setDriverActionLoading', loading: true })
+    dispatch({ type: 'setDriverFlowError', error: null })
+
+    try {
+      const result = await setDriverOnlineApi(online)
+      dispatch({
+        type: 'setDriverSnapshot',
+        driverVerificationStatus: result.verificationStatus,
+        driverProfile: result.profile ?? state.driverProfile,
+        driverApplicationDraft: result.application ?? state.driverApplicationDraft,
+        driverFeedOrders: state.driverFeedOrders,
+        driverOrders: state.driverOrders,
+        driverCounterOffers: state.driverCounterOffers,
+        driverActiveOrder: state.driverActiveOrder,
+        currentScreen: state.currentScreen,
+      })
+
+      if (result.isOnline) {
+        void refreshDriverFeed(true)
+      }
+    } catch (error) {
+      if (error instanceof BackendAuthError) {
+        clearRideAccessToken()
+        dispatch({ type: 'resetPassengerSession' })
+        return
+      }
+
+      dispatch({
+        type: 'setDriverFlowError',
+        error: error instanceof Error ? error.message : 'Не удалось обновить online статус.',
+      })
+    } finally {
+      dispatch({ type: 'setDriverActionLoading', loading: false })
+    }
+  }
+
+  const acceptDriverFeedOrderAction = async (orderId: string) => {
+    if (state.driverActiveOrder || !canAccessDriverOrders(state)) return
+
+    dispatch({ type: 'setDriverActionLoading', loading: true })
+    dispatch({ type: 'setDriverFlowError', error: null })
+
+    try {
+      const accepted = await acceptRideRequestPrice(orderId)
+      const activeOrder = await getActiveDriverOrder().catch(() => accepted)
+      dispatch({
+        type: 'setDriverFeedOrders',
+        orders: state.driverFeedOrders.filter((item) => item.id !== orderId),
+      })
+      dispatch({
+        type: 'setDriverActiveOrder',
+        order: activeOrder ?? accepted,
+        currentScreen: 'driverOrders',
+      })
+
+      void refreshDriverFeed(true)
+      void refreshDriverOffers(true)
+      void refreshDriverOrders(true)
+    } catch (error) {
+      if (error instanceof BackendAuthError) {
+        clearRideAccessToken()
+        dispatch({ type: 'resetPassengerSession' })
+        return
+      }
+
+      dispatch({
+        type: 'setDriverFlowError',
+        error: error instanceof Error ? error.message : 'Не удалось принять заказ.',
+      })
+    } finally {
+      dispatch({ type: 'setDriverActionLoading', loading: false })
+    }
+  }
+
+  const sendDriverCounterOfferAction = async (price: number, comment: string) => {
+    if (!state.driverCounterOfferOrderId || !canAccessDriverOrders(state) || state.driverActiveOrder) return
+
+    dispatch({ type: 'setDriverActionLoading', loading: true })
+    dispatch({ type: 'setDriverFlowError', error: null })
+
+    try {
+      const offer = await counterOfferRideRequest(state.driverCounterOfferOrderId, {
+        price,
+        comment,
+      })
+
+      dispatch({
+        type: 'setDriverFeedOrders',
+        orders: state.driverFeedOrders.map((item) =>
+          item.id === state.driverCounterOfferOrderId ? { ...item, status: 'offered' } : item,
+        ),
+      })
+      dispatch({
+        type: 'setDriverCounterOffers',
+        offers: [
+          ...state.driverCounterOffers.filter((item) => item.orderId !== state.driverCounterOfferOrderId),
+          offer,
+        ],
+      })
+
+      void refreshDriverFeed(true)
+      void refreshDriverOffers(true)
+    } catch (error) {
+      if (error instanceof BackendAuthError) {
+        clearRideAccessToken()
+        dispatch({ type: 'resetPassengerSession' })
+        return
+      }
+
+      dispatch({
+        type: 'setDriverFlowError',
+        error: error instanceof Error ? error.message : 'Не удалось отправить counter offer.',
+      })
+    } finally {
+      dispatch({ type: 'setDriverActionLoading', loading: false })
+    }
+  }
+
+  const withdrawDriverOfferAction = async (offerId: string) => {
+    dispatch({ type: 'setDriverActionLoading', loading: true })
+    dispatch({ type: 'setDriverFlowError', error: null })
+
+    try {
+      await withdrawDriverOfferApi(offerId)
+      dispatch({
+        type: 'setDriverCounterOffers',
+        offers: state.driverCounterOffers.filter((item) => item.id !== offerId),
+      })
+
+      void refreshDriverFeed(true)
+      void refreshDriverOffers(true)
+    } catch (error) {
+      if (error instanceof BackendAuthError) {
+        clearRideAccessToken()
+        dispatch({ type: 'resetPassengerSession' })
+        return
+      }
+
+      dispatch({
+        type: 'setDriverFlowError',
+        error: error instanceof Error ? error.message : 'Не удалось отозвать предложение.',
+      })
+    } finally {
+      dispatch({ type: 'setDriverActionLoading', loading: false })
+    }
+  }
+
+  const driverOrderNextStatusAction = async () => {
+    if (!state.driverActiveOrder) return
+
+    const nextStatus =
+      state.driverActiveOrder.status === 'GOING_TO_CLIENT'
+        ? 'DRIVER_ARRIVED'
+        : state.driverActiveOrder.status === 'ARRIVED'
+          ? 'IN_PROGRESS'
+          : state.driverActiveOrder.status === 'IN_PROGRESS'
+            ? 'COMPLETED'
+            : null
+
+    if (!nextStatus) return
+
+    dispatch({ type: 'setDriverActionLoading', loading: true })
+    dispatch({ type: 'setDriverFlowError', error: null })
+
+    try {
+      const updated = await updateDriverOrderStatus(state.driverActiveOrder.id, {
+        status: nextStatus,
+      })
+
+      dispatch({
+        type: 'setDriverOrders',
+        orders: state.driverOrders.map((item) =>
+          item.id === state.driverActiveOrder?.id ? updated : item,
+        ),
+      })
+      dispatch({ type: 'setDriverActiveOrder', order: updated })
+
+      void refreshDriverOrders(true)
+    } catch (error) {
+      if (error instanceof BackendAuthError) {
+        clearRideAccessToken()
+        dispatch({ type: 'resetPassengerSession' })
+        return
+      }
+
+      dispatch({
+        type: 'setDriverFlowError',
+        error: error instanceof Error ? error.message : 'Не удалось обновить статус заказа.',
+      })
+    } finally {
+      dispatch({ type: 'setDriverActionLoading', loading: false })
+    }
+  }
+
+  const cancelDriverActiveOrderAction = async () => {
+    if (!state.driverActiveOrder) return
+
+    dispatch({ type: 'setDriverActionLoading', loading: true })
+    dispatch({ type: 'setDriverFlowError', error: null })
+
+    try {
+      const updated = await updateDriverOrderStatus(state.driverActiveOrder.id, {
+        status: 'CANCELLED',
+      })
+
+      dispatch({
+        type: 'setDriverOrders',
+        orders: state.driverOrders.map((item) =>
+          item.id === state.driverActiveOrder?.id ? updated : item,
+        ),
+      })
+      dispatch({ type: 'setDriverActiveOrder', order: updated })
+
+      void refreshDriverOrders(true)
+    } catch (error) {
+      if (error instanceof BackendAuthError) {
+        clearRideAccessToken()
+        dispatch({ type: 'resetPassengerSession' })
+        return
+      }
+
+      dispatch({
+        type: 'setDriverFlowError',
+        error: error instanceof Error ? error.message : 'Не удалось отменить заказ.',
+      })
+    } finally {
+      dispatch({ type: 'setDriverActionLoading', loading: false })
+    }
+  }
+
+  useEffect(() => {
+    const token = getRideAccessToken()
+
+    if (!token || state.role !== 'driver') {
+      loadedDriverTokenRef.current = null
+      driverApplicationIdRef.current = null
+      return
+    }
+
+    if (loadedDriverTokenRef.current === token) {
+      return
+    }
+
+    loadedDriverTokenRef.current = token
+    void refreshDriverSnapshot()
+  }, [state.role, refreshDriverSnapshot])
+
+  useEffect(() => {
+    if (state.role !== 'driver' || state.driverVerificationStatus !== 'APPROVED') {
+      return
+    }
+
+    void refreshDriverOffers(true)
+    void refreshDriverOrders(true)
+
+    if (state.driverProfile?.isOnline) {
+      void refreshDriverFeed(true)
+    }
+
+    const feedInterval = state.driverProfile?.isOnline
+      ? window.setInterval(() => {
+          void refreshDriverFeed(true)
+        }, 8000)
+      : null
+
+    const ordersInterval = state.driverActiveOrder
+      ? window.setInterval(() => {
+          void refreshDriverOrders(true)
+        }, 12000)
+      : null
+
+    return () => {
+      if (feedInterval) window.clearInterval(feedInterval)
+      if (ordersInterval) window.clearInterval(ordersInterval)
+    }
+  }, [
+    state.role,
+    state.driverVerificationStatus,
+    state.driverProfile?.isOnline,
+    state.driverActiveOrder?.id,
+    state.driverActiveOrder,
+    refreshDriverFeed,
+    refreshDriverOffers,
+    refreshDriverOrders,
+  ])
+
   const value: AppContextValue = {
     state,
     actions: {
@@ -2172,6 +2816,10 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       setPendingPassengerFlow: (flow) =>
         dispatch({ type: 'setPendingPassengerFlow', flow }),
       refreshPassengerRideSnapshot: () => refreshPassengerRideSnapshot(),
+      refreshDriverSnapshot: () => refreshDriverSnapshot(),
+      refreshDriverFeed: () => refreshDriverFeed(),
+      refreshDriverOffers: () => refreshDriverOffers(),
+      refreshDriverOrders: () => refreshDriverOrders(),
       startDriverRegistration: () => dispatch({ type: 'startDriverRegistration' }),
       updateDriverApplicationField: (field, value) =>
         dispatch({ type: 'updateDriverApplicationField', field, value }),
@@ -2181,7 +2829,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         dispatch({ type: 'nextDriverRegistrationStep' }),
       prevDriverRegistrationStep: () =>
         dispatch({ type: 'prevDriverRegistrationStep' }),
-      submitDriverApplication: () => dispatch({ type: 'submitDriverApplication' }),
+      submitDriverApplication: () => submitDriverApplicationAction(),
       demoApproveDriver: () => dispatch({ type: 'demoApproveDriver' }),
       demoRequestDriverChanges: (comment) =>
         dispatch({ type: 'demoRequestDriverChanges', comment }),
@@ -2189,9 +2837,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       returnToPassengerMode: () => dispatch({ type: 'returnToPassengerMode' }),
       editDriverApplicationAfterChanges: () =>
         dispatch({ type: 'editDriverApplicationAfterChanges' }),
-      toggleDriverOnlineStatus: () =>
-        dispatch({ type: 'toggleDriverOnlineStatus' }),
-      setDriverOnline: (online) => dispatch({ type: 'setDriverOnline', online }),
+      toggleDriverOnlineStatus: () => toggleDriverOnlineStatusAction(),
+      setDriverOnline: (online) => setDriverOnlineAction(online),
       openTopUpForm: () => dispatch({ type: 'openTopUpForm' }),
       closeTopUpForm: () => dispatch({ type: 'closeTopUpForm' }),
       updateTopUpForm: (patch) => dispatch({ type: 'updateTopUpForm', patch }),
@@ -2211,14 +2858,13 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       closeDriverCounterOfferSheet: () =>
         dispatch({ type: 'closeDriverCounterOfferSheet' }),
       sendDriverCounterOffer: (price, comment) =>
-        dispatch({ type: 'sendDriverCounterOffer', price, comment }),
+        sendDriverCounterOfferAction(price, comment),
       acceptDemoCounterOfferAsPassenger: (orderId) =>
         dispatch({ type: 'acceptDemoCounterOfferAsPassenger', orderId }),
-      acceptDriverFeedOrder: (orderId) =>
-        dispatch({ type: 'acceptDriverFeedOrder', orderId }),
-      driverOrderNextStatus: () => dispatch({ type: 'driverOrderNextStatus' }),
-      cancelDriverActiveOrder: () =>
-        dispatch({ type: 'cancelDriverActiveOrder' }),
+      acceptDriverFeedOrder: (orderId) => acceptDriverFeedOrderAction(orderId),
+      withdrawDriverOffer: (offerId) => withdrawDriverOfferAction(offerId),
+      driverOrderNextStatus: () => driverOrderNextStatusAction(),
+      cancelDriverActiveOrder: () => cancelDriverActiveOrderAction(),
       clearCompletedDriverOrder: () =>
         dispatch({ type: 'clearCompletedDriverOrder' }),
       updateRideDraft: (patch) => dispatch({ type: 'updateRideDraft', patch }),
