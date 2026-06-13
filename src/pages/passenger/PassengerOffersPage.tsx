@@ -9,18 +9,6 @@ import { PageCard } from '../../shared/ui/PageCard'
 export default function PassengerOffersPage() {
   const { activeRideRequest, driverOffers, rideDraft } = useAppState()
   const actions = useAppActions()
-  const [remainingSeconds, setRemainingSeconds] = useState(45)
-
-  useEffect(() => {
-    if (!activeRideRequest || activeRideRequest.status !== 'SEARCHING') return
-
-    setRemainingSeconds(45)
-    const timer = window.setInterval(() => {
-      setRemainingSeconds((value) => Math.max(0, value - 1))
-    }, 1000)
-
-    return () => window.clearInterval(timer)
-  }, [activeRideRequest?.id, activeRideRequest?.status])
 
   if (!activeRideRequest) {
     return (
@@ -58,10 +46,7 @@ export default function PassengerOffersPage() {
             <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">
               Таймер поиска
             </p>
-            <div className="mt-2 flex items-center gap-2 text-sm font-semibold text-ink">
-              <Clock3 className="h-4 w-4 text-accent" />
-              {remainingSeconds}s
-            </div>
+            <SearchTimer key={activeRideRequest.id} requestId={activeRideRequest.id} />
           </div>
         </div>
       </PageCard>
@@ -149,6 +134,25 @@ export default function PassengerOffersPage() {
           )
         })}
       </div>
+    </div>
+  )
+}
+
+function SearchTimer({ requestId }: { requestId: string }) {
+  const [remainingSeconds, setRemainingSeconds] = useState(45)
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setRemainingSeconds((value) => Math.max(0, value - 1))
+    }, 1000)
+
+    return () => window.clearInterval(timer)
+  }, [requestId])
+
+  return (
+    <div className="mt-2 flex items-center gap-2 text-sm font-semibold text-ink">
+      <Clock3 className="h-4 w-4 text-accent" />
+      {remainingSeconds}s
     </div>
   )
 }
