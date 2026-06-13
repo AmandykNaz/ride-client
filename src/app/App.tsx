@@ -4,12 +4,18 @@ import { ScreenRenderer } from './ScreenRenderer'
 import { PhoneVerifySheet } from '../features/passenger/components/PhoneVerifySheet'
 import { PassengerOnboardingModal } from '../features/passenger/components/PassengerOnboardingModal'
 import { PassengerRatingModal } from '../features/passenger/components/PassengerRatingModal'
+import { RideComplaintSheet } from '../features/ride-safety/components/RideComplaintSheet'
 
 function AppContent() {
-  const { currentScreen, isPhoneVerifySheetOpen, isPassengerOnboardingOpen, isPassengerRatingOpen } =
-    useAppState()
+  const {
+    currentScreen,
+    isPhoneVerifySheetOpen,
+    isPassengerOnboardingOpen,
+    isPassengerRatingOpen,
+    isRideComplaintOpen,
+  } = useAppState()
   const hasOverlay =
-    isPhoneVerifySheetOpen || isPassengerOnboardingOpen || isPassengerRatingOpen
+    isPhoneVerifySheetOpen || isPassengerOnboardingOpen || isPassengerRatingOpen || isRideComplaintOpen
 
   return (
     <MobileShell
@@ -19,6 +25,7 @@ function AppContent() {
             {isPhoneVerifySheetOpen ? <PhoneVerifySheet /> : null}
             {isPassengerOnboardingOpen ? <PassengerOnboardingModal /> : null}
             {isPassengerRatingOpen ? <PassengerRatingModal /> : null}
+            {isRideComplaintOpen ? <RideComplaintSheet /> : null}
           </>
         ) : null
       }

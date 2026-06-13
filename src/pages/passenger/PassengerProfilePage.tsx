@@ -5,7 +5,7 @@ import { PageCard } from '../../shared/ui/PageCard'
 import { useAppActions, useAppState } from '../../providers/AppStateProvider'
 
 export default function PassengerProfilePage() {
-  const { passengerStatus, passengerProfile } = useAppState()
+  const { passengerStatus, passengerProfile, passengerReviewSummary, passengerReviews } = useAppState()
   const actions = useAppActions()
 
   return (
@@ -16,11 +16,11 @@ export default function PassengerProfilePage() {
     >
       {passengerProfile ? (
         <div className="space-y-3 rounded-2xl bg-surface-soft p-4">
-        <div className="flex items-center gap-3">
-          <ShieldCheck className="h-5 w-5 text-accent" />
-          <div>
-            <p className="text-sm font-semibold text-ink">{passengerProfile.name}</p>
-            <p className="text-sm text-muted">{passengerProfile.phone}</p>
+          <div className="flex items-center gap-3">
+            <ShieldCheck className="h-5 w-5 text-accent" />
+            <div>
+              <p className="text-sm font-semibold text-ink">{passengerProfile.name}</p>
+              <p className="text-sm text-muted">{passengerProfile.phone}</p>
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3 text-sm">
@@ -44,6 +44,31 @@ export default function PassengerProfilePage() {
           <div className="rounded-2xl bg-white p-3 text-sm text-muted">
             Баланс не подключен. {formatKzt(0)}
           </div>
+          <div className="rounded-2xl bg-white p-3 text-sm text-ink">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">
+              Отзывы
+            </p>
+            <p className="mt-1 font-semibold text-ink">
+              {passengerReviewSummary?.averageRating ?? 0} / 5 ·{' '}
+              {passengerReviewSummary?.reviewsCount ?? 0} шт.
+            </p>
+          </div>
+          {passengerReviews.length > 0 ? (
+            <div className="space-y-2 rounded-2xl bg-white p-3">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">
+                Последние отзывы
+              </p>
+              {passengerReviews.slice(0, 3).map((review) => (
+                <div key={review.id} className="rounded-2xl bg-surface-soft p-3 text-sm">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="font-semibold text-ink">{review.rating} / 5</p>
+                    <p className="text-xs text-muted">{review.createdAt.slice(0, 10)}</p>
+                  </div>
+                  {review.comment ? <p className="mt-1 text-muted">{review.comment}</p> : null}
+                </div>
+              ))}
+            </div>
+          ) : null}
           {passengerStatus !== 'GUEST' ? (
             <button
               type="button"

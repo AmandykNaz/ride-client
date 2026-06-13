@@ -19,17 +19,30 @@ const statusText: Record<string, string> = {
 }
 
 export default function PassengerActiveRidePage() {
-  const { activeRide, activeRideEvents, rideFlowError } = useAppState()
+  const { activeRide, activeRideEvents, orderReviews, orderComplaints, rideFlowError } = useAppState()
   const actions = useAppActions()
   const refreshActiveRideDetailsRef = useRef(actions.refreshActiveRideDetails)
+  const refreshOrderReviewsRef = useRef(actions.refreshOrderReviews)
+  const refreshOrderComplaintsRef = useRef(actions.refreshOrderComplaints)
 
   useEffect(() => {
     refreshActiveRideDetailsRef.current = actions.refreshActiveRideDetails
   }, [actions.refreshActiveRideDetails])
 
   useEffect(() => {
+    refreshOrderReviewsRef.current = actions.refreshOrderReviews
+    refreshOrderComplaintsRef.current = actions.refreshOrderComplaints
+  }, [actions.refreshOrderReviews, actions.refreshOrderComplaints])
+
+  useEffect(() => {
     if (!activeRide?.id) return
     void refreshActiveRideDetailsRef.current(activeRide.id)
+  }, [activeRide?.id])
+
+  useEffect(() => {
+    if (!activeRide?.id) return
+    void refreshOrderReviewsRef.current(activeRide.id)
+    void refreshOrderComplaintsRef.current(activeRide.id)
   }, [activeRide?.id])
 
   if (!activeRide) {
@@ -49,6 +62,8 @@ export default function PassengerActiveRidePage() {
       </PageCard>
     )
   }
+
+  const isCompleted = activeRide.status === 'COMPLETED'
 
   return (
     <div className="space-y-4">
@@ -126,13 +141,23 @@ export default function PassengerActiveRidePage() {
         </button>
         <button
           type="button"
-          onClick={() => window.alert('Жалоба отправлена в демо-режиме')}
+          onClick={() => actions.openRideComplaintSheet(activeRide.id)}
           className="flex items-center justify-center gap-2 rounded-2xl border border-border bg-white px-3 py-3 text-sm font-semibold text-ink"
         >
           <ShieldAlert className="h-4 w-4 text-accent" />
           Пожаловаться
         </button>
       </div>
+
+      {isCompleted ? (
+        <button
+          type="button"
+          onClick={() => actions.openPassengerRating()}
+          className="w-full rounded-2xl bg-accent px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-accent/20"
+        >
+          Оставить отзыв
+        </button>
+      ) : null}
 
       <div className="rounded-[28px] border border-dashed border-border bg-slate-50 p-4">
         <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">
@@ -173,6 +198,49 @@ export default function PassengerActiveRidePage() {
           </div>
         </div>
       ) : null}
+
+      <div className="grid gap-4 md:grid-cols-2">
+        <div className="rounded-[28px] border border-border bg-white p-4 shadow-sm">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">
+            Отзывы по заказу
+          </p>
+          {orderReviews.length === 0 ? (
+            <p className="mt-3 text-sm text-muted">Пока нет отзывов.</p>
+          ) : (
+            <div className="mt-3 space-y-2">
+              {orderReviews.slice(0, 3).map((review) => (
+                <div key={review.id} className="rounded-2xl bg-surface-soft p-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-sm font-semibold text-ink">{review.rating} / 5</p>
+                    <p className="text-xs text-muted">{review.createdAt.slice(0, 10)}</p>
+                  </div>
+                  {review.comment ? <p className="mt-2 text-sm text-muted">{review.comment}</p> : null}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+        <div className="rounded-[28px] border border-border bg-white p-4 shadow-sm">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">
+            Жалобы по заказу
+          </p>
+          {orderComplaints.length === 0 ? (
+            <p className="mt-3 text-sm text-muted">Пока нет жалоб.</p>
+          ) : (
+            <div className="mt-3 space-y-2">
+              {orderComplaints.slice(0, 3).map((complaint) => (
+                <div key={complaint.id} className="rounded-2xl bg-surface-soft p-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-sm font-semibold text-ink">{complaint.category}</p>
+                    <p className="text-xs text-muted">{complaint.status}</p>
+                  </div>
+                  <p className="mt-2 text-sm text-muted">{complaint.message}</p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   )
 }

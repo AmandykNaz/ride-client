@@ -6,33 +6,47 @@ import { useAppActions, useAppState } from '../../../providers/AppStateProvider'
 import { OverlaySheet } from '../../../shared/ui/OverlaySheet'
 
 export function PassengerRatingModal() {
-  const { isPassengerRatingOpen, activeRide } = useAppState()
+  const {
+    isPassengerRatingOpen,
+    activeRide,
+    driverActiveOrder,
+    isRideReviewSubmitting,
+    rideSafetyError,
+  } = useAppState()
   const actions = useAppActions()
   const [rating, setRating] = useState(5)
   const [comment, setComment] = useState('')
+  const reviewTarget = activeRide ?? driverActiveOrder
+  const targetName = activeRide?.driverName ?? driverActiveOrder?.clientName ?? 'Участник поездки'
+  const targetPhone = activeRide?.driverPhone ?? driverActiveOrder?.clientPhone ?? ''
+  const targetRoute = reviewTarget ? formatRoute(reviewTarget.from, reviewTarget.to) : ''
+  const open = isPassengerRatingOpen && Boolean(reviewTarget)
 
-  const submit = () => {
-    actions.submitRideRating(rating, comment)
-    setComment('')
-    setRating(5)
+  const submit = async () => {
+    try {
+      await actions.submitRideRating(rating, comment)
+      setComment('')
+      setRating(5)
+    } catch {
+      // Error is surfaced by rideSafetyError in the sheet.
+    }
   }
 
   return (
     <OverlaySheet
-      open={isPassengerRatingOpen && Boolean(activeRide)}
-      title="Поездка завершена"
+      open={open}
+      title={activeRide ? 'Поездка завершена' : 'Оставить отзыв'}
       onClose={actions.closePassengerRating}
       position="center"
     >
-      {activeRide ? (
+      {reviewTarget ? (
         <div className="space-y-4">
           <div className="rounded-2xl bg-surface-soft p-4">
-            <p className="text-sm font-semibold text-ink">{activeRide.driverName}</p>
-            <p className="mt-1 text-sm text-muted">
-              {formatRoute(activeRide.from, activeRide.to)}
-            </p>
+            <p className="text-sm font-semibold text-ink">{targetName}</p>
+            {targetPhone ? <p className="mt-1 text-sm text-muted">{targetPhone}</p> : null}
+            <p className="mt-1 text-sm text-muted">{targetRoute}</p>
             <p className="mt-2 text-sm font-semibold text-ink">
-              {formatKzt(activeRide.price)}
+              {formatKzt(reviewTarget.price)}
             </p>
           </div>
 
@@ -71,10 +85,17 @@ export function PassengerRatingModal() {
           <button
             type="button"
             onClick={submit}
-            className="w-full rounded-2xl bg-accent px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-accent/20"
+            disabled={isRideReviewSubmitting}
+            className="w-full rounded-2xl bg-accent px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-accent/20 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            Оценить водителя
+            {isRideReviewSubmitting ? 'Отправляем...' : activeRide ? 'Оценить водителя' : 'Отправить отзыв'}
           </button>
+
+          {rideSafetyError ? (
+            <div className="rounded-2xl bg-red-50 px-4 py-3 text-sm text-red-700">
+              {rideSafetyError}
+            </div>
+          ) : null}
         </div>
       ) : null}
     </OverlaySheet>

@@ -44,6 +44,8 @@ export default function DriverDashboardPage() {
     driverRegistrationStep,
     driverActiveOrder,
     driverWallet,
+    driverReviewSummary,
+    driverReviews,
     driverFlowError,
     isDriverActionLoading,
   } = useAppState()
@@ -352,8 +354,42 @@ export default function DriverDashboardPage() {
               isDriverActionLoading && 'cursor-not-allowed opacity-60',
             )}
           >
-            {driverProfile?.isOnline ? 'Онлайн' : 'Оффлайн'}
+          {driverProfile?.isOnline ? 'Онлайн' : 'Оффлайн'}
           </button>
+        </div>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div className="rounded-2xl bg-surface-soft p-4">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">
+            Отзывы
+          </p>
+          <p className="mt-2 text-sm font-semibold text-ink">
+            {driverReviewSummary?.averageRating ?? 0} / 5
+          </p>
+          <p className="mt-1 text-sm text-muted">
+            {driverReviewSummary?.reviewsCount ?? 0} отзывов
+          </p>
+        </div>
+        <div className="rounded-2xl bg-surface-soft p-4">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">
+            Последние отзывы
+          </p>
+          <div className="mt-2 space-y-2">
+            {driverReviews.length === 0 ? (
+              <p className="text-sm text-muted">Пока нет отзывов.</p>
+            ) : (
+              driverReviews.slice(0, 2).map((review) => (
+                <div key={review.id} className="rounded-2xl bg-white p-3 text-sm">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="font-semibold text-ink">{review.rating} / 5</p>
+                    <p className="text-xs text-muted">{review.createdAt.slice(0, 10)}</p>
+                  </div>
+                  {review.comment ? <p className="mt-1 text-muted">{review.comment}</p> : null}
+                </div>
+              ))
+            )}
+          </div>
         </div>
       </div>
 

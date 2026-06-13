@@ -40,11 +40,27 @@ import {
   getDriverWallet,
   getDriverWalletTransactions,
 } from '../features/driver/api/driver-wallet.api'
+import {
+  createRideOrderComplaint as createRideOrderComplaintApi,
+  getDriverComplaints,
+  getPassengerComplaints,
+  getRideOrderComplaints,
+} from '../features/ride-safety/api/ride-complaints.api'
+import {
+  createRideOrderReview as createRideOrderReviewApi,
+  getDriverReviewSummary,
+  getDriverReviews,
+  getPassengerReviewSummary,
+  getPassengerReviews,
+  getRideOrderReviews,
+} from '../features/ride-safety/api/ride-reviews.api'
 import type {
   DriverTopUpRequest as DriverTopUpRequestApi,
   DriverWallet as DriverWalletApi,
   DriverWalletTransaction as DriverWalletTransactionApi,
 } from '../features/driver/api/driver-wallet.types'
+import type { RideComplaint as RideComplaintApi } from '../features/ride-safety/api/ride-complaints.types'
+import type { RideReview as RideReviewApi, RideReviewSummary as RideReviewSummaryApi } from '../features/ride-safety/api/ride-reviews.types'
 import type {
   RideOrder as PassengerRideOrder,
   RideOrderEvent as PassengerRideOrderEvent,
@@ -81,6 +97,8 @@ import type {
   UserRole,
 } from '../types/domain'
 import type { CreateRideRequestPayload } from '../features/passenger/api/passenger-rides.types'
+import type { CreateRideReviewPayload } from '../features/ride-safety/api/ride-reviews.types'
+import type { CreateRideComplaintPayload } from '../features/ride-safety/api/ride-complaints.types'
 
 type PassengerOrdersTab = 'rides' | 'parcels' | 'buses'
 type PassengerFlow = 'ride' | 'parcel' | null
@@ -100,6 +118,14 @@ type AppState = {
   driverWallet: DriverWallet
   driverWalletTransactions: WalletTransaction[]
   driverTopUpRequests: TopUpRequest[]
+  passengerReviewSummary: RideReviewSummaryApi | null
+  driverReviewSummary: RideReviewSummaryApi | null
+  passengerReviews: RideReviewApi[]
+  driverReviews: RideReviewApi[]
+  passengerComplaints: RideComplaintApi[]
+  driverComplaints: RideComplaintApi[]
+  orderReviews: RideReviewApi[]
+  orderComplaints: RideComplaintApi[]
   driverFeedOrders: DriverFeedOrder[]
   driverOrders: DriverActiveOrder[]
   driverActiveOrder: DriverActiveOrder | null
@@ -112,15 +138,23 @@ type AppState = {
   isDriverActionLoading: boolean
   isDriverWalletLoading: boolean
   isDriverTopUpSubmitting: boolean
+  isRideReviewSubmitting: boolean
+  isRideComplaintSubmitting: boolean
   driverFlowError: string | null
   driverWalletError: string | null
+  rideSafetyError: string | null
   isTopUpFormOpen: boolean
+  isRideComplaintOpen: boolean
   topUpForm: {
     amount: string
     method: TopUpRequestMethod
     providerRef: string
     comment: string
     proofFilePath: string
+  }
+  rideComplaintForm: {
+    category: string
+    message: string
   }
   activeRideRequest: PassengerRideRequest | null
   driverOffers: DriverOffer[]
@@ -179,6 +213,14 @@ type AppContextValue = {
     refreshDriverWallet: () => Promise<void>
     refreshDriverWalletTransactions: () => Promise<void>
     refreshDriverTopUpRequests: () => Promise<void>
+    refreshPassengerReviewSummary: () => Promise<void>
+    refreshDriverReviewSummary: () => Promise<void>
+    refreshPassengerReviews: () => Promise<void>
+    refreshDriverReviews: () => Promise<void>
+    refreshPassengerComplaints: () => Promise<void>
+    refreshDriverComplaints: () => Promise<void>
+    refreshOrderReviews: (orderId: string) => Promise<void>
+    refreshOrderComplaints: (orderId: string) => Promise<void>
     refreshDriverFeed: () => Promise<void>
     refreshDriverOffers: () => Promise<void>
     refreshDriverOrders: () => Promise<void>
@@ -189,10 +231,15 @@ type AppContextValue = {
       comment?: string
       proofFilePath?: string
     }) => Promise<void>
+    createOrderReview: (orderId: string, payload: CreateRideReviewPayload) => Promise<void>
+    createOrderComplaint: (orderId: string, payload: CreateRideComplaintPayload) => Promise<void>
     withdrawDriverOffer: (offerId: string) => Promise<void>
     openTopUpForm: () => void
     closeTopUpForm: () => void
     updateTopUpForm: (patch: Partial<AppState['topUpForm']>) => void
+    openRideComplaintSheet: (orderId?: string) => void
+    closeRideComplaintSheet: () => void
+    updateRideComplaintForm: (patch: Partial<AppState['rideComplaintForm']>) => void
     submitTopUpRequest: () => Promise<void>
     demoApproveTopUpRequest: (requestId: string) => void
     demoRejectTopUpRequest: (requestId: string) => void
@@ -235,7 +282,7 @@ type AppContextValue = {
     setPassengerProfile: (profile: PassengerProfile) => void
     completeRideAndOpenRating: () => void
     completeParcelAndOpenHistory: () => void
-    submitRideRating: (rating: number, comment: string) => void
+    submitRideRating: (rating: number, comment: string) => Promise<void>
     repeatRide: (ride: PassengerHistoryItem) => void
     repeatParcel: (parcel: PassengerHistoryItem) => void
   }
@@ -260,7 +307,10 @@ type AppAction =
   | { type: 'setDriverFlowError'; error: string | null }
   | { type: 'setDriverWalletLoading'; loading: boolean }
   | { type: 'setDriverTopUpSubmitting'; loading: boolean }
+  | { type: 'setRideReviewSubmitting'; loading: boolean }
+  | { type: 'setRideComplaintSubmitting'; loading: boolean }
   | { type: 'setDriverWalletError'; error: string | null }
+  | { type: 'setRideSafetyError'; error: string | null }
   | {
       type: 'setDriverWalletSnapshot'
       driverWallet: DriverWallet
@@ -270,6 +320,17 @@ type AppAction =
   | { type: 'setDriverWallet'; driverWallet: DriverWallet }
   | { type: 'setDriverWalletTransactions'; driverWalletTransactions: WalletTransaction[] }
   | { type: 'setDriverTopUpRequests'; driverTopUpRequests: TopUpRequest[] }
+  | { type: 'setPassengerReviewSummary'; passengerReviewSummary: RideReviewSummaryApi | null }
+  | { type: 'setDriverReviewSummary'; driverReviewSummary: RideReviewSummaryApi | null }
+  | { type: 'setPassengerReviews'; passengerReviews: RideReviewApi[] }
+  | { type: 'setDriverReviews'; driverReviews: RideReviewApi[] }
+  | { type: 'setPassengerComplaints'; passengerComplaints: RideComplaintApi[] }
+  | { type: 'setDriverComplaints'; driverComplaints: RideComplaintApi[] }
+  | { type: 'setOrderReviews'; orderReviews: RideReviewApi[] }
+  | { type: 'setOrderComplaints'; orderComplaints: RideComplaintApi[] }
+  | { type: 'openRideComplaintSheet'; orderId?: string }
+  | { type: 'closeRideComplaintSheet' }
+  | { type: 'updateRideComplaintForm'; patch: Partial<AppState['rideComplaintForm']> }
   | { type: 'setPassengerRideRequests'; requests: PassengerRideRequest[] }
   | { type: 'setPassengerRideOrders'; orders: PassengerRideOrder[] }
   | { type: 'setActiveRideEvents'; events: PassengerRideOrderEvent[] }
@@ -363,6 +424,7 @@ type AppAction =
   | { type: 'cancelActiveRide' }
   | { type: 'cancelActiveParcel' }
   | { type: 'completeRideAndOpenRating' }
+  | { type: 'completePassengerRideAfterReview'; history: PassengerHistoryItem }
   | { type: 'completeParcelAndOpenHistory' }
   | { type: 'submitRideRating'; rating: number; comment: string }
   | { type: 'repeatRide'; ride: PassengerHistoryItem }
@@ -763,6 +825,18 @@ function mapTopUpRequestResponseToState(
   }
 }
 
+function mapReviewResponseToState(review: RideReviewApi): RideReviewApi {
+  return {
+    ...review,
+  }
+}
+
+function mapComplaintResponseToState(complaint: RideComplaintApi): RideComplaintApi {
+  return {
+    ...complaint,
+  }
+}
+
 function syncDriverProfileWithWallet(
   profile: DriverProfile | null,
   wallet: DriverWallet,
@@ -1023,11 +1097,22 @@ function appReducer(state: AppState, action: AppAction): AppState {
         isDriverActionLoading: false,
         isDriverWalletLoading: false,
         isDriverTopUpSubmitting: false,
+        isRideReviewSubmitting: false,
+        isRideComplaintSubmitting: false,
         driverFlowError: null,
         driverWalletError: null,
+        rideSafetyError: null,
         driverWallet: defaultDriverWallet(),
         driverWalletTransactions: [],
         driverTopUpRequests: [],
+        passengerReviewSummary: null,
+        driverReviewSummary: null,
+        passengerReviews: [],
+        driverReviews: [],
+        passengerComplaints: [],
+        driverComplaints: [],
+        orderReviews: [],
+        orderComplaints: [],
         verifiedPhone: '',
         pendingPassengerFlow: null,
         passengerRideRequests: [],
@@ -1045,6 +1130,11 @@ function appReducer(state: AppState, action: AppAction): AppState {
         isPhoneVerifySheetOpen: false,
         isPassengerOnboardingOpen: false,
         isPassengerRatingOpen: false,
+        isRideComplaintOpen: false,
+        rideComplaintForm: {
+          category: 'other',
+          message: '',
+        },
         currentScreen: defaultScreenByRole.passenger,
         role: 'passenger',
         isMenuOpen: false,
@@ -1071,8 +1161,56 @@ function appReducer(state: AppState, action: AppAction): AppState {
       return { ...state, isDriverWalletLoading: action.loading }
     case 'setDriverTopUpSubmitting':
       return { ...state, isDriverTopUpSubmitting: action.loading }
+    case 'setRideReviewSubmitting':
+      return { ...state, isRideReviewSubmitting: action.loading }
+    case 'setRideComplaintSubmitting':
+      return { ...state, isRideComplaintSubmitting: action.loading }
     case 'setDriverWalletError':
       return { ...state, driverWalletError: action.error }
+    case 'setRideSafetyError':
+      return { ...state, rideSafetyError: action.error }
+    case 'setPassengerReviewSummary':
+      return { ...state, passengerReviewSummary: action.passengerReviewSummary }
+    case 'setDriverReviewSummary':
+      return { ...state, driverReviewSummary: action.driverReviewSummary }
+    case 'setPassengerReviews':
+      return { ...state, passengerReviews: action.passengerReviews }
+    case 'setDriverReviews':
+      return { ...state, driverReviews: action.driverReviews }
+    case 'setPassengerComplaints':
+      return { ...state, passengerComplaints: action.passengerComplaints }
+    case 'setDriverComplaints':
+      return { ...state, driverComplaints: action.driverComplaints }
+    case 'setOrderReviews':
+      return { ...state, orderReviews: action.orderReviews }
+    case 'setOrderComplaints':
+      return { ...state, orderComplaints: action.orderComplaints }
+    case 'openRideComplaintSheet':
+      return {
+        ...state,
+        isRideComplaintOpen: true,
+        rideSafetyError: null,
+        rideComplaintForm: {
+          ...state.rideComplaintForm,
+          category: 'other',
+          message: '',
+        },
+      }
+    case 'closeRideComplaintSheet':
+      return {
+        ...state,
+        isRideComplaintOpen: false,
+        rideSafetyError: null,
+        rideComplaintForm: {
+          category: 'other',
+          message: '',
+        },
+      }
+    case 'updateRideComplaintForm':
+      return {
+        ...state,
+        rideComplaintForm: { ...state.rideComplaintForm, ...action.patch },
+      }
     case 'setPassengerRideRequests':
       return { ...state, passengerRideRequests: action.requests }
     case 'setPassengerRideOrders':
@@ -1681,7 +1819,7 @@ function appReducer(state: AppState, action: AppAction): AppState {
     case 'openPassengerRating':
       return { ...state, isPassengerRatingOpen: true }
     case 'closePassengerRating':
-      return { ...state, isPassengerRatingOpen: false }
+      return { ...state, isPassengerRatingOpen: false, rideSafetyError: null }
     case 'setPassengerOrdersTab':
       return { ...state, passengerOrdersTab: action.tab, currentScreen: 'passengerOrders' }
     case 'setVerifiedPhone':
@@ -1862,6 +2000,23 @@ function appReducer(state: AppState, action: AppAction): AppState {
           : state.activeRideRequest,
         isPassengerRatingOpen: true,
       }
+    case 'completePassengerRideAfterReview':
+      return {
+        ...state,
+        passengerHistory: [action.history, ...state.passengerHistory],
+        passengerProfile: state.passengerProfile
+          ? {
+              ...state.passengerProfile,
+              tripsCount: state.passengerProfile.tripsCount + 1,
+            }
+          : state.passengerProfile,
+        activeRideRequest: null,
+        activeRide: null,
+        driverOffers: [],
+        currentScreen: 'passengerOrders',
+        passengerOrdersTab: 'rides',
+        isPassengerRatingOpen: false,
+      }
     case 'completeParcelAndOpenHistory': {
       if (!state.activeParcelRequest || !state.activeParcelOrder) return state
       const completedParcelOrder = {
@@ -1999,9 +2154,13 @@ const initialState: AppState = {
   isDriverActionLoading: false,
   isDriverWalletLoading: false,
   isDriverTopUpSubmitting: false,
+  isRideReviewSubmitting: false,
+  isRideComplaintSubmitting: false,
   driverFlowError: null,
   driverWalletError: null,
+  rideSafetyError: null,
   isTopUpFormOpen: false,
+  isRideComplaintOpen: false,
   topUpForm: {
     amount: '',
     method: 'KASPI_TRANSFER',
@@ -2009,12 +2168,24 @@ const initialState: AppState = {
     comment: '',
     proofFilePath: '',
   },
+  rideComplaintForm: {
+    category: 'other',
+    message: '',
+  },
   activeRideRequest: null,
   driverOffers: [],
   activeRide: null,
   activeRideEvents: [],
   passengerRideRequests: [],
   passengerRideOrders: [],
+  passengerReviewSummary: null,
+  driverReviewSummary: null,
+  passengerReviews: [],
+  driverReviews: [],
+  passengerComplaints: [],
+  driverComplaints: [],
+  orderReviews: [],
+  orderComplaints: [],
   isRideListLoading: false,
   isPassengerOrdersLoading: false,
   isRideRequestLoading: false,
@@ -2560,6 +2731,166 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     }
   }, [dispatch, state.driverVerificationStatus])
 
+  const refreshPassengerReviewSummary = useCallback(async () => {
+    const token = getRideAccessToken()
+    if (!token) return
+
+    try {
+      const summary = await getPassengerReviewSummary()
+      dispatch({ type: 'setPassengerReviewSummary', passengerReviewSummary: summary })
+    } catch (error) {
+      if (error instanceof BackendAuthError) {
+        clearRideAccessToken()
+        dispatch({ type: 'resetPassengerSession' })
+      }
+    }
+  }, [dispatch])
+
+  const refreshDriverReviewSummary = useCallback(async () => {
+    if (state.driverVerificationStatus !== 'APPROVED') return
+
+    try {
+      const summary = await getDriverReviewSummary()
+      dispatch({ type: 'setDriverReviewSummary', driverReviewSummary: summary })
+    } catch (error) {
+      if (error instanceof BackendAuthError) {
+        clearRideAccessToken()
+        dispatch({ type: 'resetPassengerSession' })
+      }
+    }
+  }, [dispatch, state.driverVerificationStatus])
+
+  const refreshPassengerReviews = useCallback(async () => {
+    const token = getRideAccessToken()
+    if (!token) return
+
+    try {
+      const response = await getPassengerReviews({ take: 10, skip: 0 })
+      dispatch({
+        type: 'setPassengerReviews',
+        passengerReviews: response.items.map(mapReviewResponseToState),
+      })
+    } catch (error) {
+      if (error instanceof BackendAuthError) {
+        clearRideAccessToken()
+        dispatch({ type: 'resetPassengerSession' })
+      }
+    }
+  }, [dispatch])
+
+  const refreshDriverReviews = useCallback(async () => {
+    if (state.driverVerificationStatus !== 'APPROVED') return
+
+    try {
+      const response = await getDriverReviews({ take: 10, skip: 0 })
+      dispatch({
+        type: 'setDriverReviews',
+        driverReviews: response.items.map(mapReviewResponseToState),
+      })
+    } catch (error) {
+      if (error instanceof BackendAuthError) {
+        clearRideAccessToken()
+        dispatch({ type: 'resetPassengerSession' })
+      }
+    }
+  }, [dispatch, state.driverVerificationStatus])
+
+  const refreshPassengerComplaints = useCallback(async () => {
+    const token = getRideAccessToken()
+    if (!token) return
+
+    try {
+      const response = await getPassengerComplaints({ take: 10, skip: 0 })
+      dispatch({
+        type: 'setPassengerComplaints',
+        passengerComplaints: response.items.map(mapComplaintResponseToState),
+      })
+    } catch (error) {
+      if (error instanceof BackendAuthError) {
+        clearRideAccessToken()
+        dispatch({ type: 'resetPassengerSession' })
+      }
+    }
+  }, [dispatch])
+
+  const refreshDriverComplaints = useCallback(async () => {
+    if (state.driverVerificationStatus !== 'APPROVED') return
+
+    try {
+      const response = await getDriverComplaints({ take: 10, skip: 0 })
+      dispatch({
+        type: 'setDriverComplaints',
+        driverComplaints: response.items.map(mapComplaintResponseToState),
+      })
+    } catch (error) {
+      if (error instanceof BackendAuthError) {
+        clearRideAccessToken()
+        dispatch({ type: 'resetPassengerSession' })
+      }
+    }
+  }, [dispatch, state.driverVerificationStatus])
+
+  const refreshOrderReviews = useCallback(async (orderId: string) => {
+    try {
+      const response = await getRideOrderReviews(orderId)
+      dispatch({
+        type: 'setOrderReviews',
+        orderReviews: response.items.map(mapReviewResponseToState),
+      })
+    } catch (error) {
+      if (error instanceof BackendAuthError) {
+        clearRideAccessToken()
+        dispatch({ type: 'resetPassengerSession' })
+      }
+    }
+  }, [dispatch])
+
+  const refreshOrderComplaints = useCallback(async (orderId: string) => {
+    try {
+      const response = await getRideOrderComplaints(orderId)
+      dispatch({
+        type: 'setOrderComplaints',
+        orderComplaints: response.items.map(mapComplaintResponseToState),
+      })
+    } catch (error) {
+      if (error instanceof BackendAuthError) {
+        clearRideAccessToken()
+        dispatch({ type: 'resetPassengerSession' })
+      }
+    }
+  }, [dispatch])
+
+  useEffect(() => {
+    if (!state.passengerProfile?.id) return
+
+    void Promise.all([
+      refreshPassengerReviewSummary(),
+      refreshPassengerReviews(),
+      refreshPassengerComplaints(),
+    ])
+  }, [
+    refreshPassengerComplaints,
+    refreshPassengerReviewSummary,
+    refreshPassengerReviews,
+    state.passengerProfile?.id,
+  ])
+
+  useEffect(() => {
+    if (state.role !== 'driver' || state.driverVerificationStatus !== 'APPROVED') return
+
+    void Promise.all([
+      refreshDriverReviewSummary(),
+      refreshDriverReviews(),
+      refreshDriverComplaints(),
+    ])
+  }, [
+    refreshDriverComplaints,
+    refreshDriverReviewSummary,
+    refreshDriverReviews,
+    state.driverVerificationStatus,
+    state.role,
+  ])
+
   const refreshDriverOffers = useCallback(async (force = false) => {
     if (!force && state.driverVerificationStatus !== 'APPROVED') {
       return
@@ -2670,6 +3001,9 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
           refreshDriverWallet(true),
           refreshDriverWalletTransactions(true),
           refreshDriverTopUpRequests(true),
+          refreshDriverReviewSummary(),
+          refreshDriverReviews(),
+          refreshDriverComplaints(),
           refreshDriverFeed(true),
           refreshDriverOffers(true),
           refreshDriverOrders(true),
@@ -2703,6 +3037,9 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     refreshDriverTopUpRequests,
     refreshDriverWallet,
     refreshDriverWalletTransactions,
+    refreshDriverReviewSummary,
+    refreshDriverReviews,
+    refreshDriverComplaints,
   ])
 
   const saveDriverApplication = async () => {
@@ -2874,6 +3211,94 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       throw error
     } finally {
       dispatch({ type: 'setDriverTopUpSubmitting', loading: false })
+    }
+  }
+
+  const createOrderReviewAction = async (
+    orderId: string,
+    payload: CreateRideReviewPayload,
+  ) => {
+    dispatch({ type: 'setRideReviewSubmitting', loading: true })
+    dispatch({ type: 'setRideSafetyError', error: null })
+
+    try {
+      await createRideOrderReviewApi(orderId, payload)
+
+      if (state.activeRide?.id === orderId && state.activeRideRequest) {
+        const completedHistory: PassengerHistoryItem = {
+          id: makeId('hist'),
+          category: 'ride',
+          from: state.activeRideRequest.from,
+          to: state.activeRideRequest.to,
+          date: state.activeRideRequest.date,
+          price: state.activeRide?.price ?? state.activeRideRequest.price,
+          status: 'completed',
+          driverName: state.activeRide?.driverName,
+        }
+        dispatch({
+          type: 'completePassengerRideAfterReview',
+          history: completedHistory,
+        })
+      }
+
+      dispatch({ type: 'closePassengerRating' })
+
+      await Promise.all([
+        refreshOrderReviews(orderId),
+        state.activeRide ? refreshPassengerReviewSummary().then(() => refreshPassengerReviews()) : Promise.resolve(),
+        state.driverActiveOrder ? refreshDriverReviewSummary().then(() => refreshDriverReviews()) : Promise.resolve(),
+      ])
+    } catch (error) {
+      if (error instanceof BackendAuthError) {
+        clearRideAccessToken()
+        dispatch({ type: 'resetPassengerSession' })
+        return
+      }
+
+      dispatch({
+        type: 'setRideSafetyError',
+        error: error instanceof Error ? error.message : 'Не удалось сохранить отзыв.',
+      })
+      throw error
+    } finally {
+      dispatch({ type: 'setRideReviewSubmitting', loading: false })
+    }
+  }
+
+  const createOrderComplaintAction = async (
+    orderId: string,
+    payload: CreateRideComplaintPayload,
+  ) => {
+    dispatch({ type: 'setRideComplaintSubmitting', loading: true })
+    dispatch({ type: 'setRideSafetyError', error: null })
+
+    try {
+      const complaint = await createRideOrderComplaintApi(orderId, payload)
+      dispatch({
+        type: 'setOrderComplaints',
+        orderComplaints: [mapComplaintResponseToState(complaint), ...state.orderComplaints.filter((item) => item.id !== complaint.id)],
+      })
+
+      await Promise.all([
+        refreshOrderComplaints(orderId),
+        state.role === 'driver' ? refreshDriverComplaints() : refreshPassengerComplaints(),
+      ])
+
+      dispatch({ type: 'closeRideComplaintSheet' })
+    } catch (error) {
+      if (error instanceof BackendAuthError) {
+        clearRideAccessToken()
+        dispatch({ type: 'resetPassengerSession' })
+        return
+      }
+
+      dispatch({
+        type: 'setRideSafetyError',
+        error: error instanceof Error ? error.message : 'Не удалось отправить complaint.',
+      })
+      throw error
+    } finally {
+      dispatch({ type: 'setRideComplaintSubmitting', loading: false })
     }
   }
 
@@ -3148,6 +3573,14 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       refreshDriverWallet: () => refreshDriverWallet(),
       refreshDriverWalletTransactions: () => refreshDriverWalletTransactions(),
       refreshDriverTopUpRequests: () => refreshDriverTopUpRequests(),
+      refreshPassengerReviewSummary: () => refreshPassengerReviewSummary(),
+      refreshDriverReviewSummary: () => refreshDriverReviewSummary(),
+      refreshPassengerReviews: () => refreshPassengerReviews(),
+      refreshDriverReviews: () => refreshDriverReviews(),
+      refreshPassengerComplaints: () => refreshPassengerComplaints(),
+      refreshDriverComplaints: () => refreshDriverComplaints(),
+      refreshOrderReviews: (orderId) => refreshOrderReviews(orderId),
+      refreshOrderComplaints: (orderId) => refreshOrderComplaints(orderId),
       refreshDriverFeed: () => refreshDriverFeed(),
       refreshDriverOffers: () => refreshDriverOffers(),
       refreshDriverOrders: () => refreshDriverOrders(),
@@ -3173,6 +3606,11 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       openTopUpForm: () => dispatch({ type: 'openTopUpForm' }),
       closeTopUpForm: () => dispatch({ type: 'closeTopUpForm' }),
       updateTopUpForm: (patch) => dispatch({ type: 'updateTopUpForm', patch }),
+      openRideComplaintSheet: (orderId) =>
+        dispatch({ type: 'openRideComplaintSheet', orderId }),
+      closeRideComplaintSheet: () => dispatch({ type: 'closeRideComplaintSheet' }),
+      updateRideComplaintForm: (patch) =>
+        dispatch({ type: 'updateRideComplaintForm', patch }),
       submitTopUpRequest: () =>
         createDriverTopUpRequestAction({
           amount: Number(state.topUpForm.amount),
@@ -3182,6 +3620,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
           proofFilePath: state.topUpForm.proofFilePath.trim() || undefined,
         }),
       createDriverTopUpRequest: (payload) => createDriverTopUpRequestAction(payload),
+      createOrderReview: (orderId, payload) => createOrderReviewAction(orderId, payload),
+      createOrderComplaint: (orderId, payload) => createOrderComplaintAction(orderId, payload),
       demoApproveTopUpRequest: (requestId) =>
         dispatch({ type: 'demoApproveTopUpRequest', requestId }),
       demoRejectTopUpRequest: (requestId) =>
@@ -3244,8 +3684,13 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         dispatch({ type: 'completeRideAndOpenRating' }),
       completeParcelAndOpenHistory: () =>
         dispatch({ type: 'completeParcelAndOpenHistory' }),
-      submitRideRating: (rating, comment) =>
-        dispatch({ type: 'submitRideRating', rating, comment }),
+      submitRideRating: (rating, comment) => {
+        const orderId = state.activeRide?.id ?? state.driverActiveOrder?.id
+
+        if (!orderId) return Promise.resolve()
+
+        return createOrderReviewAction(orderId, { rating, comment })
+      },
       repeatRide: (ride) => dispatch({ type: 'repeatRide', ride }),
       repeatParcel: (parcel) => dispatch({ type: 'repeatParcel', parcel }),
     },
