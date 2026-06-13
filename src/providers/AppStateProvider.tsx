@@ -6,6 +6,24 @@ import { defaultScreenByRole } from '../navigation/navigation'
 import { BackendAuthError } from '../shared/api/backend'
 import { getRideAccessToken, clearRideAccessToken } from '../shared/auth/tokenStorage'
 import { getPassengerMe, toRidePassengerProfile } from '../features/passenger/api/passenger.api'
+import {
+  acceptRideOffer,
+  cancelRideRequest,
+  createRideRequest,
+  getPassengerOrders,
+  getPassengerRequests,
+  getRideOrderEvents,
+  getRideRequest,
+  getRideRequestOffers,
+  mapOrderToActiveRide,
+  rejectRideOffer as rejectRideOfferAction,
+} from '../features/passenger/api/passenger-rides.api'
+import type {
+  RideOffer as PassengerRideOffer,
+  RideOrder as PassengerRideOrder,
+  RideOrderEvent as PassengerRideOrderEvent,
+  RideRequest as PassengerRideRequest,
+} from '../features/passenger/api/passenger-rides.types'
 import type {
   ActiveRide,
   ActiveParcelStatus,
@@ -29,7 +47,6 @@ import type {
   ParcelRequest,
   ParcelRequestStatus,
   RideDraft,
-  RideRequest,
   RideRequestStatus,
   DriverWallet,
   TopUpRequest,
@@ -37,6 +54,7 @@ import type {
   WalletTransaction,
   UserRole,
 } from '../types/domain'
+import type { CreateRideRequestPayload } from '../features/passenger/api/passenger-rides.types'
 
 type PassengerOrdersTab = 'rides' | 'parcels' | 'buses'
 type PassengerFlow = 'ride' | 'parcel' | null
@@ -68,9 +86,17 @@ type AppState = {
     referenceNumber: string
     screenshotAttached: boolean
   }
-  activeRideRequest: RideRequest | null
+  activeRideRequest: PassengerRideRequest | null
   driverOffers: DriverOffer[]
   activeRide: ActiveRide | null
+  activeRideEvents: PassengerRideOrderEvent[]
+  passengerRideRequests: PassengerRideRequest[]
+  passengerRideOrders: PassengerRideOrder[]
+  isRideListLoading: boolean
+  isRideRequestLoading: boolean
+  isRideOffersLoading: boolean
+  isRideActionLoading: boolean
+  rideFlowError: string | null
   activeParcelRequest: ParcelRequest | null
   parcelOffers: DriverOffer[]
   activeParcelOrder: ParcelOrder | null
@@ -95,6 +121,7 @@ type AppContextValue = {
     logout: () => void
     setDriverVerificationStatus: (status: DriverVerificationStatus) => void
     setPendingPassengerFlow: (flow: PassengerFlow) => void
+    refreshPassengerRideSnapshot: () => Promise<void>
     startDriverRegistration: () => void
     updateDriverApplicationField: <K extends keyof DriverApplicationDraft>(
       field: K,
@@ -138,15 +165,16 @@ type AppContextValue = {
     closePassengerRating: () => void
     setPassengerOrdersTab: (tab: PassengerOrdersTab) => void
     setVerifiedPhone: (phone: string) => void
-    startRideSearch: () => void
+    startRideSearch: () => Promise<void>
     startParcelSearch: () => void
-    createRideFromDraft: () => void
+    createRideFromDraft: () => Promise<void>
     createParcelFromDraft: () => void
-    acceptOffer: (offerId: string) => void
+    acceptOffer: (offerId: string) => Promise<void>
+    rejectRideOffer: (offerId: string) => Promise<void>
     acceptParcelOffer: (offerId: string) => void
     setActiveRideStatus: (status: RideRequestStatus) => void
     setActiveParcelStatus: (status: ParcelRequestStatus) => void
-    cancelActiveRide: () => void
+    cancelActiveRide: () => Promise<void>
     cancelActiveParcel: () => void
     setPassengerProfile: (profile: PassengerProfile) => void
     completeRideAndOpenRating: () => void
@@ -165,6 +193,25 @@ type AppAction =
   | { type: 'setRole'; role: UserRole; screen: AppScreen }
   | { type: 'setPassengerStatus'; status: PassengerStatus }
   | { type: 'resetPassengerSession' }
+  | { type: 'setRideListLoading'; loading: boolean }
+  | { type: 'setRideRequestLoading'; loading: boolean }
+  | { type: 'setRideOffersLoading'; loading: boolean }
+  | { type: 'setRideActionLoading'; loading: boolean }
+  | { type: 'setRideFlowError'; error: string | null }
+  | { type: 'setPassengerRideRequests'; requests: PassengerRideRequest[] }
+  | { type: 'setPassengerRideOrders'; orders: PassengerRideOrder[] }
+  | { type: 'setActiveRideEvents'; events: PassengerRideOrderEvent[] }
+  | {
+      type: 'setPassengerRideSnapshot'
+      passengerRideRequests: PassengerRideRequest[]
+      passengerRideOrders: PassengerRideOrder[]
+      activeRideRequest: PassengerRideRequest | null
+      driverOffers: PassengerRideOffer[]
+      activeRide: ActiveRide | null
+      activeRideEvents: PassengerRideOrderEvent[]
+      currentScreen?: AppScreen
+      clearCurrentRide?: boolean
+    }
   | {
       type: 'setDriverVerificationStatus'
       status: DriverVerificationStatus
@@ -679,12 +726,63 @@ function chargeCommissionIfNeeded(
   }
 }
 
+function isOpenRideRequestStatus(status: RideRequestStatus) {
+  return status === 'SEARCHING' || status === 'OFFERED' || status === 'ACCEPTED'
+}
+
+function isActiveRideOrderStatus(status: string) {
+  return status === 'DRIVER_COMING' || status === 'ARRIVED' || status === 'IN_PROGRESS'
+}
+
+function pickActiveRideRequest(requests: PassengerRideRequest[]) {
+  return (
+    requests.find((item) => isOpenRideRequestStatus(item.status)) ??
+    requests[0] ??
+    null
+  )
+}
+
+function pickActiveRideOrder(orders: PassengerRideOrder[]) {
+  return (
+    orders.find((item) => isActiveRideOrderStatus(item.status)) ??
+    orders[0] ??
+    null
+  )
+}
+
+function buildRideRequestPayload(rideDraft: RideDraft): CreateRideRequestPayload {
+  return {
+    serviceType: 'ride',
+    rideType: rideDraft.type,
+    originText: rideDraft.from,
+    destinationText: rideDraft.to,
+    pickupAddress: rideDraft.from,
+    dropoffAddress: rideDraft.to,
+    price: rideDraft.price,
+    comment: rideDraft.comment,
+  }
+}
+
 function createActiveRideRequest(state: AppState): AppState {
   const requestId = makeId('req')
-  const request: RideRequest = {
+  const request: PassengerRideRequest = {
     id: requestId,
+    serviceType: 'ride',
+    rideType: state.rideDraft.type,
+    time: state.rideDraft.time,
+    type: state.rideDraft.type,
+    passengersCount: state.rideDraft.passengersCount,
     status: 'SEARCHING',
-    ...state.rideDraft,
+    from: state.rideDraft.from,
+    to: state.rideDraft.to,
+    date: state.rideDraft.date,
+    price: state.rideDraft.price,
+    originText: state.rideDraft.from,
+    destinationText: state.rideDraft.to,
+    comment: state.rideDraft.comment,
+    createdAt: new Date().toISOString(),
+    offersCount: 0,
+    raw: null,
   }
 
   return {
@@ -741,12 +839,50 @@ function appReducer(state: AppState, action: AppAction): AppState {
         passengerProfile: null,
         verifiedPhone: '',
         pendingPassengerFlow: null,
+        passengerRideRequests: [],
+        passengerRideOrders: [],
+        activeRideEvents: [],
+        activeRideRequest: null,
+        activeRide: null,
+        driverOffers: [],
+        isRideListLoading: false,
+        isRideRequestLoading: false,
+        isRideOffersLoading: false,
+        isRideActionLoading: false,
+        rideFlowError: null,
         isPhoneVerifySheetOpen: false,
         isPassengerOnboardingOpen: false,
         isPassengerRatingOpen: false,
         currentScreen: defaultScreenByRole.passenger,
         role: 'passenger',
         isMenuOpen: false,
+      }
+    case 'setRideListLoading':
+      return { ...state, isRideListLoading: action.loading }
+    case 'setRideRequestLoading':
+      return { ...state, isRideRequestLoading: action.loading }
+    case 'setRideOffersLoading':
+      return { ...state, isRideOffersLoading: action.loading }
+    case 'setRideActionLoading':
+      return { ...state, isRideActionLoading: action.loading }
+    case 'setRideFlowError':
+      return { ...state, rideFlowError: action.error }
+    case 'setPassengerRideRequests':
+      return { ...state, passengerRideRequests: action.requests }
+    case 'setPassengerRideOrders':
+      return { ...state, passengerRideOrders: action.orders }
+    case 'setActiveRideEvents':
+      return { ...state, activeRideEvents: action.events }
+    case 'setPassengerRideSnapshot':
+      return {
+        ...state,
+        passengerRideRequests: action.passengerRideRequests,
+        passengerRideOrders: action.passengerRideOrders,
+        activeRideRequest: action.activeRideRequest,
+        driverOffers: action.driverOffers as DriverOffer[],
+        activeRide: action.clearCurrentRide ? null : action.activeRide,
+        activeRideEvents: action.activeRideEvents,
+        currentScreen: action.currentScreen ?? state.currentScreen,
       }
     case 'setDriverVerificationStatus':
       return {
@@ -1579,6 +1715,14 @@ const initialState: AppState = {
   activeRideRequest: null,
   driverOffers: [],
   activeRide: null,
+  activeRideEvents: [],
+  passengerRideRequests: [],
+  passengerRideOrders: [],
+  isRideListLoading: false,
+  isRideRequestLoading: false,
+  isRideOffersLoading: false,
+  isRideActionLoading: false,
+  rideFlowError: null,
   activeParcelRequest: null,
   parcelOffers: [],
   activeParcelOrder: null,
@@ -1596,6 +1740,94 @@ const AppStateContext = createContext<AppContextValue | null>(null)
 export function AppStateProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(appReducer, initialState)
   const didHydrateRef = useRef(false)
+  const loadedRideTokenRef = useRef<string | null>(null)
+
+  const refreshPassengerRideSnapshot = async () => {
+    const token = getRideAccessToken()
+
+    if (!token) {
+      loadedRideTokenRef.current = null
+      dispatch({
+        type: 'setPassengerRideSnapshot',
+        passengerRideRequests: [],
+        passengerRideOrders: [],
+        activeRideRequest: null,
+        driverOffers: [],
+        activeRide: null,
+        activeRideEvents: [],
+        clearCurrentRide: true,
+        currentScreen: defaultScreenByRole.passenger,
+      })
+      return
+    }
+
+    dispatch({ type: 'setRideListLoading', loading: true })
+    dispatch({ type: 'setRideOffersLoading', loading: true })
+    dispatch({ type: 'setRideFlowError', error: null })
+
+    try {
+      const [requestsResponse, ordersResponse] = await Promise.all([
+        getPassengerRequests(),
+        getPassengerOrders(),
+      ])
+
+      const passengerRideRequests = requestsResponse.items
+      const passengerRideOrders = ordersResponse.items
+      const activeRideOrder = pickActiveRideOrder(passengerRideOrders)
+      const selectedRequestId = activeRideOrder?.requestId
+      const selectedRequest = selectedRequestId
+        ? passengerRideRequests.find((item) => item.id === selectedRequestId) ?? pickActiveRideRequest(passengerRideRequests)
+        : pickActiveRideRequest(passengerRideRequests)
+
+      const detailedRequest = selectedRequest
+        ? await getRideRequest(selectedRequest.id).catch(() => selectedRequest)
+        : null
+
+      const activeRideRequest = detailedRequest
+      const activeRide = activeRideOrder ? mapOrderToActiveRide(activeRideOrder) : null
+      const activeRideEvents = activeRideOrder
+        ? (await getRideOrderEvents(activeRideOrder.id).catch(() => ({ items: [] }))).items
+        : []
+      const driverOffers = activeRideRequest && isOpenRideRequestStatus(activeRideRequest.status)
+        ? (await getRideRequestOffers(activeRideRequest.id).catch(() => ({ items: [] }))).items
+        : []
+
+      dispatch({
+        type: 'setPassengerRideSnapshot',
+        passengerRideRequests,
+        passengerRideOrders,
+        activeRideRequest:
+          activeRideRequest && isOpenRideRequestStatus(activeRideRequest.status)
+            ? activeRideRequest
+            : activeRideOrder
+              ? activeRideRequest
+              : null,
+        driverOffers,
+        activeRide,
+        activeRideEvents,
+        currentScreen: activeRide
+          ? 'passengerActiveRide'
+          : activeRideRequest && isOpenRideRequestStatus(activeRideRequest.status)
+            ? 'passengerOffers'
+            : defaultScreenByRole.passenger,
+        clearCurrentRide: !activeRide && !activeRideRequest,
+      })
+    } catch (error) {
+      if (error instanceof BackendAuthError) {
+        clearRideAccessToken()
+        dispatch({ type: 'resetPassengerSession' })
+        return
+      }
+
+      dispatch({
+        type: 'setRideFlowError',
+        error: error instanceof Error ? error.message : 'Не удалось загрузить ride state.',
+      })
+    } finally {
+      dispatch({ type: 'setRideListLoading', loading: false })
+      dispatch({ type: 'setRideOffersLoading', loading: false })
+    }
+  }
 
   useEffect(() => {
     if (didHydrateRef.current) return
@@ -1633,6 +1865,193 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
+  useEffect(() => {
+    const token = getRideAccessToken()
+
+    if (!token) {
+      loadedRideTokenRef.current = null
+      return
+    }
+
+    if (loadedRideTokenRef.current === token) {
+      return
+    }
+
+    loadedRideTokenRef.current = token
+    void refreshPassengerRideSnapshot()
+  }, [state.passengerProfile?.id, state.passengerStatus, state.verifiedPhone])
+
+  const logoutPassengerSession = () => {
+    clearRideAccessToken()
+    dispatch({ type: 'resetPassengerSession' })
+  }
+
+  const startPassengerRideSearch = async () => {
+    dispatch({ type: 'setRideRequestLoading', loading: true })
+    dispatch({ type: 'setRideFlowError', error: null })
+
+    try {
+      const createdRequest = await createRideRequest(buildRideRequestPayload(state.rideDraft))
+      const createdOffers = isOpenRideRequestStatus(createdRequest.status)
+        ? (await getRideRequestOffers(createdRequest.id).catch(() => ({ items: [] }))).items
+        : []
+
+      dispatch({
+        type: 'setPassengerRideSnapshot',
+        passengerRideRequests: [
+          createdRequest,
+          ...state.passengerRideRequests.filter((item) => item.id !== createdRequest.id),
+        ],
+        passengerRideOrders: state.passengerRideOrders,
+        activeRideRequest: createdRequest,
+        driverOffers: createdOffers,
+        activeRide: null,
+        activeRideEvents: [],
+        currentScreen: 'passengerOffers',
+        clearCurrentRide: true,
+      })
+
+      void refreshPassengerRideSnapshot()
+    } catch (error) {
+      if (error instanceof BackendAuthError) {
+        logoutPassengerSession()
+        return
+      }
+
+      dispatch({
+        type: 'setRideFlowError',
+        error: error instanceof Error ? error.message : 'Не удалось создать заявку.',
+      })
+    } finally {
+      dispatch({ type: 'setRideRequestLoading', loading: false })
+    }
+  }
+
+  const acceptPassengerRideOffer = async (offerId: string) => {
+    dispatch({ type: 'setRideActionLoading', loading: true })
+    dispatch({ type: 'setRideFlowError', error: null })
+
+    try {
+      const acceptedOrder = await acceptRideOffer(offerId)
+      const activeRide = mapOrderToActiveRide(acceptedOrder)
+      const activeRideEvents = (
+        await getRideOrderEvents(acceptedOrder.id).catch(() => ({ items: [] }))
+      ).items
+      const updatedRequest = state.activeRideRequest
+        ? {
+            ...state.activeRideRequest,
+            status: 'ACCEPTED' as const,
+            selectedOfferId: offerId,
+          }
+        : null
+
+      dispatch({
+        type: 'setPassengerRideSnapshot',
+        passengerRideRequests: state.passengerRideRequests.map((item) =>
+          item.id === updatedRequest?.id ? (updatedRequest as PassengerRideRequest) : item,
+        ),
+        passengerRideOrders: [
+          acceptedOrder,
+          ...state.passengerRideOrders.filter((item) => item.id !== acceptedOrder.id),
+        ],
+        activeRideRequest: updatedRequest ? (updatedRequest as PassengerRideRequest) : state.activeRideRequest,
+        driverOffers: [],
+        activeRide,
+        activeRideEvents,
+        currentScreen: 'passengerActiveRide',
+      })
+
+      void refreshPassengerRideSnapshot()
+    } catch (error) {
+      if (error instanceof BackendAuthError) {
+        logoutPassengerSession()
+        return
+      }
+
+      dispatch({
+        type: 'setRideFlowError',
+        error: error instanceof Error ? error.message : 'Не удалось принять предложение.',
+      })
+    } finally {
+      dispatch({ type: 'setRideActionLoading', loading: false })
+    }
+  }
+
+  const rejectPassengerRideOffer = async (offerId: string) => {
+    dispatch({ type: 'setRideActionLoading', loading: true })
+    dispatch({ type: 'setRideFlowError', error: null })
+
+    try {
+      await rejectRideOfferAction(offerId)
+      if (state.activeRideRequest) {
+        const refreshedOffers = (await getRideRequestOffers(state.activeRideRequest.id).catch(() => ({ items: [] }))).items
+        dispatch({
+          type: 'setPassengerRideSnapshot',
+          passengerRideRequests: state.passengerRideRequests,
+          passengerRideOrders: state.passengerRideOrders,
+          activeRideRequest: state.activeRideRequest,
+          driverOffers: refreshedOffers,
+          activeRide: state.activeRide,
+          activeRideEvents: state.activeRideEvents,
+        })
+      }
+    } catch (error) {
+      if (error instanceof BackendAuthError) {
+        logoutPassengerSession()
+        return
+      }
+
+      dispatch({
+        type: 'setRideFlowError',
+        error: error instanceof Error ? error.message : 'Не удалось отклонить предложение.',
+      })
+    } finally {
+      dispatch({ type: 'setRideActionLoading', loading: false })
+    }
+  }
+
+  const cancelPassengerRideRequest = async () => {
+    if (!state.activeRideRequest || !isOpenRideRequestStatus(state.activeRideRequest.status)) {
+      return
+    }
+
+    dispatch({ type: 'setRideActionLoading', loading: true })
+    dispatch({ type: 'setRideFlowError', error: null })
+
+    try {
+      const cancelledRequest = await cancelRideRequest(state.activeRideRequest.id)
+
+      dispatch({
+        type: 'setPassengerRideSnapshot',
+        passengerRideRequests: [
+          cancelledRequest,
+          ...state.passengerRideRequests.filter((item) => item.id !== cancelledRequest.id),
+        ],
+        passengerRideOrders: state.passengerRideOrders,
+        activeRideRequest: null,
+        driverOffers: [],
+        activeRide: null,
+        activeRideEvents: [],
+        currentScreen: 'passengerOrder',
+        clearCurrentRide: true,
+      })
+
+      void refreshPassengerRideSnapshot()
+    } catch (error) {
+      if (error instanceof BackendAuthError) {
+        logoutPassengerSession()
+        return
+      }
+
+      dispatch({
+        type: 'setRideFlowError',
+        error: error instanceof Error ? error.message : 'Не удалось отменить заявку.',
+      })
+    } finally {
+      dispatch({ type: 'setRideActionLoading', loading: false })
+    }
+  }
+
   const value: AppContextValue = {
     state,
     actions: {
@@ -1644,14 +2063,12 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         dispatch({ type: 'setRole', role, screen }),
       setPassengerStatus: (status) =>
         dispatch({ type: 'setPassengerStatus', status }),
-      logout: () => {
-        clearRideAccessToken()
-        dispatch({ type: 'resetPassengerSession' })
-      },
+      logout: logoutPassengerSession,
       setDriverVerificationStatus: (status) =>
         dispatch({ type: 'setDriverVerificationStatus', status }),
       setPendingPassengerFlow: (flow) =>
         dispatch({ type: 'setPendingPassengerFlow', flow }),
+      refreshPassengerRideSnapshot: () => refreshPassengerRideSnapshot(),
       startDriverRegistration: () => dispatch({ type: 'startDriverRegistration' }),
       updateDriverApplicationField: (field, value) =>
         dispatch({ type: 'updateDriverApplicationField', field, value }),
@@ -1713,18 +2130,19 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       setPassengerOrdersTab: (tab) =>
         dispatch({ type: 'setPassengerOrdersTab', tab }),
       setVerifiedPhone: (phone) => dispatch({ type: 'setVerifiedPhone', phone }),
-      startRideSearch: () => dispatch({ type: 'startRideSearch' }),
+      startRideSearch: () => startPassengerRideSearch(),
       startParcelSearch: () => dispatch({ type: 'startParcelSearch' }),
-      createRideFromDraft: () => dispatch({ type: 'createRideFromDraft' }),
+      createRideFromDraft: () => startPassengerRideSearch(),
       createParcelFromDraft: () => dispatch({ type: 'createParcelFromDraft' }),
-      acceptOffer: (offerId) => dispatch({ type: 'acceptOffer', offerId }),
+      acceptOffer: (offerId) => acceptPassengerRideOffer(offerId),
+      rejectRideOffer: (offerId) => rejectPassengerRideOffer(offerId),
       acceptParcelOffer: (offerId) =>
         dispatch({ type: 'acceptParcelOffer', offerId }),
       setActiveRideStatus: (status) =>
         dispatch({ type: 'setActiveRideStatus', status }),
       setActiveParcelStatus: (status) =>
         dispatch({ type: 'setActiveParcelStatus', status }),
-      cancelActiveRide: () => dispatch({ type: 'cancelActiveRide' }),
+      cancelActiveRide: () => cancelPassengerRideRequest(),
       cancelActiveParcel: () => dispatch({ type: 'cancelActiveParcel' }),
       setPassengerProfile: (profile) =>
         dispatch({ type: 'setPassengerProfile', profile }),

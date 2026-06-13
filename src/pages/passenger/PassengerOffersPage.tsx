@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Clock3, Sparkles } from 'lucide-react'
 
 import { formatKzt, formatRoute } from '../../lib/format'
@@ -7,8 +7,40 @@ import { useAppActions, useAppState } from '../../providers/AppStateProvider'
 import { PageCard } from '../../shared/ui/PageCard'
 
 export default function PassengerOffersPage() {
-  const { activeRideRequest, driverOffers, rideDraft } = useAppState()
+  const {
+    activeRideRequest,
+    driverOffers,
+    rideDraft,
+    rideFlowError,
+    isRideOffersLoading,
+    isRideActionLoading,
+  } = useAppState()
   const actions = useAppActions()
+  const refreshRideSnapshotRef = useRef(actions.refreshPassengerRideSnapshot)
+  const activeRideRequestId = activeRideRequest?.id ?? null
+  const activeRideRequestStatus = activeRideRequest?.status ?? null
+
+  useEffect(() => {
+    refreshRideSnapshotRef.current = actions.refreshPassengerRideSnapshot
+  }, [actions.refreshPassengerRideSnapshot])
+
+  useEffect(() => {
+    if (!activeRideRequestId || activeRideRequestStatus === 'CANCELLED') return
+
+    let cancelled = false
+    const refresh = () => {
+      if (cancelled) return
+      void refreshRideSnapshotRef.current()
+    }
+
+    refresh()
+    const timer = window.setInterval(refresh, 7000)
+
+    return () => {
+      cancelled = true
+      window.clearInterval(timer)
+    }
+  }, [activeRideRequestId, activeRideRequestStatus])
 
   if (!activeRideRequest) {
     return (
@@ -30,6 +62,12 @@ export default function PassengerOffersPage() {
 
   return (
     <div className="space-y-4">
+      {rideFlowError ? (
+        <div className="rounded-[24px] border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {rideFlowError}
+        </div>
+      ) : null}
+
       <PageCard
         eyebrow="Активная заявка"
         title={formatRoute(activeRideRequest.from, activeRideRequest.to)}
@@ -48,6 +86,20 @@ export default function PassengerOffersPage() {
             </p>
             <SearchTimer key={activeRideRequest.id} requestId={activeRideRequest.id} />
           </div>
+        </div>
+
+        <div className="mt-3 flex items-center justify-between gap-3 rounded-2xl bg-slate-50 px-4 py-3 text-sm text-muted">
+          <span>
+            {isRideOffersLoading ? 'Обновляем предложения...' : `Предложений: ${driverOffers.length}`}
+          </span>
+          <button
+            type="button"
+            onClick={() => actions.cancelActiveRide()}
+            className="rounded-2xl border border-border bg-white px-3 py-2 text-sm font-semibold text-ink"
+            disabled={isRideActionLoading}
+          >
+            Отменить заявку
+          </button>
         </div>
       </PageCard>
 
@@ -124,11 +176,20 @@ export default function PassengerOffersPage() {
                 type="button"
                 onClick={() => actions.acceptOffer(offer.id)}
                 className={cn(
-                  'mt-4 w-full rounded-2xl px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-accent/20',
+                  'mt-4 w-full rounded-2xl px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-accent/20 disabled:opacity-60',
                   offer.isCustomOffer ? 'bg-amber-500' : 'bg-accent',
                 )}
+                disabled={isRideActionLoading}
               >
-                {offer.isCustomOffer ? 'Принять предложение' : 'Выбрать водителя'}
+                {isRideActionLoading ? 'Обрабатываем...' : offer.isCustomOffer ? 'Принять предложение' : 'Выбрать водителя'}
+              </button>
+              <button
+                type="button"
+                onClick={() => actions.rejectRideOffer(offer.id)}
+                className="mt-2 w-full rounded-2xl border border-border bg-white px-4 py-3 text-sm font-semibold text-ink disabled:opacity-60"
+                disabled={isRideActionLoading}
+              >
+                Отклонить
               </button>
             </article>
           )
