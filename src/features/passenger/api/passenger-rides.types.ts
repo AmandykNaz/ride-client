@@ -53,6 +53,21 @@ export type RideOffer = {
   raw: unknown
 }
 
+export type RideOfferListResponse = {
+  items: RideOffer[]
+  raw: unknown
+}
+
+export type AcceptRideOfferResponse =
+  | RideOrder
+  | {
+      order?: unknown
+      rideOrder?: unknown
+      request?: unknown
+      rideRequest?: unknown
+      raw?: unknown
+    }
+
 export type RideOrderEvent = {
   id: string
   orderId?: string

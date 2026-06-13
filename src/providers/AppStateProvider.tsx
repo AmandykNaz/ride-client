@@ -8,9 +8,13 @@ import { getRideAccessToken, clearRideAccessToken } from '../shared/auth/tokenSt
 import { getPassengerMe, toRidePassengerProfile } from '../features/passenger/api/passenger.api'
 import {
   cancelRideRequest,
+  acceptRideOffer,
   createRideRequest,
+  getRideRequestOffers,
   getPassengerRequests,
   getRideRequest,
+  mapOrderToActiveRide,
+  rejectRideOffer,
 } from '../features/passenger/api/passenger-rides.api'
 import type {
   RideOrder as PassengerRideOrder,
@@ -164,6 +168,9 @@ type AppContextValue = {
     createParcelFromDraft: () => void
     acceptOffer: (offerId: string) => void
     rejectRideOffer: (offerId: string) => Promise<void>
+    loadActiveRequestOffers: () => Promise<void>
+    rejectActiveRideOffer: (offerId: string) => Promise<void>
+    acceptActiveRideOffer: (offerId: string) => Promise<void>
     acceptParcelOffer: (offerId: string) => void
     setActiveRideStatus: (status: RideRequestStatus) => void
     setActiveParcelStatus: (status: ParcelRequestStatus) => void
@@ -1784,6 +1791,53 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  const loadActiveRequestOffers = async () => {
+    const activeRequest = state.activeRideRequest
+
+    if (!activeRequest || !isOpenRideRequestStatus(activeRequest.status)) {
+      dispatch({ type: 'setRideOffersLoading', loading: false })
+      dispatch({
+        type: 'setPassengerRideSnapshot',
+        passengerRideRequests: state.passengerRideRequests,
+        passengerRideOrders: state.passengerRideOrders,
+        activeRideRequest: state.activeRideRequest,
+        driverOffers: [],
+        activeRide: state.activeRide,
+        activeRideEvents: state.activeRideEvents,
+      })
+      return
+    }
+
+    dispatch({ type: 'setRideOffersLoading', loading: true })
+    dispatch({ type: 'setRideFlowError', error: null })
+
+    try {
+      const response = await getRideRequestOffers(activeRequest.id)
+      dispatch({
+        type: 'setPassengerRideSnapshot',
+        passengerRideRequests: state.passengerRideRequests,
+        passengerRideOrders: state.passengerRideOrders,
+        activeRideRequest: activeRequest,
+        driverOffers: response.items,
+        activeRide: state.activeRide,
+        activeRideEvents: state.activeRideEvents,
+      })
+    } catch (error) {
+      if (error instanceof BackendAuthError) {
+        clearRideAccessToken()
+        dispatch({ type: 'resetPassengerSession' })
+        return
+      }
+
+      dispatch({
+        type: 'setRideFlowError',
+        error: error instanceof Error ? error.message : 'Не удалось загрузить предложения.',
+      })
+    } finally {
+      dispatch({ type: 'setRideOffersLoading', loading: false })
+    }
+  }
+
   useEffect(() => {
     if (didHydrateRef.current) return
     didHydrateRef.current = true
@@ -1878,6 +1932,77 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       })
     } finally {
       dispatch({ type: 'setRideRequestLoading', loading: false })
+    }
+  }
+
+  const acceptActiveRideOffer = async (offerId: string) => {
+    dispatch({ type: 'setRideActionLoading', loading: true })
+    dispatch({ type: 'setRideFlowError', error: null })
+
+    try {
+      const acceptedOrder = await acceptRideOffer(offerId)
+      const activeRide = mapOrderToActiveRide(acceptedOrder)
+
+      dispatch({
+        type: 'setPassengerRideSnapshot',
+        passengerRideRequests: state.passengerRideRequests.map((item) =>
+          item.id === state.activeRideRequest?.id
+            ? {
+                ...item,
+                status: 'ACCEPTED',
+                selectedOfferId: offerId,
+              }
+            : item,
+        ),
+        passengerRideOrders: [acceptedOrder],
+        activeRideRequest: state.activeRideRequest
+          ? {
+              ...state.activeRideRequest,
+              status: 'ACCEPTED',
+              selectedOfferId: offerId,
+            }
+          : state.activeRideRequest,
+        driverOffers: [],
+        activeRide,
+        activeRideEvents: [],
+        currentScreen: 'passengerActiveRide',
+      })
+    } catch (error) {
+      if (error instanceof BackendAuthError) {
+        clearRideAccessToken()
+        dispatch({ type: 'resetPassengerSession' })
+        return
+      }
+
+      dispatch({
+        type: 'setRideFlowError',
+        error: error instanceof Error ? error.message : 'Не удалось принять предложение.',
+      })
+    } finally {
+      dispatch({ type: 'setRideActionLoading', loading: false })
+    }
+  }
+
+  const rejectActiveRideOffer = async (offerId: string) => {
+    dispatch({ type: 'setRideActionLoading', loading: true })
+    dispatch({ type: 'setRideFlowError', error: null })
+
+    try {
+      await rejectRideOffer(offerId)
+      await loadActiveRequestOffers()
+    } catch (error) {
+      if (error instanceof BackendAuthError) {
+        clearRideAccessToken()
+        dispatch({ type: 'resetPassengerSession' })
+        return
+      }
+
+      dispatch({
+        type: 'setRideFlowError',
+        error: error instanceof Error ? error.message : 'Не удалось отклонить предложение.',
+      })
+    } finally {
+      dispatch({ type: 'setRideActionLoading', loading: false })
     }
   }
 
@@ -2005,8 +2130,13 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       startParcelSearch: () => dispatch({ type: 'startParcelSearch' }),
       createRideFromDraft: () => startPassengerRideSearch(),
       createParcelFromDraft: () => dispatch({ type: 'createParcelFromDraft' }),
-      acceptOffer: (offerId) => dispatch({ type: 'acceptOffer', offerId }),
-      rejectRideOffer: async () => undefined,
+      acceptOffer: (offerId) => {
+        void acceptActiveRideOffer(offerId)
+      },
+      rejectRideOffer: (offerId) => rejectActiveRideOffer(offerId),
+      loadActiveRequestOffers: () => loadActiveRequestOffers(),
+      rejectActiveRideOffer: (offerId) => rejectActiveRideOffer(offerId),
+      acceptActiveRideOffer: (offerId) => acceptActiveRideOffer(offerId),
       acceptParcelOffer: (offerId) =>
         dispatch({ type: 'acceptParcelOffer', offerId }),
       setActiveRideStatus: (status) =>

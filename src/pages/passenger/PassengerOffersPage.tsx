@@ -16,21 +16,26 @@ export default function PassengerOffersPage() {
     isRideActionLoading,
   } = useAppState()
   const actions = useAppActions()
-  const refreshRideSnapshotRef = useRef(actions.refreshPassengerRideSnapshot)
+  const loadOffersRef = useRef(actions.loadActiveRequestOffers)
   const activeRideRequestId = activeRideRequest?.id ?? null
   const activeRideRequestStatus = activeRideRequest?.status ?? null
 
   useEffect(() => {
-    refreshRideSnapshotRef.current = actions.refreshPassengerRideSnapshot
-  }, [actions.refreshPassengerRideSnapshot])
+    loadOffersRef.current = actions.loadActiveRequestOffers
+  }, [actions.loadActiveRequestOffers])
 
   useEffect(() => {
-    if (!activeRideRequestId || activeRideRequestStatus === 'CANCELLED') return
+    if (
+      !activeRideRequestId ||
+      (activeRideRequestStatus !== 'SEARCHING' && activeRideRequestStatus !== 'OFFERED')
+    ) {
+      return
+    }
 
     let cancelled = false
     const refresh = () => {
       if (cancelled) return
-      void refreshRideSnapshotRef.current()
+      void loadOffersRef.current()
     }
 
     refresh()
@@ -174,7 +179,7 @@ export default function PassengerOffersPage() {
 
               <button
                 type="button"
-                onClick={() => actions.acceptOffer(offer.id)}
+                onClick={() => actions.acceptActiveRideOffer(offer.id)}
                 className={cn(
                   'mt-4 w-full rounded-2xl px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-accent/20 disabled:opacity-60',
                   offer.isCustomOffer ? 'bg-amber-500' : 'bg-accent',
@@ -185,7 +190,7 @@ export default function PassengerOffersPage() {
               </button>
               <button
                 type="button"
-                onClick={() => actions.rejectRideOffer(offer.id)}
+                onClick={() => actions.rejectActiveRideOffer(offer.id)}
                 className="mt-2 w-full rounded-2xl border border-border bg-white px-4 py-3 text-sm font-semibold text-ink disabled:opacity-60"
                 disabled={isRideActionLoading}
               >

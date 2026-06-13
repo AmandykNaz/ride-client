@@ -4,8 +4,10 @@ import type {
   RideRequestStatus,
 } from '../../../types/domain'
 import type {
+  AcceptRideOfferResponse,
   CreateRideRequestPayload,
   RideOffer,
+  RideOfferListResponse,
   RideOrder,
   RideOrderEvent,
   RideRequest,
@@ -29,12 +31,17 @@ function asTripType(value: unknown) {
   return value === 'shared' || value === 'full' ? value : undefined
 }
 
+function isBackendEnvelope(value: unknown): value is BackendRecord {
+  return isRecord(value) && ('items' in value || 'data' in value || 'request' in value || 'order' in value)
+}
+
 function extractList(value: unknown) {
   if (Array.isArray(value)) return value
 
   if (isRecord(value)) {
     const list =
       (Array.isArray(value.items) && value.items) ||
+      (Array.isArray(value.offers) && value.offers) ||
       (Array.isArray(value.requests) && value.requests) ||
       (Array.isArray(value.orders) && value.orders) ||
       (Array.isArray(value.results) && value.results) ||
@@ -111,25 +118,64 @@ export function mapRideRequestToViewModel(raw: unknown): RideRequest {
 export function mapRideOfferToViewModel(raw: unknown): RideOffer {
   const record = isRecord(raw) ? raw : {}
   const driver = isRecord(record.driver) ? record.driver : {}
+  const vehicle = isRecord(record.vehicle) ? record.vehicle : {}
 
   return {
     id: asString(record.id, `offer-${Date.now()}`),
     requestId: asString(record.requestId ?? record.request_id),
     status: asString(record.status, 'pending'),
-    driverName: asString(record.driverName ?? record.driver_name ?? driver.name ?? driver.fullName ?? driver.full_name, 'Водитель'),
-    rating: asNumber(record.rating ?? driver.rating, 5),
+    driverName: asString(
+      record.driverName ??
+        record.driver_name ??
+        record.driverFullName ??
+        record.driver_full_name ??
+        driver.name ??
+        driver.fullName ??
+        driver.full_name ??
+        record.customerName ??
+        record.customer_name,
+      'Водитель',
+    ),
+    rating: asNumber(record.rating ?? record.driverRating ?? record.driver_rating ?? driver.rating ?? vehicle.rating, 5),
     tripsCount: asNumber(record.tripsCount ?? record.trips_count ?? driver.tripsCount ?? driver.trips_count, 0),
-    carModel: asString(record.carModel ?? record.car_model ?? driver.carModel ?? driver.car_model, ''),
-    carColor: asString(record.carColor ?? record.car_color ?? driver.carColor ?? driver.car_color, ''),
-    plate: asString(record.plate ?? record.carPlate ?? record.car_plate ?? driver.plate ?? driver.carPlate ?? driver.car_plate, ''),
-    etaMinutes: asNumber(record.etaMinutes ?? record.eta_minutes, 0),
+    carModel: asString(
+      record.carModel ?? record.car_model ?? vehicle.model ?? vehicle.carModel ?? driver.carModel ?? driver.car_model,
+      '',
+    ),
+    carColor: asString(record.carColor ?? record.car_color ?? vehicle.color ?? driver.carColor ?? driver.car_color, ''),
+    plate: asString(
+      record.plate ??
+        record.carPlate ??
+        record.car_plate ??
+        vehicle.plate ??
+        driver.plate ??
+        driver.carPlate ??
+        driver.car_plate,
+      '',
+    ),
+    etaMinutes: asNumber(record.etaMinutes ?? record.eta_minutes ?? record.eta ?? record.minutesToArrival, 0),
     originalPrice: asNumber(
-      record.originalPrice ?? record.original_price ?? record.price ?? record.requestedPrice ?? record.requested_price,
+      record.originalPrice ??
+        record.original_price ??
+        record.price ??
+        record.amount ??
+        record.requestedPrice ??
+        record.requested_price,
       0,
     ),
-    offeredPrice: asNumber(record.offeredPrice ?? record.offered_price ?? record.price ?? record.agreedPrice ?? record.agreed_price, 0),
-    isCustomOffer: Boolean(record.isCustomOffer ?? record.is_custom_offer ?? record.customOffer ?? record.custom_offer),
-    comment: asString(record.comment),
+    offeredPrice: asNumber(
+      record.offeredPrice ??
+        record.offered_price ??
+        record.price ??
+        record.amount ??
+        record.agreedPrice ??
+        record.agreed_price,
+      0,
+    ),
+    isCustomOffer: Boolean(
+      record.isCustomOffer ?? record.is_custom_offer ?? record.customOffer ?? record.custom_offer ?? record.custom,
+    ),
+    comment: asString(record.comment ?? record.message ?? record.note),
     raw,
   }
 }
@@ -223,19 +269,32 @@ export async function cancelRideRequest(id: string) {
   return mapRideRequestToViewModel(await backendPost(`/ride/requests/${id}/cancel`))
 }
 
-export async function getRideRequestOffers(requestId: string) {
-  return normalizeResponse<RideOffer>(
-    await backendGet(`/ride/requests/${requestId}/offers`),
-    mapRideOfferToViewModel,
-  )
+export async function getRideRequestOffers(requestId: number | string): Promise<RideOfferListResponse> {
+  const response = await backendGet(`/ride/requests/${String(requestId)}/offers`)
+  const list = isBackendEnvelope(response) && Array.isArray(response.items)
+    ? response.items
+    : response
+  return normalizeResponse<RideOffer>(list, mapRideOfferToViewModel)
 }
 
-export async function rejectRideOffer(offerId: string) {
-  return backendPost(`/ride/offers/${offerId}/reject`)
+export async function rejectRideOffer(offerId: number | string) {
+  return backendPost(`/ride/offers/${String(offerId)}/reject`)
 }
 
-export async function acceptRideOffer(offerId: string) {
-  return mapRideOrderToViewModel(await backendPost(`/ride/offers/${offerId}/accept`))
+function extractAcceptedRideOrder(response: AcceptRideOfferResponse | unknown) {
+  if (isRecord(response)) {
+    if (response.order) return mapRideOrderToViewModel(response.order)
+    if (response.rideOrder) return mapRideOrderToViewModel(response.rideOrder)
+    if (response.request && !response.order) return mapRideOrderToViewModel(response.request)
+    if (response.rideRequest) return mapRideOrderToViewModel(response.rideRequest)
+  }
+
+  return mapRideOrderToViewModel(response)
+}
+
+export async function acceptRideOffer(offerId: number | string) {
+  const response = await backendPost<AcceptRideOfferResponse>(`/ride/offers/${String(offerId)}/accept`)
+  return extractAcceptedRideOrder(response)
 }
 
 export async function getPassengerOrders(params?: Record<string, string | number | boolean | undefined>) {
