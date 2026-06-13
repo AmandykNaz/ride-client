@@ -298,20 +298,28 @@ export default function DriverDashboardPage() {
       <div
         className={cn(
           'rounded-2xl p-4 text-sm font-semibold',
-          driverWallet.balance >= driverWallet.minBalance
+          driverWallet.canGoOnline
             ? 'bg-emerald-50 text-emerald-700'
             : 'bg-amber-50 text-amber-800',
         )}
       >
-        {driverWallet.balance >= driverWallet.minBalance
-          ? 'Доступ к заказам активен'
-          : 'Доступ к заказам ограничен'}
+        {driverWallet.isBlocked
+          ? 'Кошелек заблокирован'
+          : driverWallet.canGoOnline
+            ? 'Доступ к заказам активен'
+            : 'Доступ к заказам ограничен'}
       </div>
 
-      {driverWallet.balance < driverWallet.minBalance ? (
+      {!driverWallet.canGoOnline ? (
         <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-          <p className="font-semibold">Баланс ниже минимального</p>
-          <p className="mt-1">Пополните баланс, чтобы видеть заказы.</p>
+          <p className="font-semibold">
+            {driverWallet.isBlocked ? 'Кошелек заблокирован' : 'Баланс ниже минимального'}
+          </p>
+          <p className="mt-1">
+            {driverWallet.isBlocked
+              ? driverWallet.blockedReason || 'Пополните баланс или обратитесь в поддержку.'
+              : 'Пополните баланс, чтобы видеть заказы.'}
+          </p>
           <button
             type="button"
             onClick={() => actions.setScreen('driverBalance')}
@@ -391,10 +399,10 @@ export default function DriverDashboardPage() {
         <button
           type="button"
           onClick={() => actions.setScreen('driverFeed')}
-          disabled={driverWallet.balance < driverWallet.minBalance}
+          disabled={!driverWallet.canGoOnline}
           className={cn(
             'rounded-2xl px-3 py-3 text-sm font-semibold',
-            driverWallet.balance < driverWallet.minBalance
+            !driverWallet.canGoOnline
               ? 'cursor-not-allowed border border-border bg-slate-50 text-muted'
               : 'border border-border bg-white text-ink',
           )}

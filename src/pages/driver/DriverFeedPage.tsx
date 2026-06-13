@@ -40,7 +40,7 @@ export default function DriverFeedPage() {
   const actions = useAppActions()
   const [feedFilter, setFeedFilter] = useState<FeedFilter>('all')
 
-  const lowBalance = driverWallet.balance < driverWallet.minBalance
+  const lowBalance = !driverWallet.canGoOnline
   const visibleOrders = useMemo(
     () =>
       driverFeedOrders
@@ -91,12 +91,16 @@ export default function DriverFeedPage() {
     return (
       <PageCard
         eyebrow="Водитель"
-        title="Баланс ниже минимального"
+        title={driverWallet.isBlocked ? 'Кошелек заблокирован' : 'Баланс ниже минимального'}
         description="Пополните баланс, чтобы видеть заказы."
       >
         <div className="flex items-center gap-3 rounded-2xl bg-amber-50 p-4 text-amber-900">
           <Sparkles className="h-5 w-5" />
-          <p className="text-sm">Пополните баланс, чтобы видеть заказы.</p>
+          <p className="text-sm">
+            {driverWallet.isBlocked
+              ? driverWallet.blockedReason || 'Пополните баланс, чтобы снова видеть заказы.'
+              : 'Пополните баланс, чтобы видеть заказы.'}
+          </p>
         </div>
         <div className="grid gap-2 sm:grid-cols-2">
           <button

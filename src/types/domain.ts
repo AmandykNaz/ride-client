@@ -40,7 +40,10 @@ export type WalletTransaction = {
   status: WalletTransactionStatus
   title: string
   description?: string
+  comment?: string
   createdAt: string
+  balanceBefore?: number
+  balanceAfter?: number
   sourceOrderId?: string
   sourceTopUpRequestId?: string
 }
@@ -51,23 +54,36 @@ export type TopUpRequestStatus =
   | 'REJECTED'
   | 'CANCELLED'
 
-export type TopUpRequestMethod = 'KASPI' | 'HALYK' | 'CASH'
+export type TopUpRequestMethod =
+  | 'KASPI'
+  | 'KASPI_TRANSFER'
+  | 'BANK_TRANSFER'
+  | 'CASH'
+  | 'OTHER'
 
 export type TopUpRequest = {
   id: string
   amount: number
   method: TopUpRequestMethod
-  referenceNumber: string
-  screenshotAttached: boolean
+  referenceNumber?: string
+  providerRef?: string
+  comment?: string
+  proofFilePath?: string
+  screenshotAttached?: boolean
   status: TopUpRequestStatus
   createdAt: string
   reviewedAt?: string
-  rejectReason?: string
+  rejectionReason?: string
 }
 
 export type DriverWallet = {
   balance: number
   minBalance: number
+  currency?: string
+  canGoOnline?: boolean
+  missingAmount?: number
+  isBlocked?: boolean
+  blockedReason?: string
   transactions: WalletTransaction[]
   topUpRequests: TopUpRequest[]
   chargedOrderIds: string[]

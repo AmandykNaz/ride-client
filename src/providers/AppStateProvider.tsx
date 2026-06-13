@@ -34,6 +34,17 @@ import {
   updateDriverOrderStatus,
   withdrawDriverOffer as withdrawDriverOfferApi,
 } from '../features/driver/api/driver.api'
+import {
+  createDriverTopUpRequest as createDriverTopUpRequestApi,
+  getDriverTopUpRequests,
+  getDriverWallet,
+  getDriverWalletTransactions,
+} from '../features/driver/api/driver-wallet.api'
+import type {
+  DriverTopUpRequest as DriverTopUpRequestApi,
+  DriverWallet as DriverWalletApi,
+  DriverWalletTransaction as DriverWalletTransactionApi,
+} from '../features/driver/api/driver-wallet.types'
 import type {
   RideOrder as PassengerRideOrder,
   RideOrderEvent as PassengerRideOrderEvent,
@@ -64,9 +75,9 @@ import type {
   RideDraft,
   RideRequestStatus,
   DriverWallet,
+  WalletTransaction,
   TopUpRequest,
   TopUpRequestMethod,
-  WalletTransaction,
   UserRole,
 } from '../types/domain'
 import type { CreateRideRequestPayload } from '../features/passenger/api/passenger-rides.types'
@@ -87,6 +98,8 @@ type AppState = {
   driverApplicationDraft: DriverApplicationDraft
   driverRegistrationStep: DriverApplicationStep
   driverWallet: DriverWallet
+  driverWalletTransactions: WalletTransaction[]
+  driverTopUpRequests: TopUpRequest[]
   driverFeedOrders: DriverFeedOrder[]
   driverOrders: DriverActiveOrder[]
   driverActiveOrder: DriverActiveOrder | null
@@ -97,13 +110,17 @@ type AppState = {
   driverCounterOfferComment: string
   isDriverFeedLoading: boolean
   isDriverActionLoading: boolean
+  isDriverWalletLoading: boolean
+  isDriverTopUpSubmitting: boolean
   driverFlowError: string | null
+  driverWalletError: string | null
   isTopUpFormOpen: boolean
   topUpForm: {
     amount: string
     method: TopUpRequestMethod
-    referenceNumber: string
-    screenshotAttached: boolean
+    providerRef: string
+    comment: string
+    proofFilePath: string
   }
   activeRideRequest: PassengerRideRequest | null
   driverOffers: DriverOffer[]
@@ -159,14 +176,24 @@ type AppContextValue = {
     toggleDriverOnlineStatus: () => void
     setDriverOnline: (online: boolean) => void
     refreshDriverSnapshot: () => Promise<void>
+    refreshDriverWallet: () => Promise<void>
+    refreshDriverWalletTransactions: () => Promise<void>
+    refreshDriverTopUpRequests: () => Promise<void>
     refreshDriverFeed: () => Promise<void>
     refreshDriverOffers: () => Promise<void>
     refreshDriverOrders: () => Promise<void>
+    createDriverTopUpRequest: (payload: {
+      amount: number
+      method: TopUpRequestMethod
+      providerRef?: string
+      comment?: string
+      proofFilePath?: string
+    }) => Promise<void>
     withdrawDriverOffer: (offerId: string) => Promise<void>
     openTopUpForm: () => void
     closeTopUpForm: () => void
     updateTopUpForm: (patch: Partial<AppState['topUpForm']>) => void
-    submitTopUpRequest: () => void
+    submitTopUpRequest: () => Promise<void>
     demoApproveTopUpRequest: (requestId: string) => void
     demoRejectTopUpRequest: (requestId: string) => void
     chargeCommissionForCompletedOrder: (orderId?: string) => void
@@ -231,6 +258,18 @@ type AppAction =
   | { type: 'setDriverFeedLoading'; loading: boolean }
   | { type: 'setDriverActionLoading'; loading: boolean }
   | { type: 'setDriverFlowError'; error: string | null }
+  | { type: 'setDriverWalletLoading'; loading: boolean }
+  | { type: 'setDriverTopUpSubmitting'; loading: boolean }
+  | { type: 'setDriverWalletError'; error: string | null }
+  | {
+      type: 'setDriverWalletSnapshot'
+      driverWallet: DriverWallet
+      driverWalletTransactions: WalletTransaction[]
+      driverTopUpRequests: TopUpRequest[]
+    }
+  | { type: 'setDriverWallet'; driverWallet: DriverWallet }
+  | { type: 'setDriverWalletTransactions'; driverWalletTransactions: WalletTransaction[] }
+  | { type: 'setDriverTopUpRequests'; driverTopUpRequests: TopUpRequest[] }
   | { type: 'setPassengerRideRequests'; requests: PassengerRideRequest[] }
   | { type: 'setPassengerRideOrders'; orders: PassengerRideOrder[] }
   | { type: 'setActiveRideEvents'; events: PassengerRideOrderEvent[] }
@@ -652,9 +691,75 @@ function defaultDriverWallet(): DriverWallet {
   return {
     balance: 1500,
     minBalance: 1000,
+    currency: 'KZT',
+    canGoOnline: true,
+    missingAmount: 0,
+    isBlocked: false,
+    blockedReason: '',
     transactions: [],
     topUpRequests: [],
     chargedOrderIds: [],
+  }
+}
+
+function syncDriverWalletAccessState(wallet: DriverWallet): DriverWallet {
+  const missingAmount = Math.max(0, wallet.minBalance - wallet.balance)
+  const canGoOnline = wallet.isBlocked !== true && wallet.balance >= wallet.minBalance
+
+  return {
+    ...wallet,
+    missingAmount,
+    canGoOnline,
+  }
+}
+
+function mapWalletResponseToState(wallet: DriverWalletApi): DriverWallet {
+  return syncDriverWalletAccessState({
+    balance: wallet.balance,
+    minBalance: wallet.minimumBalance,
+    currency: wallet.currency,
+    canGoOnline: wallet.canGoOnline,
+    missingAmount: wallet.missingAmount,
+    isBlocked: wallet.isBlocked,
+    blockedReason: wallet.blockedReason,
+    transactions: [],
+    topUpRequests: [],
+    chargedOrderIds: [],
+  })
+}
+
+function mapWalletTransactionResponseToState(
+  transaction: DriverWalletTransactionApi,
+): WalletTransaction {
+  return {
+    id: transaction.id,
+    type: transaction.type as WalletTransaction['type'],
+    amount: transaction.amount,
+    status: transaction.status as WalletTransaction['status'],
+    title: transaction.description || transaction.comment || transaction.type,
+    description: transaction.description,
+    comment: transaction.comment,
+    createdAt: transaction.createdAt,
+    balanceBefore: transaction.balanceBefore,
+    balanceAfter: transaction.balanceAfter,
+  }
+}
+
+function mapTopUpRequestResponseToState(
+  request: DriverTopUpRequestApi,
+): TopUpRequest {
+  return {
+    id: request.id,
+    amount: request.amount,
+    method: request.method as TopUpRequestMethod,
+    referenceNumber: request.referenceNumber,
+    providerRef: request.providerRef,
+    comment: request.comment,
+    proofFilePath: request.proofFilePath,
+    status: request.status as TopUpRequest['status'],
+    createdAt: request.createdAt,
+    reviewedAt: request.reviewedAt,
+    rejectionReason: request.rejectionReason,
   }
 }
 
@@ -676,8 +781,11 @@ function makeWalletTransaction(params: {
   amount: number
   title: string
   description?: string
+  comment?: string
   sourceOrderId?: string
   sourceTopUpRequestId?: string
+  balanceBefore?: number
+  balanceAfter?: number
 }): WalletTransaction {
   return {
     id: makeId('txn'),
@@ -689,14 +797,17 @@ function makeWalletTransaction(params: {
 
 function formatTopUpMethod(method: TopUpRequestMethod) {
   if (method === 'KASPI') return 'Kaspi'
-  if (method === 'HALYK') return 'Halyk'
-  return 'Наличные админу'
+  if (method === 'KASPI_TRANSFER') return 'Kaspi'
+  if (method === 'BANK_TRANSFER') return 'Bank transfer'
+  if (method === 'CASH') return 'Наличные'
+  return 'Other'
 }
 
 function canAccessDriverOrders(state: Pick<AppState, 'driverVerificationStatus' | 'driverWallet'>) {
   return (
     state.driverVerificationStatus === 'APPROVED' &&
-    state.driverWallet.balance >= state.driverWallet.minBalance
+    state.driverWallet.isBlocked !== true &&
+    (state.driverWallet.canGoOnline ?? state.driverWallet.balance >= state.driverWallet.minBalance)
   )
 }
 
@@ -707,8 +818,9 @@ function createTopUpRequestFromForm(
     id: makeId('topup'),
     amount: Number(form.amount),
     method: form.method,
-    referenceNumber: form.referenceNumber.trim(),
-    screenshotAttached: form.screenshotAttached,
+    providerRef: form.providerRef.trim(),
+    comment: form.comment.trim(),
+    proofFilePath: form.proofFilePath.trim() || undefined,
     status: 'PENDING_REVIEW',
     createdAt: new Date().toISOString(),
   }
@@ -761,16 +873,17 @@ function chargeCommissionIfNeeded(
     transactions: [transaction, ...state.driverWallet.transactions],
     chargedOrderIds: [...state.driverWallet.chargedOrderIds, activeOrder.sourceOrderId],
   }
+  const syncedWallet = syncDriverWalletAccessState(updatedWallet)
 
   return {
-    driverWallet: updatedWallet,
+    driverWallet: syncedWallet,
     driverActiveOrder: {
       ...activeOrder,
       commissionCharged: true,
       completedBalanceBefore: beforeBalance,
       completedBalanceAfter: afterBalance,
     },
-    driverProfile: syncDriverProfileWithWallet(state.driverProfile, updatedWallet),
+    driverProfile: syncDriverProfileWithWallet(state.driverProfile, syncedWallet),
   }
 }
 
@@ -908,8 +1021,13 @@ function appReducer(state: AppState, action: AppAction): AppState {
         driverCounterOfferComment: '',
         isDriverFeedLoading: false,
         isDriverActionLoading: false,
+        isDriverWalletLoading: false,
+        isDriverTopUpSubmitting: false,
         driverFlowError: null,
+        driverWalletError: null,
         driverWallet: defaultDriverWallet(),
+        driverWalletTransactions: [],
+        driverTopUpRequests: [],
         verifiedPhone: '',
         pendingPassengerFlow: null,
         passengerRideRequests: [],
@@ -949,6 +1067,12 @@ function appReducer(state: AppState, action: AppAction): AppState {
       return { ...state, isDriverActionLoading: action.loading }
     case 'setDriverFlowError':
       return { ...state, driverFlowError: action.error }
+    case 'setDriverWalletLoading':
+      return { ...state, isDriverWalletLoading: action.loading }
+    case 'setDriverTopUpSubmitting':
+      return { ...state, isDriverTopUpSubmitting: action.loading }
+    case 'setDriverWalletError':
+      return { ...state, driverWalletError: action.error }
     case 'setPassengerRideRequests':
       return { ...state, passengerRideRequests: action.requests }
     case 'setPassengerRideOrders':
@@ -967,6 +1091,36 @@ function appReducer(state: AppState, action: AppAction): AppState {
         driverActiveOrder: action.driverActiveOrder,
         currentScreen: action.currentScreen ?? state.currentScreen,
         driverFlowError: null,
+      }
+    case 'setDriverWalletSnapshot':
+      return {
+        ...state,
+        driverWallet: action.driverWallet,
+        driverWalletTransactions: action.driverWalletTransactions,
+        driverTopUpRequests: action.driverTopUpRequests,
+        driverFlowError: null,
+        driverWalletError: null,
+      }
+    case 'setDriverWallet':
+      return {
+        ...state,
+        driverWallet: action.driverWallet,
+        driverFlowError: null,
+        driverWalletError: null,
+      }
+    case 'setDriverWalletTransactions':
+      return {
+        ...state,
+        driverWalletTransactions: action.driverWalletTransactions,
+        driverFlowError: null,
+        driverWalletError: null,
+      }
+    case 'setDriverTopUpRequests':
+      return {
+        ...state,
+        driverTopUpRequests: action.driverTopUpRequests,
+        driverFlowError: null,
+        driverWalletError: null,
       }
     case 'setDriverFeedOrders':
       return { ...state, driverFeedOrders: action.orders }
@@ -1097,6 +1251,7 @@ function appReducer(state: AppState, action: AppAction): AppState {
         balance: state.driverWallet.balance || approvedProfile.balance,
         minBalance: state.driverWallet.minBalance || approvedProfile.minBalance,
       }
+      const syncedWallet = syncDriverWalletAccessState(wallet)
 
       return {
         ...state,
@@ -1104,12 +1259,12 @@ function appReducer(state: AppState, action: AppAction): AppState {
         driverProfile: syncDriverProfileWithWallet(
           {
             ...approvedProfile,
-            balance: wallet.balance,
-            minBalance: wallet.minBalance,
+            balance: syncedWallet.balance,
+            minBalance: syncedWallet.minBalance,
           },
-          wallet,
+          syncedWallet,
         ),
-        driverWallet: wallet,
+        driverWallet: syncedWallet,
         currentScreen: 'driverDashboard',
         isMenuOpen: false,
         role: 'driver',
@@ -1170,7 +1325,8 @@ function appReducer(state: AppState, action: AppAction): AppState {
           ? {
               ...state.driverProfile,
               isOnline:
-                state.driverWallet.balance >= state.driverWallet.minBalance
+                state.driverWallet.isBlocked !== true &&
+                (state.driverWallet.canGoOnline ?? state.driverWallet.balance >= state.driverWallet.minBalance)
                   ? !state.driverProfile.isOnline
                   : false,
             }
@@ -1182,7 +1338,10 @@ function appReducer(state: AppState, action: AppAction): AppState {
         driverProfile: state.driverProfile
           ? {
               ...state.driverProfile,
-              isOnline: action.online && state.driverWallet.balance >= state.driverWallet.minBalance,
+              isOnline:
+                action.online &&
+                state.driverWallet.isBlocked !== true &&
+                (state.driverWallet.canGoOnline ?? state.driverWallet.balance >= state.driverWallet.minBalance),
             }
           : state.driverProfile,
       }
@@ -1194,9 +1353,10 @@ function appReducer(state: AppState, action: AppAction): AppState {
         isTopUpFormOpen: false,
         topUpForm: {
           amount: '',
-          method: 'KASPI',
-          referenceNumber: '',
-          screenshotAttached: false,
+          method: 'KASPI_TRANSFER',
+          providerRef: '',
+          comment: '',
+          proofFilePath: '',
         },
       }
     case 'updateTopUpForm':
@@ -1206,7 +1366,7 @@ function appReducer(state: AppState, action: AppAction): AppState {
       }
     case 'submitTopUpRequest': {
       const amount = Number(state.topUpForm.amount)
-      if (!Number.isFinite(amount) || amount <= 0 || !state.topUpForm.referenceNumber.trim()) {
+      if (!Number.isFinite(amount) || amount <= 0) {
         return state
       }
 
@@ -1218,17 +1378,19 @@ function appReducer(state: AppState, action: AppAction): AppState {
           ...state.driverWallet,
           topUpRequests: [request, ...state.driverWallet.topUpRequests],
         },
+        driverTopUpRequests: [request, ...state.driverTopUpRequests],
         isTopUpFormOpen: false,
         topUpForm: {
           amount: '',
-          method: 'KASPI',
-          referenceNumber: '',
-          screenshotAttached: false,
+          method: 'KASPI_TRANSFER',
+          providerRef: '',
+          comment: '',
+          proofFilePath: '',
         },
       }
     }
     case 'demoApproveTopUpRequest': {
-      const request = state.driverWallet.topUpRequests.find((item) => item.id === action.requestId)
+      const request = state.driverTopUpRequests.find((item) => item.id === action.requestId)
       if (!request || request.status !== 'PENDING_REVIEW') return state
 
       const updatedRequest = {
@@ -1240,12 +1402,15 @@ function appReducer(state: AppState, action: AppAction): AppState {
       const updatedWallet: DriverWallet = {
         ...state.driverWallet,
         balance: state.driverWallet.balance + request.amount,
+        missingAmount: Math.max(0, state.driverWallet.minBalance - (state.driverWallet.balance + request.amount)),
+        canGoOnline: state.driverWallet.balance + request.amount >= state.driverWallet.minBalance,
         transactions: [
           makeWalletTransaction({
             type: 'TOP_UP_APPROVED',
             amount: request.amount,
             title: 'Пополнение баланса',
-            description: `${formatTopUpMethod(request.method)} · ${request.referenceNumber}`,
+            description: `${formatTopUpMethod(request.method)} · ${request.providerRef || request.referenceNumber || ''}`,
+            comment: request.comment,
             sourceTopUpRequestId: request.id,
           }),
           ...state.driverWallet.transactions,
@@ -1258,11 +1423,15 @@ function appReducer(state: AppState, action: AppAction): AppState {
       return {
         ...state,
         driverWallet: updatedWallet,
+        driverWalletTransactions: updatedWallet.transactions,
+        driverTopUpRequests: state.driverTopUpRequests.map((item) =>
+          item.id === request.id ? updatedRequest : item,
+        ),
         driverProfile: syncDriverProfileWithWallet(state.driverProfile, updatedWallet),
       }
     }
     case 'demoRejectTopUpRequest': {
-      const request = state.driverWallet.topUpRequests.find((item) => item.id === action.requestId)
+      const request = state.driverTopUpRequests.find((item) => item.id === action.requestId)
       if (!request || request.status !== 'PENDING_REVIEW') return state
 
       return {
@@ -1275,11 +1444,21 @@ function appReducer(state: AppState, action: AppAction): AppState {
                   ...item,
                   status: 'REJECTED',
                   reviewedAt: new Date().toISOString(),
-                  rejectReason: 'Платеж не найден',
+                  rejectionReason: 'Платеж не найден',
                 }
               : item,
           ),
         },
+        driverTopUpRequests: state.driverTopUpRequests.map((item) =>
+          item.id === request.id
+            ? {
+                ...item,
+                status: 'REJECTED',
+                reviewedAt: new Date().toISOString(),
+                rejectionReason: 'Платеж не найден',
+              }
+            : item,
+        ),
       }
     }
     case 'chargeCommissionForCompletedOrder': {
@@ -1329,11 +1508,12 @@ function appReducer(state: AppState, action: AppAction): AppState {
           ...state.driverWallet.transactions,
         ],
       }
+      const syncedWallet = syncDriverWalletAccessState(updatedWallet)
 
       return {
         ...state,
-        driverWallet: updatedWallet,
-        driverProfile: syncDriverProfileWithWallet(state.driverProfile, updatedWallet),
+        driverWallet: syncedWallet,
+        driverProfile: syncDriverProfileWithWallet(state.driverProfile, syncedWallet),
       }
     }
     case 'blockDriverOrdersIfLowBalance':
@@ -1805,6 +1985,8 @@ const initialState: AppState = {
   driverApplicationDraft: defaultDriverApplicationDraft(),
   driverRegistrationStep: 1,
   driverWallet: defaultDriverWallet(),
+  driverWalletTransactions: [],
+  driverTopUpRequests: [],
   driverFeedOrders: defaultDriverFeedOrders(),
   driverOrders: [],
   driverActiveOrder: null,
@@ -1815,13 +1997,17 @@ const initialState: AppState = {
   driverCounterOfferComment: '',
   isDriverFeedLoading: false,
   isDriverActionLoading: false,
+  isDriverWalletLoading: false,
+  isDriverTopUpSubmitting: false,
   driverFlowError: null,
+  driverWalletError: null,
   isTopUpFormOpen: false,
   topUpForm: {
     amount: '',
-    method: 'KASPI',
-    referenceNumber: '',
-    screenshotAttached: false,
+    method: 'KASPI_TRANSFER',
+    providerRef: '',
+    comment: '',
+    proofFilePath: '',
   },
   activeRideRequest: null,
   driverOffers: [],
@@ -2280,6 +2466,100 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     }
   }, [dispatch, state.driverProfile?.isOnline, state.driverVerificationStatus])
 
+  const refreshDriverWallet = useCallback(async (force = false) => {
+    if (!force && state.driverVerificationStatus !== 'APPROVED') {
+      return
+    }
+
+    dispatch({ type: 'setDriverWalletLoading', loading: true })
+    dispatch({ type: 'setDriverWalletError', error: null })
+
+    try {
+      const wallet = await getDriverWallet()
+      dispatch({
+        type: 'setDriverWallet',
+        driverWallet: mapWalletResponseToState(wallet),
+      })
+    } catch (error) {
+      if (error instanceof BackendAuthError) {
+        clearRideAccessToken()
+        dispatch({ type: 'resetPassengerSession' })
+        return
+      }
+
+      dispatch({
+        type: 'setDriverWalletError',
+        error: error instanceof Error ? error.message : 'Не удалось загрузить wallet.',
+      })
+    } finally {
+      dispatch({ type: 'setDriverWalletLoading', loading: false })
+    }
+  }, [dispatch, state.driverVerificationStatus])
+
+  const refreshDriverWalletTransactions = useCallback(async (force = false) => {
+    if (!force && state.driverVerificationStatus !== 'APPROVED') {
+      return
+    }
+
+    dispatch({ type: 'setDriverWalletLoading', loading: true })
+    dispatch({ type: 'setDriverWalletError', error: null })
+
+    try {
+      const response = await getDriverWalletTransactions({ take: 20, skip: 0 })
+      const transactions = response.items.map(mapWalletTransactionResponseToState)
+
+      dispatch({
+        type: 'setDriverWalletTransactions',
+        driverWalletTransactions: transactions,
+      })
+    } catch (error) {
+      if (error instanceof BackendAuthError) {
+        clearRideAccessToken()
+        dispatch({ type: 'resetPassengerSession' })
+        return
+      }
+
+      dispatch({
+        type: 'setDriverWalletError',
+        error: error instanceof Error ? error.message : 'Не удалось загрузить transactions.',
+      })
+    } finally {
+      dispatch({ type: 'setDriverWalletLoading', loading: false })
+    }
+  }, [dispatch, state.driverVerificationStatus])
+
+  const refreshDriverTopUpRequests = useCallback(async (force = false) => {
+    if (!force && state.driverVerificationStatus !== 'APPROVED') {
+      return
+    }
+
+    dispatch({ type: 'setDriverWalletLoading', loading: true })
+    dispatch({ type: 'setDriverWalletError', error: null })
+
+    try {
+      const response = await getDriverTopUpRequests({ take: 20, skip: 0 })
+      const topUpRequests = response.items.map(mapTopUpRequestResponseToState)
+
+      dispatch({
+        type: 'setDriverTopUpRequests',
+        driverTopUpRequests: topUpRequests,
+      })
+    } catch (error) {
+      if (error instanceof BackendAuthError) {
+        clearRideAccessToken()
+        dispatch({ type: 'resetPassengerSession' })
+        return
+      }
+
+      dispatch({
+        type: 'setDriverWalletError',
+        error: error instanceof Error ? error.message : 'Не удалось загрузить top-up requests.',
+      })
+    } finally {
+      dispatch({ type: 'setDriverWalletLoading', loading: false })
+    }
+  }, [dispatch, state.driverVerificationStatus])
+
   const refreshDriverOffers = useCallback(async (force = false) => {
     if (!force && state.driverVerificationStatus !== 'APPROVED') {
       return
@@ -2387,6 +2667,9 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
       if (verificationStatus === 'APPROVED') {
         await Promise.all([
+          refreshDriverWallet(true),
+          refreshDriverWalletTransactions(true),
+          refreshDriverTopUpRequests(true),
           refreshDriverFeed(true),
           refreshDriverOffers(true),
           refreshDriverOrders(true),
@@ -2417,6 +2700,9 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     state.driverOrders,
     state.driverProfile,
     state.driverVerificationStatus,
+    refreshDriverTopUpRequests,
+    refreshDriverWallet,
+    refreshDriverWalletTransactions,
   ])
 
   const saveDriverApplication = async () => {
@@ -2546,6 +2832,48 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       })
     } finally {
       dispatch({ type: 'setDriverActionLoading', loading: false })
+    }
+  }
+
+  const createDriverTopUpRequestAction = async (payload: {
+    amount: number
+    method: TopUpRequestMethod
+    providerRef?: string
+    comment?: string
+    proofFilePath?: string
+  }) => {
+    if (state.driverVerificationStatus !== 'APPROVED') return
+
+    dispatch({ type: 'setDriverTopUpSubmitting', loading: true })
+    dispatch({ type: 'setDriverWalletError', error: null })
+
+    try {
+      const created = await createDriverTopUpRequestApi(payload)
+      const request = mapTopUpRequestResponseToState(created)
+
+      dispatch({
+        type: 'setDriverTopUpRequests',
+        driverTopUpRequests: [request, ...state.driverTopUpRequests.filter((item) => item.id !== request.id)],
+      })
+
+      await Promise.all([
+        refreshDriverWallet(true),
+        refreshDriverTopUpRequests(true),
+      ])
+    } catch (error) {
+      if (error instanceof BackendAuthError) {
+        clearRideAccessToken()
+        dispatch({ type: 'resetPassengerSession' })
+        return
+      }
+
+      dispatch({
+        type: 'setDriverWalletError',
+        error: error instanceof Error ? error.message : 'Не удалось создать заявку на пополнение.',
+      })
+      throw error
+    } finally {
+      dispatch({ type: 'setDriverTopUpSubmitting', loading: false })
     }
   }
 
@@ -2817,6 +3145,9 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         dispatch({ type: 'setPendingPassengerFlow', flow }),
       refreshPassengerRideSnapshot: () => refreshPassengerRideSnapshot(),
       refreshDriverSnapshot: () => refreshDriverSnapshot(),
+      refreshDriverWallet: () => refreshDriverWallet(),
+      refreshDriverWalletTransactions: () => refreshDriverWalletTransactions(),
+      refreshDriverTopUpRequests: () => refreshDriverTopUpRequests(),
       refreshDriverFeed: () => refreshDriverFeed(),
       refreshDriverOffers: () => refreshDriverOffers(),
       refreshDriverOrders: () => refreshDriverOrders(),
@@ -2842,7 +3173,15 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       openTopUpForm: () => dispatch({ type: 'openTopUpForm' }),
       closeTopUpForm: () => dispatch({ type: 'closeTopUpForm' }),
       updateTopUpForm: (patch) => dispatch({ type: 'updateTopUpForm', patch }),
-      submitTopUpRequest: () => dispatch({ type: 'submitTopUpRequest' }),
+      submitTopUpRequest: () =>
+        createDriverTopUpRequestAction({
+          amount: Number(state.topUpForm.amount),
+          method: state.topUpForm.method,
+          providerRef: state.topUpForm.providerRef.trim() || undefined,
+          comment: state.topUpForm.comment.trim() || undefined,
+          proofFilePath: state.topUpForm.proofFilePath.trim() || undefined,
+        }),
+      createDriverTopUpRequest: (payload) => createDriverTopUpRequestAction(payload),
       demoApproveTopUpRequest: (requestId) =>
         dispatch({ type: 'demoApproveTopUpRequest', requestId }),
       demoRejectTopUpRequest: (requestId) =>

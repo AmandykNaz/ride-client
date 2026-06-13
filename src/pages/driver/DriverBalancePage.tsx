@@ -1,4 +1,4 @@
-import { ArrowDownLeft, ArrowUpRight, Lock } from 'lucide-react'
+import { ArrowDownLeft, ArrowUpRight, Lock, RefreshCw } from 'lucide-react'
 
 import { cn } from '../../lib/cn'
 import { formatKzt } from '../../lib/format'
@@ -15,8 +15,23 @@ function formatDateTime(createdAt: string) {
   }).format(new Date(createdAt))
 }
 
+function formatTopUpMethod(method: string) {
+  if (method === 'KASPI' || method === 'KASPI_TRANSFER') return 'Kaspi'
+  if (method === 'BANK_TRANSFER') return 'Bank transfer'
+  if (method === 'CASH') return 'Cash'
+  return 'Other'
+}
+
 export default function DriverBalancePage() {
-  const { driverVerificationStatus, driverWallet } = useAppState()
+  const {
+    driverVerificationStatus,
+    driverWallet,
+    driverWalletTransactions,
+    driverTopUpRequests,
+    isDriverWalletLoading,
+    isDriverTopUpSubmitting,
+    driverWalletError,
+  } = useAppState()
   const actions = useAppActions()
 
   if (driverVerificationStatus !== 'APPROVED') {
@@ -50,23 +65,19 @@ export default function DriverBalancePage() {
     )
   }
 
-  const accessGranted = driverWallet.balance >= driverWallet.minBalance
-  const pendingTopUps = driverWallet.topUpRequests.filter(
-    (request) => request.status === 'PENDING_REVIEW',
-  )
+  const accessGranted = Boolean(driverWallet.canGoOnline)
+  const missingAmount =
+    typeof driverWallet.missingAmount === 'number'
+      ? driverWallet.missingAmount
+      : Math.max(0, driverWallet.minBalance - driverWallet.balance)
+  const pendingTopUps = driverTopUpRequests.filter((request) => request.status === 'PENDING_REVIEW')
 
   return (
     <div className="space-y-4">
-      {pendingTopUps.length > 0 ? (
-        <div className="rounded-2xl bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">
-          Заявка на пополнение отправлена на проверку
-        </div>
-      ) : null}
-
       <PageCard
         eyebrow="Водитель"
         title="Wallet"
-        description="Пополнение и комиссия работают в демо-режиме."
+        description="Реальный баланс, транзакции и заявки на пополнение."
       >
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="rounded-2xl bg-surface-soft p-4">
@@ -76,6 +87,7 @@ export default function DriverBalancePage() {
             <p className="mt-2 text-2xl font-semibold tracking-[-0.03em] text-ink">
               {formatKzt(driverWallet.balance)}
             </p>
+            <p className="mt-1 text-xs text-muted">{driverWallet.currency || 'KZT'}</p>
           </div>
           <div className="rounded-2xl bg-surface-soft p-4">
             <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">
@@ -83,6 +95,9 @@ export default function DriverBalancePage() {
             </p>
             <p className="mt-2 text-2xl font-semibold tracking-[-0.03em] text-ink">
               {formatKzt(driverWallet.minBalance)}
+            </p>
+            <p className="mt-1 text-xs text-muted">
+              {accessGranted ? 'Можно выходить онлайн' : `Не хватает ${formatKzt(missingAmount)}`}
             </p>
           </div>
         </div>
@@ -93,28 +108,69 @@ export default function DriverBalancePage() {
             accessGranted ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-800',
           )}
         >
-          {accessGranted ? 'Доступ к заказам активен' : 'Доступ к заказам ограничен'}
+          {driverWallet.isBlocked
+            ? 'Кошелек заблокирован'
+            : accessGranted
+              ? 'Доступ к заказам активен'
+              : 'Доступ к заказам ограничен'}
         </div>
 
-        {!accessGranted ? (
-          <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-            Пополните баланс, чтобы видеть заказы.
+        {driverWallet.isBlocked && driverWallet.blockedReason ? (
+          <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+            {driverWallet.blockedReason}
           </div>
         ) : null}
 
-        <button
-          type="button"
-          onClick={actions.openTopUpForm}
-          className="w-full rounded-2xl bg-accent px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-accent/20"
-        >
-          Пополнить баланс
-        </button>
+        {!driverWallet.isBlocked && !accessGranted ? (
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+            <p className="font-semibold">Баланс ниже минимального</p>
+            <p className="mt-1">
+              Пополните баланс на {formatKzt(missingAmount)}, чтобы снова выходить онлайн.
+            </p>
+          </div>
+        ) : null}
+
+        {driverWallet.canGoOnline === false && !driverWallet.isBlocked ? (
+          <div className="rounded-2xl border border-sky-200 bg-sky-50 p-4 text-sm text-sky-900">
+            Кошелек пока не позволяет выйти онлайн. Пополните баланс или дождитесь обработки заявки.
+          </div>
+        ) : null}
+
+        <div className="grid gap-2 sm:grid-cols-2">
+          <button
+            type="button"
+            onClick={actions.openTopUpForm}
+            disabled={isDriverTopUpSubmitting}
+            className="rounded-2xl bg-accent px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-accent/20 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            Пополнить баланс
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              void actions.refreshDriverWallet()
+              void actions.refreshDriverWalletTransactions()
+              void actions.refreshDriverTopUpRequests()
+            }}
+            disabled={isDriverWalletLoading}
+            className="inline-flex items-center justify-center gap-2 rounded-2xl border border-border bg-white px-4 py-3 text-sm font-semibold text-ink disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <RefreshCw className={cn('h-4 w-4', isDriverWalletLoading && 'animate-spin')} />
+            Обновить
+          </button>
+        </div>
+
+        {driverWalletError ? (
+          <div className="rounded-2xl bg-red-50 px-4 py-3 text-sm text-red-700">
+            {driverWalletError}
+          </div>
+        ) : null}
       </PageCard>
 
       <PageCard
         eyebrow="Проверка"
-        title="Пополнения на проверке"
-        description="Демо-модерация пополнений без реального backend."
+        title="Заявки на пополнение"
+        description="Реальные заявки, отправленные на проверку."
       >
         {pendingTopUps.length === 0 ? (
           <div className="rounded-2xl bg-surface-soft p-4 text-sm text-muted">
@@ -127,39 +183,18 @@ export default function DriverBalancePage() {
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <p className="text-base font-semibold text-ink">{formatKzt(request.amount)}</p>
-                    <p className="mt-1 text-sm text-muted">
-                      {request.method === 'KASPI'
-                        ? 'Kaspi'
-                        : request.method === 'HALYK'
-                          ? 'Halyk'
-                          : 'Наличные админу'}
-                    </p>
+                    <p className="mt-1 text-sm text-muted">{formatTopUpMethod(request.method)}</p>
                   </div>
                   <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-800">
                     {request.status}
                   </span>
                 </div>
                 <div className="mt-3 grid gap-1 text-sm text-muted">
-                  <p>Reference: {request.referenceNumber}</p>
+                  <p>Reference: {request.providerRef || request.referenceNumber || '—'}</p>
+                  <p>Комментарий: {request.comment || '—'}</p>
                   <p>Дата: {formatDateTime(request.createdAt)}</p>
-                  <p>Скрин: {request.screenshotAttached ? 'Прикреплен' : 'Нет'}</p>
-                </div>
-
-                <div className="mt-4 grid gap-2 sm:grid-cols-2">
-                  <button
-                    type="button"
-                    onClick={() => actions.demoApproveTopUpRequest(request.id)}
-                    className="rounded-2xl bg-accent px-4 py-3 text-sm font-semibold text-white"
-                  >
-                    Одобрить
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => actions.demoRejectTopUpRequest(request.id)}
-                    className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700"
-                  >
-                    Отклонить
-                  </button>
+                  {request.reviewedAt ? <p>Reviewed: {formatDateTime(request.reviewedAt)}</p> : null}
+                  {request.rejectionReason ? <p>Причина отказа: {request.rejectionReason}</p> : null}
                 </div>
               </div>
             ))}
@@ -169,20 +204,21 @@ export default function DriverBalancePage() {
 
       <PageCard
         eyebrow="История"
-        title="Операции"
-        description="Комиссия списывается только после завершения заказа."
+        title="Транзакции"
+        description="Списания и пополнения по wallet."
       >
-        {driverWallet.transactions.length === 0 ? (
+        {isDriverWalletLoading ? (
+          <div className="rounded-2xl bg-surface-soft p-4 text-sm text-muted">
+            Загружаем транзакции...
+          </div>
+        ) : driverWalletTransactions.length === 0 ? (
           <div className="rounded-2xl bg-surface-soft p-4 text-sm text-muted">
             Пока нет операций.
           </div>
         ) : (
           <div className="space-y-3">
-            {driverWallet.transactions.map((transaction) => {
+            {driverWalletTransactions.map((transaction) => {
               const isPositive = transaction.amount >= 0
-              const isTopUp = transaction.type === 'TOP_UP_APPROVED'
-              const isCommission = transaction.type === 'COMMISSION_CHARGED'
-              const isRefund = transaction.type === 'COMMISSION_REFUND'
 
               return (
                 <article key={transaction.id} className="rounded-2xl border border-border bg-white p-4">
@@ -191,11 +227,7 @@ export default function DriverBalancePage() {
                       <span
                         className={cn(
                           'grid h-10 w-10 place-items-center rounded-2xl',
-                          isTopUp || isRefund
-                            ? 'bg-emerald-50 text-emerald-700'
-                            : isCommission
-                              ? 'bg-red-50 text-red-700'
-                              : 'bg-slate-100 text-slate-600',
+                          isPositive ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700',
                         )}
                       >
                         {isPositive ? (
@@ -205,8 +237,10 @@ export default function DriverBalancePage() {
                         )}
                       </span>
                       <div>
-                        <p className="text-sm font-semibold text-ink">{transaction.title}</p>
-                        <p className="mt-1 text-sm text-muted">{transaction.description || 'Без описания'}</p>
+                        <p className="text-sm font-semibold text-ink">{transaction.type}</p>
+                        <p className="mt-1 text-sm text-muted">
+                          {transaction.description || transaction.comment || 'Без описания'}
+                        </p>
                       </div>
                     </div>
                     <p
@@ -220,9 +254,18 @@ export default function DriverBalancePage() {
                     </p>
                   </div>
 
-                  <div className="mt-3 flex items-center justify-between text-xs text-muted">
+                  <div className="mt-3 grid gap-1 text-xs text-muted sm:grid-cols-3">
+                    <span>
+                      Before: {transaction.balanceBefore === undefined ? '—' : formatKzt(transaction.balanceBefore)}
+                    </span>
+                    <span>
+                      After: {transaction.balanceAfter === undefined ? '—' : formatKzt(transaction.balanceAfter)}
+                    </span>
                     <span>{formatDateTime(transaction.createdAt)}</span>
-                    <span>{transaction.status}</span>
+                  </div>
+
+                  <div className="mt-2 flex items-center justify-between text-xs text-muted">
+                    <span>Status: {transaction.status}</span>
                   </div>
                 </article>
               )
@@ -232,9 +275,9 @@ export default function DriverBalancePage() {
       </PageCard>
 
       <div className="rounded-[28px] border border-dashed border-border bg-white p-4 text-sm text-muted">
-        <p className="font-semibold text-ink">Demo controls</p>
+        <p className="font-semibold text-ink">Wallet notes</p>
         <p className="mt-2">
-          Списание комиссии и одобрение пополнений работают только в mock-режиме этого шага.
+          Баланс меняется после подтверждения заявки backoffice, а не сразу после создания top-up request.
         </p>
       </div>
 

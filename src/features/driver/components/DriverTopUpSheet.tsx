@@ -5,46 +5,58 @@ import { useAppActions, useAppState } from '../../../providers/AppStateProvider'
 import { OverlaySheet } from '../../../shared/ui/OverlaySheet'
 
 const methods = [
-  { id: 'KASPI', label: 'Kaspi' },
-  { id: 'HALYK', label: 'Halyk' },
-  { id: 'CASH', label: 'Наличные админу' },
+  { id: 'KASPI_TRANSFER', label: 'Kaspi' },
+  { id: 'BANK_TRANSFER', label: 'Bank transfer' },
+  { id: 'CASH', label: 'Cash' },
+  { id: 'OTHER', label: 'Other' },
 ] as const
 
 export function DriverTopUpSheet() {
-  const { isTopUpFormOpen, topUpForm } = useAppState()
+  const { isTopUpFormOpen, topUpForm, isDriverTopUpSubmitting, driverWalletError } = useAppState()
   const actions = useAppActions()
   const [error, setError] = useState('')
+  const [success, setSuccess] = useState('')
 
-  const handleSubmit = () => {
+  const handleClose = () => {
+    setError('')
+    setSuccess('')
+    actions.closeTopUpForm()
+  }
+
+  const handleSubmit = async () => {
     const amount = Number(topUpForm.amount)
+
     if (!Number.isFinite(amount) || amount <= 0) {
       setError('Введите корректную сумму.')
       return
     }
 
-    if (!topUpForm.referenceNumber.trim()) {
-      setError('Укажите номер платежа.')
-      return
-    }
-
-    if (!topUpForm.screenshotAttached) {
-      setError('Прикрепите скриншот для проверки.')
-      return
-    }
-
-    actions.submitTopUpRequest()
     setError('')
+    setSuccess('')
+
+    try {
+      await actions.submitTopUpRequest()
+      setSuccess('Заявка на пополнение отправлена.')
+      actions.updateTopUpForm({
+        amount: '',
+        providerRef: '',
+        comment: '',
+        proofFilePath: '',
+      })
+    } catch {
+      setError('Не удалось отправить заявку. Попробуйте еще раз.')
+    }
   }
 
   return (
     <OverlaySheet
       open={isTopUpFormOpen}
       title="Пополнение баланса"
-      onClose={actions.closeTopUpForm}
+      onClose={handleClose}
       position="bottom"
     >
       <div className="space-y-4">
-        <div className="grid grid-cols-3 gap-2">
+        <div className="grid grid-cols-2 gap-2">
           {methods.map((method) => {
             const isActive = topUpForm.method === method.id
 
@@ -81,33 +93,51 @@ export function DriverTopUpSheet() {
         </label>
 
         <label className="block">
-          <span className="mb-1 block text-sm font-medium text-ink">Reference number</span>
+          <span className="mb-1 block text-sm font-medium text-ink">Provider reference</span>
           <input
-            value={topUpForm.referenceNumber}
-            onChange={(event) => actions.updateTopUpForm({ referenceNumber: event.target.value })}
+            value={topUpForm.providerRef}
+            onChange={(event) => actions.updateTopUpForm({ providerRef: event.target.value })}
             className="w-full rounded-2xl border border-border bg-surface-soft px-4 py-3 text-sm outline-none transition focus:border-accent"
-            placeholder="Последние цифры платежа"
+            placeholder="Номер перевода, чек, reference"
           />
         </label>
 
-        <button
-          type="button"
-          onClick={() =>
-            actions.updateTopUpForm({ screenshotAttached: !topUpForm.screenshotAttached })
-          }
-          className={cn(
-            'w-full rounded-2xl px-4 py-3 text-sm font-semibold transition',
-            topUpForm.screenshotAttached
-              ? 'bg-emerald-100 text-emerald-700'
-              : 'bg-surface-soft text-ink',
-          )}
-        >
-          {topUpForm.screenshotAttached ? 'Скрин прикреплен' : 'Скрин не прикреплен'}
-        </button>
+        <label className="block">
+          <span className="mb-1 block text-sm font-medium text-ink">Комментарий</span>
+          <textarea
+            value={topUpForm.comment}
+            onChange={(event) => actions.updateTopUpForm({ comment: event.target.value })}
+            rows={3}
+            className="w-full rounded-2xl border border-border bg-surface-soft px-4 py-3 text-sm outline-none transition focus:border-accent"
+            placeholder="Например, пополнение через Kaspi по номеру карты"
+          />
+        </label>
+
+        <label className="block">
+          <span className="mb-1 block text-sm font-medium text-ink">Proof file path</span>
+          <input
+            value={topUpForm.proofFilePath}
+            onChange={(event) => actions.updateTopUpForm({ proofFilePath: event.target.value })}
+            className="w-full rounded-2xl border border-border bg-surface-soft px-4 py-3 text-sm outline-none transition focus:border-accent"
+            placeholder="Путь к файлу или ссылка на чек"
+          />
+        </label>
+
+        {driverWalletError ? (
+          <div className="rounded-2xl bg-red-50 px-4 py-3 text-sm text-red-700">
+            {driverWalletError}
+          </div>
+        ) : null}
 
         {error ? (
           <div className="rounded-2xl bg-red-50 px-4 py-3 text-sm text-red-700">
             {error}
+          </div>
+        ) : null}
+
+        {success ? (
+          <div className="rounded-2xl bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+            {success}
           </div>
         ) : null}
 
@@ -122,9 +152,13 @@ export function DriverTopUpSheet() {
           <button
             type="button"
             onClick={handleSubmit}
-            className="rounded-2xl bg-accent px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-accent/20"
+            disabled={isDriverTopUpSubmitting}
+            className={cn(
+              'rounded-2xl bg-accent px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-accent/20',
+              isDriverTopUpSubmitting && 'cursor-not-allowed opacity-60',
+            )}
           >
-            Отправить на проверку
+            {isDriverTopUpSubmitting ? 'Отправляем...' : 'Отправить'}
           </button>
         </div>
       </div>
