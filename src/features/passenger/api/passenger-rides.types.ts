@@ -103,6 +103,16 @@ export type RideOrder = {
   raw: unknown
 }
 
+export type PassengerRideOrdersResponse = {
+  items: RideOrder[]
+  raw: unknown
+}
+
+export type RideOrderEventsResponse = {
+  items: RideOrderEvent[]
+  raw: unknown
+}
+
 export type PassengerRideRequestsResponse = {
   items: RideRequest[]
   raw: unknown

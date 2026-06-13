@@ -10,6 +10,8 @@ import type {
   RideOfferListResponse,
   RideOrder,
   RideOrderEvent,
+  PassengerRideOrdersResponse,
+  RideOrderEventsResponse,
   RideRequest,
 } from './passenger-rides.types'
 
@@ -297,7 +299,9 @@ export async function acceptRideOffer(offerId: number | string) {
   return extractAcceptedRideOrder(response)
 }
 
-export async function getPassengerOrders(params?: Record<string, string | number | boolean | undefined>) {
+export async function getPassengerOrders(
+  params?: Record<string, string | number | boolean | undefined>,
+): Promise<PassengerRideOrdersResponse> {
   const query = params
     ? `?${new URLSearchParams(
         Object.entries(params).reduce<Record<string, string>>((acc, [key, value]) => {
@@ -308,21 +312,24 @@ export async function getPassengerOrders(params?: Record<string, string | number
       ).toString()}`
     : ''
 
-  return normalizeResponse<RideOrder>(await backendGet(`/ride/passenger/orders${query}`), mapRideOrderToViewModel)
+  return normalizeResponse<RideOrder>(
+    await backendGet(`/ride/passenger/orders${query}`),
+    mapRideOrderToViewModel,
+  ) as PassengerRideOrdersResponse
 }
 
-export async function getRideOrder(id: string) {
-  return mapRideOrderToViewModel(await backendGet(`/ride/orders/${id}`))
+export async function getRideOrder(orderId: number | string) {
+  return mapRideOrderToViewModel(await backendGet(`/ride/orders/${String(orderId)}`))
 }
 
-export async function getRideOrderEvents(id: string) {
+export async function getRideOrderEvents(orderId: number | string): Promise<RideOrderEventsResponse> {
   return normalizeResponse<RideOrderEvent>(
-    await backendGet(`/ride/orders/${id}/events`),
+    await backendGet(`/ride/orders/${String(orderId)}/events`),
     mapRideOrderEventToViewModel,
   )
 }
 
-export function mapOrderToActiveRide(order: RideOrder): ActiveRide {
+export function mapRideOrderToActiveRideViewModel(order: RideOrder): ActiveRide {
   return {
     id: order.id,
     requestId: order.requestId ?? order.id,
@@ -338,3 +345,5 @@ export function mapOrderToActiveRide(order: RideOrder): ActiveRide {
     price: order.agreedPrice,
   }
 }
+
+export const mapOrderToActiveRide = mapRideOrderToActiveRideViewModel

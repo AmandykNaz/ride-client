@@ -22,7 +22,13 @@ function statusMessage(status: string) {
 }
 
 export default function PassengerOrderPage() {
-  const { passengerStatus, passengerProfile, rideDraft } = useAppState()
+  const {
+    passengerStatus,
+    passengerProfile,
+    rideDraft,
+    isRideRequestLoading,
+    rideFlowError,
+  } = useAppState()
   const actions = useAppActions()
   const banner = statusMessage(passengerStatus)
 
@@ -41,6 +47,12 @@ export default function PassengerOrderPage() {
 
   return (
     <div className="space-y-4">
+      {rideFlowError ? (
+        <div className="rounded-[24px] border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {rideFlowError}
+        </div>
+      ) : null}
+
       {banner ? (
         <div
           className={cn(
@@ -216,9 +228,13 @@ export default function PassengerOrderPage() {
             type="button"
             onClick={handleSearch}
             className="rounded-2xl bg-accent px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-accent/20"
-            disabled={passengerStatus === 'LIMITED' || passengerStatus === 'BLOCKED'}
+            disabled={
+              passengerStatus === 'LIMITED' ||
+              passengerStatus === 'BLOCKED' ||
+              isRideRequestLoading
+            }
           >
-            Найти водителя
+            {isRideRequestLoading ? 'Создаём заявку...' : 'Найти водителя'}
           </button>
         </div>
       </div>

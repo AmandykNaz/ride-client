@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react'
 import { Phone, ShieldAlert, XCircle } from 'lucide-react'
 
 import { formatKzt, formatRoute } from '../../lib/format'
@@ -5,16 +6,31 @@ import { useAppActions, useAppState } from '../../providers/AppStateProvider'
 import { PageCard } from '../../shared/ui/PageCard'
 
 const statusText: Record<string, string> = {
+  ACCEPTED: 'Поездка подтверждена',
+  DRIVER_ASSIGNED: 'Водитель назначен',
+  DRIVER_ON_WAY: 'Водитель едет к вам',
+  DRIVER_ARRIVED: 'Водитель на месте',
   DRIVER_COMING: 'Водитель едет к вам',
   ARRIVED: 'Водитель на месте',
   IN_PROGRESS: 'Поездка началась',
+  DISPUTE: 'Спор по поездке',
   COMPLETED: 'Поездка завершена',
   CANCELLED: 'Поездка отменена',
 }
 
 export default function PassengerActiveRidePage() {
-  const { activeRide } = useAppState()
+  const { activeRide, activeRideEvents, rideFlowError } = useAppState()
   const actions = useAppActions()
+  const refreshActiveRideDetailsRef = useRef(actions.refreshActiveRideDetails)
+
+  useEffect(() => {
+    refreshActiveRideDetailsRef.current = actions.refreshActiveRideDetails
+  }, [actions.refreshActiveRideDetails])
+
+  useEffect(() => {
+    if (!activeRide?.id) return
+    void refreshActiveRideDetailsRef.current(activeRide.id)
+  }, [activeRide?.id])
 
   if (!activeRide) {
     return (
@@ -36,9 +52,15 @@ export default function PassengerActiveRidePage() {
 
   return (
     <div className="space-y-4">
+      {rideFlowError ? (
+        <div className="rounded-[24px] border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {rideFlowError}
+        </div>
+      ) : null}
+
       <PageCard
         eyebrow="В пути"
-        title={statusText[activeRide.status]}
+        title={statusText[activeRide.status] ?? activeRide.status}
         description="Пассажирский UX без кнопки завершения поездки. Завершение эмулирует водительский сценарий."
       >
         <div className="grid gap-3 sm:grid-cols-2">
@@ -133,6 +155,24 @@ export default function PassengerActiveRidePage() {
           </button>
         </div>
       </div>
+
+      {activeRideEvents.length > 0 ? (
+        <div className="rounded-[28px] border border-border bg-white p-4 shadow-sm">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">
+            События заказа
+          </p>
+          <div className="mt-3 space-y-3">
+            {activeRideEvents.map((event) => (
+              <div key={event.id} className="rounded-2xl bg-surface-soft p-3">
+                <p className="text-sm font-semibold text-ink">{event.message}</p>
+                <p className="mt-1 text-xs text-muted">
+                  {event.status} · {event.createdAt.slice(0, 19).replace('T', ' ')}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
     </div>
   )
 }
