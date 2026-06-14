@@ -1,13 +1,16 @@
 import type { ActiveRideStatus, RideRequestStatus, TripType } from '../../../types/domain'
 
+export type RideServiceType = 'INTERCITY_RIDE' | 'PARCEL'
+
 export type CreateRideRequestPayload = {
-  serviceType: 'ride'
-  rideType?: TripType
+  serviceType: RideServiceType
+  rideType?: TripType | string
   originText: string
   destinationText: string
   pickupAddress?: string
   dropoffAddress?: string
-  price?: number
+  passengersCount?: number
+  requestedPrice?: number
   comment?: string
 }
 

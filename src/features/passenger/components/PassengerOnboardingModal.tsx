@@ -36,13 +36,16 @@ export function PassengerOnboardingModal() {
     try {
       const response = await updatePassengerMe({
         name: normalizedName,
-        city: normalizedCity,
       })
 
       const profile = toRidePassengerProfile(response, verifiedPhone || passengerProfile?.phone || '')
+      const mergedProfile = {
+        ...profile,
+        city: normalizedCity || profile.city,
+      }
 
-      actions.setVerifiedPhone(profile.phone || verifiedPhone)
-      actions.setPassengerProfile(profile)
+      actions.setVerifiedPhone(mergedProfile.phone || verifiedPhone)
+      actions.setPassengerProfile(mergedProfile)
       actions.closePassengerOnboarding()
 
       if (pendingPassengerFlow === 'parcel') {

@@ -11,6 +11,8 @@ export type RidePassengerProfile = {
 }
 
 export type RidePassengerMe = RideCustomer & {
+  customer?: RideCustomer
+  passengerProfile?: RideCustomer
   profile?: RideCustomer
   passenger?: RideCustomer
   data?: RideCustomer
@@ -18,7 +20,6 @@ export type RidePassengerMe = RideCustomer & {
 
 export type RidePassengerMePayload = {
   name: string
-  city: string
 }
 
 function toNumber(value: unknown, fallback: number) {
@@ -30,22 +31,27 @@ function toString(value: unknown, fallback = '') {
 }
 
 function pickCustomerSource(me: RidePassengerMe) {
-  return me.profile ?? me.passenger ?? me.data ?? me
+  return me.customer ?? me.profile ?? me.passenger ?? me.data ?? me
+}
+
+function pickPassengerProfileSource(me: RidePassengerMe) {
+  return me.passengerProfile ?? me.profile ?? me.passenger ?? me.data ?? me
 }
 
 export function toRidePassengerProfile(
   me: RidePassengerMe,
   fallbackPhone = '',
 ): RidePassengerProfile {
-  const source = pickCustomerSource(me)
+  const customerSource = pickCustomerSource(me)
+  const passengerProfileSource = me.passengerProfile ?? pickPassengerProfileSource(me)
 
   return {
-    id: toString(source.id, `passenger-${Date.now()}`),
-    name: toString(source.name ?? source.fullName, ''),
-    phone: toString(source.phone, fallbackPhone),
-    city: toString(source.city, ''),
-    rating: toNumber(source.rating, 5),
-    tripsCount: toNumber(source.tripsCount, 0),
+    id: toString(customerSource.id, `passenger-${Date.now()}`),
+    name: toString(customerSource.name ?? customerSource.fullName, ''),
+    phone: toString(customerSource.phone, fallbackPhone),
+    city: toString(customerSource.city ?? passengerProfileSource.city, ''),
+    rating: toNumber(passengerProfileSource.rating ?? customerSource.rating, 5),
+    tripsCount: toNumber(passengerProfileSource.tripsCount ?? customerSource.tripsCount, 0),
   }
 }
 

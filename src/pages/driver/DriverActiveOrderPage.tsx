@@ -13,15 +13,27 @@ import { formatKzt, formatRoute } from '../../lib/format'
 import { useAppActions, useAppState } from '../../providers/AppStateProvider'
 import { PageCard } from '../../shared/ui/PageCard'
 
+function formatDriverStatus(status: string) {
+  if (status === 'DRIVER_ASSIGNED' || status === 'GOING_TO_CLIENT') return 'Водитель в пути'
+  if (status === 'DRIVER_ON_WAY') return 'Водитель в пути'
+  if (status === 'DRIVER_ARRIVED' || status === 'ARRIVED') return 'Водитель на месте'
+  if (status === 'IN_PROGRESS') return 'Поездка идет'
+  if (status === 'COMPLETED') return 'Завершен'
+  if (status === 'CANCELLED') return 'Отменен'
+  return status
+}
+
 function getNextActionLabel(category: 'ride' | 'parcel', status: string) {
   if (category === 'ride') {
-    if (status === 'GOING_TO_CLIENT') return 'Я прибыл'
+    if (status === 'DRIVER_ASSIGNED' || status === 'GOING_TO_CLIENT') return 'Я в пути'
+    if (status === 'DRIVER_ON_WAY') return 'Я прибыл'
     if (status === 'ARRIVED') return 'Начать поездку'
     if (status === 'IN_PROGRESS') return 'Завершить поездку'
   }
 
   if (category === 'parcel') {
-    if (status === 'GOING_TO_CLIENT') return 'Я прибыл за посылкой'
+    if (status === 'DRIVER_ASSIGNED' || status === 'GOING_TO_CLIENT') return 'Я в пути за посылкой'
+    if (status === 'DRIVER_ON_WAY') return 'Я прибыл за посылкой'
     if (status === 'ARRIVED') return 'Забрал посылку'
     if (status === 'IN_PROGRESS') return 'Доставил посылку'
   }
@@ -119,7 +131,7 @@ export default function DriverActiveOrderPage() {
               Статус
             </p>
             <p className="mt-2 text-sm font-semibold text-ink">
-              {driverActiveOrder.status}
+              {formatDriverStatus(driverActiveOrder.status)}
             </p>
           </div>
           <span className="rounded-full bg-accent/10 px-3 py-1 text-xs font-semibold text-accent">

@@ -16,8 +16,8 @@ function formatDateTime(createdAt: string) {
 }
 
 function formatTopUpMethod(method: string) {
-  if (method === 'KASPI' || method === 'KASPI_TRANSFER') return 'Kaspi'
-  if (method === 'BANK_TRANSFER') return 'Bank transfer'
+  if (method === 'KASPI') return 'Kaspi'
+  if (method === 'HALYK') return 'Halyk'
   if (method === 'CASH') return 'Cash'
   return 'Other'
 }

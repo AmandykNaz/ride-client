@@ -5,8 +5,8 @@ import { useAppActions, useAppState } from '../../../providers/AppStateProvider'
 import { OverlaySheet } from '../../../shared/ui/OverlaySheet'
 
 const methods = [
-  { id: 'KASPI_TRANSFER', label: 'Kaspi' },
-  { id: 'BANK_TRANSFER', label: 'Bank transfer' },
+  { id: 'KASPI', label: 'Kaspi' },
+  { id: 'HALYK', label: 'Halyk' },
   { id: 'CASH', label: 'Cash' },
   { id: 'OTHER', label: 'Other' },
 ] as const

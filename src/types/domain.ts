@@ -56,8 +56,7 @@ export type TopUpRequestStatus =
 
 export type TopUpRequestMethod =
   | 'KASPI'
-  | 'KASPI_TRANSFER'
-  | 'BANK_TRANSFER'
+  | 'HALYK'
   | 'CASH'
   | 'OTHER'
 
@@ -124,8 +123,8 @@ export type DriverProfile = {
   rating: number
   tripsCount: number
   verificationStatus: DriverVerificationStatus
-  balance: number
-  minBalance: number
+  balance?: number
+  minBalance?: number
   isOnline: boolean
   vehicle?: DriverVehicle
 }
@@ -147,6 +146,7 @@ export type DriverApplicationDraft = {
   fullName: string
   phone: string
   city: string
+  cityId?: string
   frequentRoutes: string
   vehicleBrand: string
   vehicleModel: string
@@ -200,11 +200,15 @@ export type DriverCounterOffer = {
 }
 
 export type DriverActiveOrderStatus =
+  | 'DRIVER_ASSIGNED'
+  | 'DRIVER_ON_WAY'
+  | 'DRIVER_ARRIVED'
   | 'GOING_TO_CLIENT'
   | 'ARRIVED'
   | 'IN_PROGRESS'
   | 'COMPLETED'
   | 'CANCELLED'
+  | 'DISPUTE'
 
 export type DriverActiveOrder = {
   id: string

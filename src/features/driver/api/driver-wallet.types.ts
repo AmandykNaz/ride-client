@@ -27,8 +27,7 @@ export type DriverWalletTransaction = {
 
 export type DriverTopUpRequestMethod =
   | 'KASPI'
-  | 'KASPI_TRANSFER'
-  | 'BANK_TRANSFER'
+  | 'HALYK'
   | 'CASH'
   | 'OTHER'
 
@@ -49,7 +48,7 @@ export type DriverTopUpRequest = {
 
 export type CreateDriverTopUpRequestPayload = {
   amount: number
-  method: DriverTopUpRequestMethod | 'KASPI'
+  method: DriverTopUpRequestMethod
   providerRef?: string
   comment?: string
   proofFilePath?: string

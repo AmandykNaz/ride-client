@@ -17,12 +17,22 @@ export type RideDriverVehicle = {
   bodyType?: string
 }
 
+export type RideDriverApplicationDocument = {
+  type?: string
+  filePath?: string
+  url?: string
+  name?: string
+  status?: string
+  raw?: unknown
+}
+
 export type RideDriverApplication = {
   id?: string
   status?: string
   fullName?: string
   phone?: string
   city?: string
+  cityId?: string
   frequentRoutes?: string
   vehicleBrand?: string
   vehicleModel?: string
@@ -31,9 +41,38 @@ export type RideDriverApplication = {
   vehicleColor?: string
   vehicleSeats?: string | number
   vehicleBodyType?: string
-  documents?: Record<string, boolean>
+  documents?: RideDriverApplicationDocument[]
   submittedAt?: string
   moderatorComment?: string
+  raw?: unknown
+}
+
+export type RideDriverCustomer = {
+  id?: string
+  name?: string
+  fullName?: string
+  phone?: string
+  city?: string
+  cityId?: string
+  rating?: number
+  tripsCount?: number
+  raw?: unknown
+}
+
+export type RideDriverDriverProfile = {
+  id?: string
+  name?: string
+  fullName?: string
+  phone?: string
+  city?: string
+  cityId?: string
+  rating?: number
+  tripsCount?: number
+  balance?: number
+  minBalance?: number
+  isOnline?: boolean
+  verificationStatus?: string
+  vehicle?: RideDriverVehicle | null
   raw?: unknown
 }
 
@@ -53,9 +92,13 @@ export type RideDriverProfile = {
 }
 
 export type RideDriverMe = {
+  customer?: RideDriverCustomer | null
+  driverProfile?: RideDriverDriverProfile | null
   profile?: RideDriverProfile | null
   application?: RideDriverApplication | null
   applicationId?: string
+  vehicle?: RideDriverVehicle | null
+  documents?: RideDriverApplicationDocument[] | null
   verificationStatus?: DriverVerificationStatus | string
   isOnline?: boolean
   raw: unknown
@@ -154,7 +197,7 @@ export type RideDriverOrder = {
 export type DriverApplicationPayload = {
   fullName?: string
   phone?: string
-  city?: string
+  cityId?: string
   frequentRoutes?: string
   vehicleBrand?: string
   vehicleModel?: string
@@ -163,7 +206,7 @@ export type DriverApplicationPayload = {
   vehicleColor?: string
   vehicleSeats?: string
   vehicleBodyType?: string
-  documents?: Record<string, boolean>
+  documents?: RideDriverApplicationDocument[]
   vehicle?: RideDriverVehicle
 }
 

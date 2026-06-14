@@ -56,6 +56,12 @@ function mapComplaint(raw: unknown): RideComplaint {
   }
 }
 
+function extractComplaintResponse(raw: unknown) {
+  if (!isRecord(raw)) return raw
+
+  return raw.complaint ?? raw.complaints ?? raw.data ?? raw.item ?? raw
+}
+
 function mapListResponse(raw: unknown): RideComplaintsListResponse {
   const record = isRecord(raw) ? raw : undefined
 
@@ -70,7 +76,7 @@ function mapListResponse(raw: unknown): RideComplaintsListResponse {
 
 export async function createRideOrderComplaint(orderId: string, payload: CreateRideComplaintPayload) {
   const response = await backendPost<unknown>(`/ride/orders/${orderId}/complaints`, payload)
-  return mapComplaint(response)
+  return mapComplaint(extractComplaintResponse(response))
 }
 
 export async function getRideOrderComplaints(orderId: string) {

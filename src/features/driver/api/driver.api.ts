@@ -11,6 +11,7 @@ import type {
 import type {
   DriverApplicationPayload,
   DriverCounterOfferPayload,
+  RideDriverApplicationDocument,
   DriverMeViewModel,
   DriverOfferViewModel,
   DriverOrderStatusPayload,
@@ -37,6 +38,10 @@ function asBoolean(value: unknown, fallback = false) {
   return typeof value === 'boolean' ? value : fallback
 }
 
+function asOptionalNumber(value: unknown) {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined
+}
+
 function firstRecord(...values: unknown[]) {
   return values.find(isRecord) as BackendRecord | undefined
 }
@@ -50,6 +55,112 @@ function unwrapRecord(value: unknown, keys: string[]) {
   }
 
   return value
+}
+
+function normalizeDocumentType(value: unknown) {
+  const normalized = asString(value).toLowerCase().replace(/[\s-]+/g, '_')
+
+  if (normalized === 'driver_license_front' || normalized === 'license_front' || normalized === 'front_license') {
+    return 'driverLicenseFront'
+  }
+  if (normalized === 'driver_license_back' || normalized === 'license_back' || normalized === 'back_license') {
+    return 'driverLicenseBack'
+  }
+  if (normalized === 'vehicle_registration' || normalized === 'registration' || normalized === 'tech_passport') {
+    return 'vehicleRegistration'
+  }
+  if (normalized === 'car_front_photo' || normalized === 'vehicle_front_photo' || normalized === 'front_photo') {
+    return 'carFrontPhoto'
+  }
+  if (normalized === 'car_back_photo' || normalized === 'vehicle_back_photo' || normalized === 'back_photo') {
+    return 'carBackPhoto'
+  }
+  if (normalized === 'interior_photo' || normalized === 'salon_photo') {
+    return 'interiorPhoto'
+  }
+  if (normalized === 'trunk_photo' || normalized === 'boot_photo') {
+    return 'trunkPhoto'
+  }
+
+  return undefined
+}
+
+function mapApplicationDocuments(raw: unknown): RideDriverApplicationDocument[] {
+  const list =
+    Array.isArray(raw)
+      ? raw
+      : isRecord(raw) && Array.isArray(raw.items)
+        ? raw.items
+        : isRecord(raw) && Array.isArray(raw.data)
+          ? raw.data
+          : []
+
+  return list
+    .map((item) => {
+      const record = isRecord(item) ? item : {}
+      const type = asString(record.type ?? record.documentType ?? record.document_type ?? record.key)
+      const filePath = asString(record.filePath ?? record.file_path ?? record.path)
+      const url = asString(record.url ?? record.link)
+      const name = asString(record.name ?? record.title)
+      const status = asString(record.status ?? record.uploadStatus ?? record.upload_status)
+
+      return {
+        type,
+        filePath,
+        url,
+        name,
+        status,
+        raw: item,
+      }
+    })
+    .filter((document) => document.type || document.filePath || document.url || document.name || document.status)
+}
+
+function mapDocumentFlags(raw: unknown): Record<string, boolean> {
+  const flags: Record<string, boolean> = {
+    driverLicenseFront: false,
+    driverLicenseBack: false,
+    vehicleRegistration: false,
+    carFrontPhoto: false,
+    carBackPhoto: false,
+    interiorPhoto: false,
+    trunkPhoto: false,
+  }
+
+  if (isRecord(raw)) {
+    const list = Array.isArray(raw.items)
+      ? raw.items
+      : Array.isArray(raw.data)
+        ? raw.data
+        : undefined
+
+    if (list) {
+      for (const document of mapApplicationDocuments(list)) {
+        const key = normalizeDocumentType(document.type ?? document.name)
+        if (!key) continue
+        flags[key] = Boolean(document.filePath || document.url || document.status)
+      }
+
+      return flags
+    }
+
+    for (const [key, value] of Object.entries(raw)) {
+      if (typeof value !== 'boolean') continue
+      if (key in flags) {
+        flags[key] = value
+      }
+    }
+
+    return flags
+  }
+
+  for (const document of mapApplicationDocuments(raw)) {
+    const key = normalizeDocumentType(document.type ?? document.name)
+    if (!key) continue
+    flags[key] = Boolean(document.filePath || document.url || document.status)
+  }
+
+  return flags
 }
 
 function extractList(value: unknown) {
@@ -149,6 +260,7 @@ function mapApplication(raw: unknown): RideDriverApplication | null {
     fullName: asString(record.fullName ?? record.full_name ?? record.name),
     phone: asString(record.phone ?? record.mobile),
     city: asString(record.city),
+    cityId: asString(record.cityId ?? record.city_id ?? data?.cityId ?? data?.city_id),
     frequentRoutes: asString(record.frequentRoutes ?? record.frequent_routes),
     vehicleBrand: asString(record.vehicleBrand ?? record.vehicle_brand ?? vehicle?.brand ?? vehicle?.make),
     vehicleModel: asString(record.vehicleModel ?? record.vehicle_model ?? vehicle?.model),
@@ -159,12 +271,7 @@ function mapApplication(raw: unknown): RideDriverApplication | null {
       asString(record.vehicleSeats ?? record.vehicle_seats ?? vehicle?.seats) ||
       String(asNumber(record.vehicleSeats ?? record.vehicle_seats ?? vehicle?.seats)),
     vehicleBodyType: asString(record.vehicleBodyType ?? record.vehicle_body_type ?? vehicle?.bodyType ?? vehicle?.body_type),
-    documents: isRecord(documents)
-      ? Object.entries(documents).reduce<Record<string, boolean>>((accumulator, [key, value]) => {
-          accumulator[key] = asBoolean(value)
-          return accumulator
-        }, {})
-      : undefined,
+    documents: mapApplicationDocuments(documents),
     submittedAt: asString(record.submittedAt ?? record.submitted_at),
     moderatorComment: asString(record.moderatorComment ?? record.moderator_comment),
     raw,
@@ -176,19 +283,67 @@ function mapProfile(raw: unknown): DriverProfile | null {
 
   const record = raw as BackendRecord
   const data = isRecord(record.data) ? record.data : undefined
-  const vehicle = firstRecord(record.vehicle, record.car, record.auto, data?.vehicle)
+  const customer = firstRecord(record.customer, record.profile, data?.customer, data?.profile)
+  const driverProfile = firstRecord(record.driverProfile, record.driver_profile, data?.driverProfile, data?.driver_profile)
+  const application = firstRecord(record.application, record.driverApplication, data?.application, data?.driverApplication)
+  const vehicle = firstRecord(
+    record.vehicle,
+    record.car,
+    record.auto,
+    customer?.vehicle,
+    driverProfile?.vehicle,
+    application?.vehicle,
+    data?.vehicle,
+  )
 
   return {
-    id: asString(record.id, ''),
-    fullName: asString(record.fullName ?? record.full_name ?? record.name),
-    phone: asString(record.phone ?? record.mobile),
-    city: asString(record.city),
-    rating: asNumber(record.rating ?? record.ratingAvg ?? record.rating_avg, 5),
-    tripsCount: asNumber(record.tripsCount ?? record.trips_count ?? record.ordersCount ?? record.orders_count, 0),
-    balance: asNumber(record.balance, 0),
-    minBalance: asNumber(record.minBalance ?? record.min_balance, 0),
-    isOnline: asBoolean(record.isOnline ?? record.online),
-    verificationStatus: mapVerificationStatus(record.verificationStatus ?? record.verification_status),
+    id: asString(record.id ?? customer?.id ?? driverProfile?.id, ''),
+    fullName: asString(
+      customer?.fullName ??
+        customer?.name ??
+        record.fullName ??
+        record.full_name ??
+        record.name ??
+        driverProfile?.fullName ??
+        driverProfile?.name ??
+        application?.fullName ??
+        application?.name,
+    ),
+    phone: asString(
+      customer?.phone ??
+        record.phone ??
+        record.mobile ??
+        driverProfile?.phone ??
+        application?.phone,
+    ),
+    city: asString(
+      customer?.city ??
+        record.city ??
+        driverProfile?.city ??
+        application?.city,
+    ),
+    rating: asNumber(
+      driverProfile?.rating ?? record.rating ?? record.ratingAvg ?? record.rating_avg ?? customer?.rating,
+      5,
+    ),
+    tripsCount: asNumber(
+      driverProfile?.tripsCount ??
+        record.tripsCount ??
+        record.trips_count ??
+        record.ordersCount ??
+        record.orders_count ??
+        customer?.tripsCount,
+      0,
+    ),
+    balance: asOptionalNumber(driverProfile?.balance ?? record.balance ?? record.walletBalance ?? record.wallet_balance),
+    minBalance: asOptionalNumber(driverProfile?.minBalance ?? record.minBalance ?? record.min_balance),
+    isOnline: asBoolean(driverProfile?.isOnline ?? record.isOnline ?? record.online),
+    verificationStatus: mapVerificationStatus(
+      driverProfile?.verificationStatus ??
+        record.verificationStatus ??
+        record.verification_status ??
+        application?.status,
+    ),
     vehicle: mapVehicle(vehicle),
   }
 }
@@ -196,12 +351,16 @@ function mapProfile(raw: unknown): DriverProfile | null {
 function mapActiveDriverStatus(status: unknown): DriverActiveOrder['status'] {
   const normalized = asString(status).toUpperCase()
 
+  if (normalized === 'DRIVER_ASSIGNED' || normalized === 'GOING_TO_CLIENT' || normalized === 'ACCEPTED') {
+    return 'DRIVER_ASSIGNED'
+  }
+  if (normalized === 'DRIVER_ON_WAY') return 'DRIVER_ON_WAY'
   if (normalized === 'DRIVER_ARRIVED' || normalized === 'ARRIVED') return 'ARRIVED'
   if (normalized === 'IN_PROGRESS' || normalized === 'STARTED') return 'IN_PROGRESS'
   if (normalized === 'COMPLETED' || normalized === 'FINISHED') return 'COMPLETED'
   if (normalized === 'CANCELLED' || normalized === 'CANCELED') return 'CANCELLED'
 
-  return 'GOING_TO_CLIENT'
+  return 'DRIVER_ASSIGNED'
 }
 
 function mapFeedStatus(status: unknown): DriverFeedOrder['status'] {
@@ -392,6 +551,30 @@ function buildQuery(params?: Record<string, string | number | boolean | undefine
   return query ? `?${query}` : ''
 }
 
+function isRealApplicationDocument(document: unknown): document is RideDriverApplicationDocument {
+  return (
+    isRecord(document) &&
+    asString(document.type).trim().length > 0 &&
+    asString(document.filePath).trim().length > 0
+  )
+}
+
+function buildApplicationDocumentsPayload(
+  documents: unknown,
+): RideDriverApplicationDocument[] | undefined {
+  // TODO: wire a real document upload flow and populate this from uploaded file metadata.
+  if (!Array.isArray(documents)) return undefined
+
+  const realDocuments = documents
+    .filter(isRealApplicationDocument)
+    .map((document) => ({
+      type: asString(document.type).trim(),
+      filePath: asString(document.filePath).trim(),
+    }))
+
+  return realDocuments.length > 0 ? realDocuments : undefined
+}
+
 function normalizeResponse<T>(value: unknown, mapper: (item: unknown) => T) {
   return {
     items: extractList(value).map(mapper),
@@ -400,11 +583,20 @@ function normalizeResponse<T>(value: unknown, mapper: (item: unknown) => T) {
 }
 
 function mapDriverApplicationDraft(application: RideDriverApplication | null): DriverApplicationDraft {
+  const rawDocuments = isRecord(application?.raw)
+    ? firstRecord((application?.raw as BackendRecord).documents, (application?.raw as BackendRecord).files)
+    : application?.documents
+  const documentSource =
+    application?.documents && application.documents.length > 0
+      ? application.documents
+      : rawDocuments
+
   return {
     step: 1,
     fullName: application?.fullName ?? '',
     phone: application?.phone ?? '',
     city: application?.city ?? '',
+    cityId: application?.cityId ?? '',
     frequentRoutes: application?.frequentRoutes ?? '',
     vehicleBrand: application?.vehicleBrand ?? '',
     vehicleModel: application?.vehicleModel ?? '',
@@ -415,15 +607,7 @@ function mapDriverApplicationDraft(application: RideDriverApplication | null): D
       asString(application?.vehicleSeats) ||
       String(typeof application?.vehicleSeats === 'number' ? application.vehicleSeats : ''),
     vehicleBodyType: mapVehicleBodyType(application?.vehicleBodyType),
-    documents: {
-      driverLicenseFront: Boolean(application?.documents?.driverLicenseFront),
-      driverLicenseBack: Boolean(application?.documents?.driverLicenseBack),
-      vehicleRegistration: Boolean(application?.documents?.vehicleRegistration),
-      carFrontPhoto: Boolean(application?.documents?.carFrontPhoto),
-      carBackPhoto: Boolean(application?.documents?.carBackPhoto),
-      interiorPhoto: Boolean(application?.documents?.interiorPhoto),
-      trunkPhoto: Boolean(application?.documents?.trunkPhoto),
-    },
+    documents: mapDocumentFlags(documentSource) as DriverApplicationDraft['documents'],
     submittedAt: application?.submittedAt,
     moderatorComment: application?.moderatorComment,
   }
@@ -432,19 +616,20 @@ function mapDriverApplicationDraft(application: RideDriverApplication | null): D
 function buildApplicationPayload(
   application: DriverApplicationDraft,
 ): DriverApplicationPayload {
+  const cityId = asString(application.cityId)
+  const documents = buildApplicationDocumentsPayload(
+    (application as unknown as { documents?: unknown }).documents,
+  )
+
+  if (!cityId) {
+    throw new Error('Для отправки заявки на проверку нужен cityId.')
+  }
+
   return {
     fullName: application.fullName,
     phone: application.phone,
-    city: application.city,
+    cityId,
     frequentRoutes: application.frequentRoutes,
-    vehicleBrand: application.vehicleBrand,
-    vehicleModel: application.vehicleModel,
-    vehicleYear: application.vehicleYear,
-    vehiclePlate: application.vehiclePlate,
-    vehicleColor: application.vehicleColor,
-    vehicleSeats: application.vehicleSeats,
-    vehicleBodyType: application.vehicleBodyType,
-    documents: { ...application.documents },
     vehicle: {
       brand: application.vehicleBrand,
       model: application.vehicleModel,
@@ -454,6 +639,7 @@ function buildApplicationPayload(
       seats: application.vehicleSeats,
       bodyType: application.vehicleBodyType,
     },
+    ...(documents ? { documents } : {}),
   }
 }
 
@@ -466,10 +652,9 @@ export function mapDriverMeToViewModel(raw: unknown): DriverMeViewModel {
     data?.application,
     data?.driverApplication,
   )
-  const profileRecord = firstRecord(record.profile, record.driverProfile, data?.profile, data?.driverProfile)
 
   const application = mapApplication(applicationRecord ?? record.application)
-  const profile = mapProfile(profileRecord ?? record.profile)
+  const profile = mapProfile(record)
   const verificationStatus = mapVerificationStatus(
     record.verificationStatus ??
       record.verification_status ??

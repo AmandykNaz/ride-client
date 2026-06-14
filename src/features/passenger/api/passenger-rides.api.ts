@@ -68,6 +68,19 @@ function getFallbackDay(value: unknown) {
   return new Date().toISOString().slice(0, 10)
 }
 
+function readRequestedPrice(record: BackendRecord) {
+  return asNumber(
+    record.requestedPrice ??
+      record.requested_price ??
+      record.agreedPrice ??
+      record.agreed_price ??
+      record.offeredPrice ??
+      record.offered_price ??
+      record.price,
+    0,
+  )
+}
+
 export function mapRideRequestToViewModel(raw: unknown): RideRequest {
   const record = isRecord(raw) ? raw : {}
   const createdAt = getFallbackDate(record.createdAt ?? record.created_at)
@@ -87,7 +100,7 @@ export function mapRideRequestToViewModel(raw: unknown): RideRequest {
   return {
     id: asString(record.id, `request-${Date.now()}`),
     status: (asString(record.status, 'SEARCHING') as RideRequestStatus) || 'SEARCHING',
-    serviceType: asString(record.serviceType ?? record.service_type, 'ride'),
+    serviceType: asString(record.serviceType ?? record.service_type, 'INTERCITY_RIDE'),
     rideType: asTripType(record.rideType ?? record.ride_type),
     time: asString(record.time ?? record.requestTime ?? record.request_time, createdAt.slice(11, 16) || '08:00'),
     type: asTripType(record.type ?? record.rideType ?? record.ride_type) || 'shared',
@@ -95,7 +108,7 @@ export function mapRideRequestToViewModel(raw: unknown): RideRequest {
     from,
     to,
     date: getFallbackDay(record.date ?? record.createdAt ?? record.created_at),
-    price: asNumber(record.agreedPrice ?? record.agreed_price ?? record.offeredPrice ?? record.offered_price ?? record.price, 0),
+    price: readRequestedPrice(record),
     originText: asString(
       record.originText ?? record.origin_text ?? from,
       from,

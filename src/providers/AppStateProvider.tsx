@@ -473,6 +473,7 @@ function defaultDriverApplicationDraft(): DriverApplicationDraft {
     fullName: '',
     phone: '',
     city: '',
+    cityId: '',
     frequentRoutes: '',
     vehicleBrand: '',
     vehicleModel: '',
@@ -528,6 +529,24 @@ function cloneDriverApplicationDraft(
     ...application,
     documents: { ...application.documents },
   }
+}
+
+function hasRealDriverApplicationDocuments(documents: unknown): boolean {
+  if (!Array.isArray(documents)) return false
+
+  return documents.some((document) => {
+    if (typeof document !== 'object' || document === null || Array.isArray(document)) {
+      return false
+    }
+
+    const record = document as Record<string, unknown>
+    return (
+      typeof record.type === 'string' &&
+      record.type.trim().length > 0 &&
+      typeof record.filePath === 'string' &&
+      record.filePath.trim().length > 0
+    )
+  })
 }
 
 function makeMockOffers(price: number): DriverOffer[] {
@@ -712,7 +731,7 @@ function makeDriverActiveOrder(
     id: makeId('driver-order'),
     sourceOrderId: order.id,
     category: order.category,
-    status: 'GOING_TO_CLIENT',
+    status: 'DRIVER_ASSIGNED',
     from: order.from,
     to: order.to,
     price,
@@ -735,8 +754,12 @@ function nextDriverOrderStatus(
   status: DriverActiveOrderStatus,
 ): DriverActiveOrderStatus {
   switch (status) {
+    case 'DRIVER_ASSIGNED':
     case 'GOING_TO_CLIENT':
-      return 'ARRIVED'
+      return 'DRIVER_ON_WAY'
+    case 'DRIVER_ON_WAY':
+      return 'DRIVER_ARRIVED'
+    case 'DRIVER_ARRIVED':
     case 'ARRIVED':
       return 'IN_PROGRESS'
     case 'IN_PROGRESS':
@@ -871,8 +894,7 @@ function makeWalletTransaction(params: {
 
 function formatTopUpMethod(method: TopUpRequestMethod) {
   if (method === 'KASPI') return 'Kaspi'
-  if (method === 'KASPI_TRANSFER') return 'Kaspi'
-  if (method === 'BANK_TRANSFER') return 'Bank transfer'
+  if (method === 'HALYK') return 'Halyk'
   if (method === 'CASH') return 'Наличные'
   return 'Other'
 }
@@ -996,13 +1018,14 @@ function pickActiveRideOrder(orders: PassengerRideOrder[]) {
 
 function buildRideRequestPayload(rideDraft: RideDraft): CreateRideRequestPayload {
   return {
-    serviceType: 'ride',
+    serviceType: 'INTERCITY_RIDE',
     rideType: rideDraft.type,
     originText: rideDraft.from,
     destinationText: rideDraft.to,
     pickupAddress: rideDraft.from,
     dropoffAddress: rideDraft.to,
-    price: rideDraft.price,
+    passengersCount: rideDraft.passengersCount,
+    requestedPrice: rideDraft.price,
     comment: rideDraft.comment,
   }
 }
@@ -1011,7 +1034,7 @@ function createActiveRideRequest(state: AppState): AppState {
   const requestId = makeId('req')
   const request: PassengerRideRequest = {
     id: requestId,
-    serviceType: 'ride',
+    serviceType: 'INTERCITY_RIDE',
     rideType: state.rideDraft.type,
     time: state.rideDraft.time,
     type: state.rideDraft.type,
@@ -1386,8 +1409,8 @@ function appReducer(state: AppState, action: AppAction): AppState {
       const approvedProfile = makeDriverProfileFromApplication(state.driverApplicationDraft)
       const wallet = {
         ...state.driverWallet,
-        balance: state.driverWallet.balance || approvedProfile.balance,
-        minBalance: state.driverWallet.minBalance || approvedProfile.minBalance,
+        balance: state.driverWallet.balance || approvedProfile.balance || 0,
+        minBalance: state.driverWallet.minBalance || approvedProfile.minBalance || 0,
       }
       const syncedWallet = syncDriverWalletAccessState(wallet)
 
@@ -1491,7 +1514,7 @@ function appReducer(state: AppState, action: AppAction): AppState {
         isTopUpFormOpen: false,
         topUpForm: {
           amount: '',
-          method: 'KASPI_TRANSFER',
+          method: 'KASPI',
           providerRef: '',
           comment: '',
           proofFilePath: '',
@@ -1520,7 +1543,7 @@ function appReducer(state: AppState, action: AppAction): AppState {
         isTopUpFormOpen: false,
         topUpForm: {
           amount: '',
-          method: 'KASPI_TRANSFER',
+          method: 'KASPI',
           providerRef: '',
           comment: '',
           proofFilePath: '',
@@ -2163,7 +2186,7 @@ const initialState: AppState = {
   isRideComplaintOpen: false,
   topUpForm: {
     amount: '',
-    method: 'KASPI_TRANSFER',
+    method: 'KASPI',
     providerRef: '',
     comment: '',
     proofFilePath: '',
@@ -3061,6 +3084,14 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
     try {
       await saveDriverApplication()
+      if (!hasRealDriverApplicationDocuments((state.driverApplicationDraft as unknown as { documents?: unknown }).documents)) {
+        dispatch({
+          type: 'setDriverFlowError',
+          error: 'Для отправки заявки загрузите документы',
+        })
+        return
+      }
+
       const submitted = await submitDriverApplicationApi()
       driverApplicationIdRef.current = submitted.applicationId ?? submitted.application?.id ?? driverApplicationIdRef.current
 
@@ -3416,14 +3447,18 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const driverOrderNextStatusAction = async () => {
     if (!state.driverActiveOrder) return
 
-    const nextStatus =
+      const nextStatus =
+      state.driverActiveOrder.status === 'DRIVER_ASSIGNED' ||
       state.driverActiveOrder.status === 'GOING_TO_CLIENT'
-        ? 'DRIVER_ARRIVED'
-        : state.driverActiveOrder.status === 'ARRIVED'
-          ? 'IN_PROGRESS'
-          : state.driverActiveOrder.status === 'IN_PROGRESS'
-            ? 'COMPLETED'
-            : null
+        ? 'DRIVER_ON_WAY'
+        : state.driverActiveOrder.status === 'DRIVER_ON_WAY'
+          ? 'DRIVER_ARRIVED'
+          : state.driverActiveOrder.status === 'DRIVER_ARRIVED' ||
+              state.driverActiveOrder.status === 'ARRIVED'
+            ? 'IN_PROGRESS'
+            : state.driverActiveOrder.status === 'IN_PROGRESS'
+              ? 'COMPLETED'
+              : null
 
     if (!nextStatus) return
 

@@ -42,12 +42,17 @@ function firstRecord(...values: unknown[]) {
 function normalizeWalletMethod(value: unknown): DriverTopUpRequest['method'] {
   const normalized = asString(value).toUpperCase()
 
-  if (normalized === 'KASPI' || normalized === 'KASPI_TRANSFER') return 'KASPI_TRANSFER'
-  if (normalized === 'BANK_TRANSFER' || normalized === 'BANK') return 'BANK_TRANSFER'
+  if (normalized === 'KASPI' || normalized === 'KASPI_TRANSFER') return 'KASPI'
+  if (normalized === 'HALYK') return 'HALYK'
+  if (normalized === 'BANK_TRANSFER' || normalized === 'BANK') return 'OTHER'
   if (normalized === 'CASH') return 'CASH'
   if (normalized === 'OTHER') return 'OTHER'
 
-  return asString(value) as DriverTopUpRequest['method']
+  return 'OTHER'
+}
+
+function normalizeTopUpMethod(value: unknown): DriverTopUpRequest['method'] {
+  return normalizeWalletMethod(value)
 }
 
 function mapWallet(raw: unknown): DriverWallet {
@@ -167,7 +172,7 @@ function buildQuery(params?: Record<string, string | number | boolean | undefine
 function normalizeTopUpPayload(payload: CreateDriverTopUpRequestPayload) {
   return {
     ...payload,
-    method: payload.method === 'KASPI' ? 'KASPI_TRANSFER' : payload.method,
+    method: normalizeTopUpMethod(payload.method),
   }
 }
 

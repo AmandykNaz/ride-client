@@ -91,6 +91,12 @@ export default function DriverRegistrationPage() {
     </div>
   )
 
+  const flowErrorBanner = driverFlowError ? (
+    <div className="rounded-2xl bg-red-50 px-4 py-3 text-sm text-red-700">
+      {driverFlowError}
+    </div>
+  ) : null
+
   const renderFooter = (canContinue = true) => (
     <div className="mt-5 flex gap-2">
       {step > 1 ? (
@@ -128,12 +134,7 @@ export default function DriverRegistrationPage() {
         title="Стать водителем AmanJol"
         description="Коротко о том, как работает водительский профиль в демо-прототипе."
       >
-        {driverFlowError ? (
-          <div className="rounded-2xl bg-red-50 px-4 py-3 text-sm text-red-700">
-            {driverFlowError}
-          </div>
-        ) : null}
-
+        {flowErrorBanner}
         {stepButtons}
         <div className="space-y-3 rounded-2xl bg-surface-soft p-4 text-sm text-ink">
           <p>• зарабатывайте на межгороде</p>
@@ -164,6 +165,7 @@ export default function DriverRegistrationPage() {
         description="Заполняем основные данные водителя и частые направления."
       >
         {stepButtons}
+        {flowErrorBanner}
         <div className="space-y-3">
           <Field
             label="ФИО"
@@ -205,6 +207,7 @@ export default function DriverRegistrationPage() {
         description="Собираем данные об автомобиле для будущей модерации."
       >
         {stepButtons}
+        {flowErrorBanner}
         <div className="grid gap-3">
           <Field
             label="Марка"
@@ -303,6 +306,7 @@ export default function DriverRegistrationPage() {
         description="Mock upload tiles для демонстрации проверки документов."
       >
         {stepButtons}
+        {flowErrorBanner}
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
           {(
             [
@@ -361,6 +365,7 @@ export default function DriverRegistrationPage() {
       description="Проверяем заполненные данные перед отправкой модератору."
     >
       {stepButtons}
+      {flowErrorBanner}
       <div className="space-y-3">
         <div className="rounded-2xl bg-surface-soft p-4 text-sm text-ink">
           <p className="font-semibold">{driverApplicationDraft.fullName || 'ФИО'}</p>
