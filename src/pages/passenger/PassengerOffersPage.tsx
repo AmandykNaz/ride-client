@@ -18,6 +18,10 @@ export default function PassengerOffersPage() {
   const actions = useAppActions()
   const loadOffersRef = useRef(actions.loadActiveRequestOffers)
   const activeRideRequestId = activeRideRequest?.id ?? null
+  const activeRideRequestBackendId =
+    activeRideRequest && /^\d+$/.test((activeRideRequest.backendId ?? activeRideRequest.id).trim())
+      ? (activeRideRequest.backendId ?? activeRideRequest.id).trim()
+      : null
   const activeRideRequestStatus = activeRideRequest?.status ?? null
 
   useEffect(() => {
@@ -27,8 +31,12 @@ export default function PassengerOffersPage() {
   useEffect(() => {
     if (
       !activeRideRequestId ||
+      !activeRideRequestBackendId ||
       (activeRideRequestStatus !== 'SEARCHING' && activeRideRequestStatus !== 'OFFERED')
     ) {
+      if (activeRideRequestId && !activeRideRequestBackendId) {
+        console.warn('[ride] PassengerOffersPage: skipping polling for non-numeric request id', activeRideRequestId)
+      }
       return
     }
 
@@ -45,7 +53,7 @@ export default function PassengerOffersPage() {
       cancelled = true
       window.clearInterval(timer)
     }
-  }, [activeRideRequestId, activeRideRequestStatus])
+  }, [activeRideRequestBackendId, activeRideRequestId, activeRideRequestStatus])
 
   if (!activeRideRequest) {
     return (
@@ -89,7 +97,7 @@ export default function PassengerOffersPage() {
             <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">
               Таймер поиска
             </p>
-            <SearchTimer key={activeRideRequest.id} requestId={activeRideRequest.id} />
+            <SearchTimer key={activeRideRequestBackendId ?? activeRideRequest.id} requestId={activeRideRequestBackendId ?? activeRideRequest.id} />
           </div>
         </div>
 

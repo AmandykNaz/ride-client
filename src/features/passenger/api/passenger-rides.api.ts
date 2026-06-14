@@ -13,6 +13,7 @@ import type {
   PassengerRideOrdersResponse,
   RideOrderEventsResponse,
   RideRequest,
+  RideType,
 } from './passenger-rides.types'
 
 type BackendRecord = Record<string, unknown>
@@ -29,8 +30,64 @@ function asNumber(value: unknown, fallback = 0) {
   return typeof value === 'number' && Number.isFinite(value) ? value : fallback
 }
 
+function isNumericString(value: unknown) {
+  return typeof value === 'string' && /^\d+$/.test(value.trim())
+}
+
+function readNumericId(value: unknown) {
+  if (typeof value === 'number' && Number.isInteger(value) && value >= 0) {
+    return String(value)
+  }
+
+  if (typeof value === 'string' && isNumericString(value)) {
+    return value.trim()
+  }
+
+  return undefined
+}
+
 function asTripType(value: unknown) {
-  return value === 'shared' || value === 'full' ? value : undefined
+  if (value === 'shared' || value === 'SHARED' || value === 'with-companions' || value === 'with_companions' || value === 'с попутчиками' || value === 'С попутчиками') {
+    return 'shared'
+  }
+
+  if (value === 'full' || value === 'FULL' || value === 'whole-car' || value === 'whole_car' || value === 'весь салон' || value === 'Весь салон') {
+    return 'full'
+  }
+
+  return undefined
+}
+
+function toBackendRideType(value: unknown): RideType | undefined {
+  const tripType = asTripType(value)
+  if (tripType === 'shared') return 'SHARED'
+  if (tripType === 'full') return 'FULL'
+  return undefined
+}
+
+function warnInvalidRideRequestId(context: string, value: unknown) {
+  console.warn(`[ride] ${context}: numeric request id is required`, value)
+}
+
+function resolveRideRequestBackendId(record: BackendRecord) {
+  const source = isRecord(record.data) ? record.data : record
+  return (
+    readNumericId(source.id) ??
+    readNumericId(source.requestId) ??
+    readNumericId(source.request_id) ??
+    readNumericId(record.requestId) ??
+    readNumericId(record.request_id)
+  )
+}
+
+function getRideRequestSource(raw: unknown): BackendRecord {
+  if (!isRecord(raw)) return {}
+
+  if (isRecord(raw.data)) return raw.data
+  if (isRecord(raw.request)) return raw.request
+  if (isRecord(raw.rideRequest)) return raw.rideRequest
+
+  return raw
 }
 
 function isBackendEnvelope(value: unknown): value is BackendRecord {
@@ -82,8 +139,10 @@ function readRequestedPrice(record: BackendRecord) {
 }
 
 export function mapRideRequestToViewModel(raw: unknown): RideRequest {
-  const record = isRecord(raw) ? raw : {}
+  const record = getRideRequestSource(raw)
   const createdAt = getFallbackDate(record.createdAt ?? record.created_at)
+  const backendId = resolveRideRequestBackendId(isRecord(raw) ? raw : record)
+  const localId = backendId ? undefined : `request-${Date.now()}`
   const from = asString(
     record.from ?? record.originText ?? record.origin_text ?? record.pickupAddress ?? record.pickup_address,
     '',
@@ -98,10 +157,12 @@ export function mapRideRequestToViewModel(raw: unknown): RideRequest {
   )
 
   return {
-    id: asString(record.id, `request-${Date.now()}`),
+    id: backendId ?? localId ?? `request-${Date.now()}`,
+    backendId,
+    localId,
     status: (asString(record.status, 'SEARCHING') as RideRequestStatus) || 'SEARCHING',
     serviceType: asString(record.serviceType ?? record.service_type, 'INTERCITY_RIDE'),
-    rideType: asTripType(record.rideType ?? record.ride_type),
+    rideType: asTripType(record.rideType ?? record.ride_type ?? record.type),
     time: asString(record.time ?? record.requestTime ?? record.request_time, createdAt.slice(11, 16) || '08:00'),
     type: asTripType(record.type ?? record.rideType ?? record.ride_type) || 'shared',
     passengersCount: asNumber(record.passengersCount ?? record.passengers_count, 1),
@@ -128,6 +189,16 @@ export function mapRideRequestToViewModel(raw: unknown): RideRequest {
     selectedOfferId: asString(record.selectedOfferId ?? record.selected_offer_id),
     raw,
   }
+}
+
+function requireNumericRideRequestId(context: string, value: string | number) {
+  const normalized = readNumericId(value)
+  if (!normalized) {
+    warnInvalidRideRequestId(context, value)
+    return null
+  }
+
+  return normalized
 }
 
 export function mapRideOfferToViewModel(raw: unknown): RideOffer {
@@ -216,7 +287,7 @@ export function mapRideOrderToViewModel(raw: unknown): RideOrder {
     requestId: asString(record.requestId ?? record.request_id),
     status: asString(record.status, 'DRIVER_COMING'),
     serviceType: asString(record.serviceType ?? record.service_type, 'ride'),
-    rideType: asTripType(record.rideType ?? record.ride_type),
+    rideType: asTripType(record.rideType ?? record.ride_type ?? record.type),
     from,
     to,
     date: getFallbackDay(record.date ?? record.createdAt ?? record.created_at),
@@ -258,7 +329,10 @@ function normalizeResponse<T>(value: unknown, mapper: (item: unknown) => T): { i
 
 export async function createRideRequest(payload: CreateRideRequestPayload) {
   return mapRideRequestToViewModel(
-    await backendPost('/ride/requests', payload),
+    await backendPost('/ride/requests', {
+      ...payload,
+      rideType: toBackendRideType(payload.rideType),
+    }),
   )
 }
 
@@ -276,16 +350,31 @@ export async function getPassengerRequests(params?: Record<string, string | numb
   return normalizeResponse<RideRequest>(await backendGet(`/ride/passenger/requests${query}`), mapRideRequestToViewModel)
 }
 
-export async function getRideRequest(id: string) {
-  return mapRideRequestToViewModel(await backendGet(`/ride/requests/${id}`))
+export async function getRideRequest(id: string | number) {
+  const normalizedId = requireNumericRideRequestId('getRideRequest', id)
+  if (!normalizedId) {
+    throw new Error('Ride request id must be numeric.')
+  }
+
+  return mapRideRequestToViewModel(await backendGet(`/ride/requests/${normalizedId}`))
 }
 
-export async function cancelRideRequest(id: string) {
-  return mapRideRequestToViewModel(await backendPost(`/ride/requests/${id}/cancel`))
+export async function cancelRideRequest(id: string | number) {
+  const normalizedId = requireNumericRideRequestId('cancelRideRequest', id)
+  if (!normalizedId) {
+    throw new Error('Ride request id must be numeric.')
+  }
+
+  return mapRideRequestToViewModel(await backendPost(`/ride/requests/${normalizedId}/cancel`))
 }
 
 export async function getRideRequestOffers(requestId: number | string): Promise<RideOfferListResponse> {
-  const response = await backendGet(`/ride/requests/${String(requestId)}/offers`)
+  const normalizedId = requireNumericRideRequestId('getRideRequestOffers', requestId)
+  if (!normalizedId) {
+    return { items: [], raw: null }
+  }
+
+  const response = await backendGet(`/ride/requests/${normalizedId}/offers`)
   const list = isBackendEnvelope(response) && Array.isArray(response.items)
     ? response.items
     : response

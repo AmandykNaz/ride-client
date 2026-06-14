@@ -1,7 +1,15 @@
 import { clearRideAccessToken, getRideAccessToken } from '../auth/tokenStorage'
 
 export const API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000/api/v1'
+  (import.meta.env.VITE_API_BASE_URL?.trim() || 'http://localhost:4000/api/v1')
+
+if (import.meta.env.DEV) {
+  console.debug(
+    '[backend] API base URL:',
+    API_BASE_URL,
+    import.meta.env.VITE_API_BASE_URL ? '(from VITE_API_BASE_URL)' : '(using fallback)',
+  )
+}
 
 type BackendEnvelope<T> = {
   success: boolean
@@ -86,11 +94,21 @@ async function requestBackend<T>(
   path: string,
   { method, body, skipAuth, headers }: BackendRequestOptions,
 ): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    method,
-    headers: buildHeaders(skipAuth, headers),
-    body: body === undefined ? undefined : JSON.stringify(body),
-  })
+  let response: Response
+
+  try {
+    response = await fetch(`${API_BASE_URL}${path}`, {
+      method,
+      headers: buildHeaders(skipAuth, headers),
+      body: body === undefined ? undefined : JSON.stringify(body),
+    })
+  } catch (error) {
+    throw new BackendApiError(
+      'Backend недоступен. Проверьте VITE_API_BASE_URL и запущен ли backend.',
+      undefined,
+      error instanceof Error ? error.name : undefined,
+    )
+  }
 
   const parsed = (await parseResponseBody(response)) as Partial<BackendEnvelope<T>> | T | string | null
   const isEnvelope = isPlainObject(parsed) && 'success' in parsed && 'data' in parsed

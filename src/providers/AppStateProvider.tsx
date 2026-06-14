@@ -65,6 +65,7 @@ import type {
   RideOrder as PassengerRideOrder,
   RideOrderEvent as PassengerRideOrderEvent,
   RideRequest as PassengerRideRequest,
+  RideType,
 } from '../features/passenger/api/passenger-rides.types'
 import type {
   ActiveRide,
@@ -1016,10 +1017,19 @@ function pickActiveRideOrder(orders: PassengerRideOrder[]) {
   )
 }
 
+function getBackendRideRequestId(request: Pick<PassengerRideRequest, 'id' | 'backendId' | 'localId'> | null | undefined) {
+  const candidate = request?.backendId ?? request?.id
+  return typeof candidate === 'string' && /^\d+$/.test(candidate.trim()) ? candidate.trim() : null
+}
+
+function toBackendRideType(rideType: RideDraft['type']): RideType {
+  return rideType === 'full' ? 'FULL' : 'SHARED'
+}
+
 function buildRideRequestPayload(rideDraft: RideDraft): CreateRideRequestPayload {
   return {
     serviceType: 'INTERCITY_RIDE',
-    rideType: rideDraft.type,
+    rideType: toBackendRideType(rideDraft.type),
     originText: rideDraft.from,
     destinationText: rideDraft.to,
     pickupAddress: rideDraft.from,
@@ -1034,6 +1044,7 @@ function createActiveRideRequest(state: AppState): AppState {
   const requestId = makeId('req')
   const request: PassengerRideRequest = {
     id: requestId,
+    localId: requestId,
     serviceType: 'INTERCITY_RIDE',
     rideType: state.rideDraft.type,
     time: state.rideDraft.time,
@@ -2267,9 +2278,10 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       const passengerRideRequests = requestsResponse.items
       const passengerRideOrders = ordersResponse.items
       const selectedRequest = pickActiveRideRequest(passengerRideRequests)
-      const detailedRequest = selectedRequest
-        ? await getRideRequest(selectedRequest.id).catch(() => selectedRequest)
-        : null
+      const selectedRequestBackendId = getBackendRideRequestId(selectedRequest)
+      const detailedRequest = selectedRequestBackendId
+        ? await getRideRequest(selectedRequestBackendId).catch(() => selectedRequest)
+        : selectedRequest
       const activeRideRequest =
         detailedRequest && isOpenRideRequestStatus(detailedRequest.status)
           ? detailedRequest
@@ -2320,6 +2332,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
   const loadActiveRequestOffers = async () => {
     const activeRequest = state.activeRideRequest
+    const activeRequestBackendId = getBackendRideRequestId(activeRequest)
 
     if (!activeRequest || !isOpenRideRequestStatus(activeRequest.status)) {
       dispatch({ type: 'setRideOffersLoading', loading: false })
@@ -2335,11 +2348,26 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       return
     }
 
+    if (!activeRequestBackendId) {
+      console.warn('[ride] loadActiveRequestOffers: skipping polling for non-numeric request id', activeRequest.id)
+      dispatch({ type: 'setRideOffersLoading', loading: false })
+      dispatch({
+        type: 'setPassengerRideSnapshot',
+        passengerRideRequests: state.passengerRideRequests,
+        passengerRideOrders: state.passengerRideOrders,
+        activeRideRequest: activeRequest,
+        driverOffers: [],
+        activeRide: state.activeRide,
+        activeRideEvents: state.activeRideEvents,
+      })
+      return
+    }
+
     dispatch({ type: 'setRideOffersLoading', loading: true })
     dispatch({ type: 'setRideFlowError', error: null })
 
     try {
-      const response = await getRideRequestOffers(activeRequest.id)
+      const response = await getRideRequestOffers(activeRequestBackendId)
       dispatch({
         type: 'setPassengerRideSnapshot',
         passengerRideRequests: state.passengerRideRequests,
@@ -2596,11 +2624,17 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       return
     }
 
+    const activeRequestBackendId = getBackendRideRequestId(state.activeRideRequest)
+    if (!activeRequestBackendId) {
+      console.warn('[ride] cancelPassengerRideRequest: skipping cancel for non-numeric request id', state.activeRideRequest.id)
+      return
+    }
+
     dispatch({ type: 'setRideActionLoading', loading: true })
     dispatch({ type: 'setRideFlowError', error: null })
 
     try {
-      const cancelledRequest = await cancelRideRequest(state.activeRideRequest.id)
+      const cancelledRequest = await cancelRideRequest(activeRequestBackendId)
 
       dispatch({
         type: 'setPassengerRideSnapshot',

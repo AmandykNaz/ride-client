@@ -303,6 +303,8 @@ export type DriverOffer = {
 
 export type RideRequest = RideDraft & {
   id: string
+  backendId?: string
+  localId?: string
   status: RideRequestStatus
   selectedOfferId?: string
 }

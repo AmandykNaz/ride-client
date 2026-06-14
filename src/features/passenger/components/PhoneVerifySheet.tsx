@@ -3,7 +3,7 @@ import { AlertCircle } from 'lucide-react'
 
 import { useAppActions, useAppState } from '../../../providers/AppStateProvider'
 import { BackendAuthError } from '../../../shared/api/backend'
-import { requestRideOtp, verifyRideOtp } from '../../ride-auth/api/ride-auth.api'
+import { normalizeRidePhone, requestRideOtp, verifyRideOtp } from '../../ride-auth/api/ride-auth.api'
 import { toRidePassengerProfile } from '../api/passenger.api'
 import { OverlaySheet } from '../../../shared/ui/OverlaySheet'
 
@@ -19,7 +19,7 @@ export function PhoneVerifySheet() {
   const [otpRequested, setOtpRequested] = useState(false)
 
   const handleRequestOtp = async () => {
-    const normalizedPhone = phone.trim()
+    const normalizedPhone = normalizeRidePhone(phone)
 
     if (!normalizedPhone) {
       setError('Введите номер телефона.')
@@ -45,7 +45,7 @@ export function PhoneVerifySheet() {
   }
 
   const handleSubmit = async () => {
-    const normalizedPhone = phone.trim()
+    const normalizedPhone = normalizeRidePhone(phone)
     const normalizedCode = code.trim()
 
     if (!normalizedPhone) {
