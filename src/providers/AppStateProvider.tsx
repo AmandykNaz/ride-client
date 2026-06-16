@@ -2427,9 +2427,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         driverOffers: state.driverOffers,
         activeRide: isActive ? activeRide : null,
         activeRideEvents,
-        currentScreen: isActive
-          ? 'passengerActiveRide'
-          : state.currentScreen === 'passengerActiveRide'
+        currentScreen:
+          state.currentScreen === 'passengerActiveRide' && !isActive
             ? 'passengerOrders'
             : state.currentScreen,
       })
@@ -2967,14 +2966,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
           : null)
 
       dispatch({ type: 'setDriverOrders', orders: ordersResponse.items })
-      dispatch({
-        type: 'setDriverActiveOrder',
-        order: activeOrder,
-        currentScreen:
-          activeOrder && state.currentScreen !== 'driverOrders'
-            ? 'driverOrders'
-            : state.currentScreen,
-      })
+      dispatch({ type: 'setDriverActiveOrder', order: activeOrder })
     } catch (error) {
       if (error instanceof BackendAuthError) {
         clearRideAccessToken()
@@ -2987,7 +2979,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         error: error instanceof Error ? error.message : 'Не удалось загрузить заказы водителя.',
       })
     }
-  }, [dispatch, state.currentScreen, state.driverActiveOrder, state.driverVerificationStatus])
+  }, [dispatch, state.driverActiveOrder, state.driverVerificationStatus])
 
   const refreshDriverSnapshot = useCallback(async (screenOverride?: AppScreen) => {
     const token = getRideAccessToken()

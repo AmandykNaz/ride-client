@@ -3,8 +3,13 @@ import { cn } from '../../lib/cn'
 import { formatKzt, formatRoute } from '../../lib/format'
 
 export function PassengerHistoryTabs() {
-  const { passengerHistory, passengerOrdersTab, passengerRideRequests, passengerRideOrders } =
-    useAppState()
+  const {
+    passengerHistory,
+    passengerOrdersTab,
+    passengerRideRequests,
+    passengerRideOrders,
+    activeRide,
+  } = useAppState()
   const actions = useAppActions()
 
   const rideHistory = passengerHistory.filter((item) => item.category === 'ride')
@@ -12,6 +17,26 @@ export function PassengerHistoryTabs() {
 
   return (
     <div className="space-y-4">
+      {activeRide ? (
+        <div className="rounded-[24px] border border-accent/20 bg-accent/8 px-4 py-3 text-sm text-ink">
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="font-semibold">У вас активная поездка</p>
+              <p className="mt-1 truncate text-muted">
+                {formatRoute(activeRide.from, activeRide.to)} · {activeRide.status}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => actions.setScreen('passengerActiveRide')}
+              className="shrink-0 rounded-2xl bg-accent px-3 py-2 text-sm font-semibold text-white"
+            >
+              Открыть
+            </button>
+          </div>
+        </div>
+      ) : null}
+
       {passengerRideRequests.length > 0 ? (
         <div className="space-y-3 rounded-[28px] border border-border bg-white p-4 shadow-sm">
           <div className="flex items-center justify-between gap-3">

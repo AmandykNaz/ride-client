@@ -25,6 +25,7 @@ export default function PassengerOrderPage() {
   const {
     passengerStatus,
     passengerProfile,
+    activeRide,
     rideDraft,
     isRideRequestLoading,
     rideFlowError,
@@ -47,6 +48,26 @@ export default function PassengerOrderPage() {
 
   return (
     <div className="space-y-4">
+      {activeRide ? (
+        <div className="rounded-[24px] border border-accent/20 bg-accent/8 px-4 py-3 text-sm text-ink">
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="font-semibold">У вас активная поездка</p>
+              <p className="mt-1 truncate text-muted">
+                {formatRoute(activeRide.from, activeRide.to)} · {activeRide.status}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => actions.setScreen('passengerActiveRide')}
+              className="shrink-0 rounded-2xl bg-accent px-3 py-2 text-sm font-semibold text-white"
+            >
+              Открыть
+            </button>
+          </div>
+        </div>
+      ) : null}
+
       {rideFlowError ? (
         <div className="rounded-[24px] border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
           {rideFlowError}
