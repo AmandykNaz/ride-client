@@ -1,34 +1,51 @@
 import { Phone, ShieldAlert, XCircle } from 'lucide-react'
 
-import { formatKzt, formatRoute } from '../../lib/format'
+import { formatKzt, formatRideOrderStatusLabel, formatRoute } from '../../lib/format'
 import { useAppActions, useAppState } from '../../providers/AppStateProvider'
 import { PageCard } from '../../shared/ui/PageCard'
-
-const statusText: Record<string, string> = {
-  DRIVER_COMING: 'Водитель едет за посылкой',
-  ARRIVED: 'Водитель прибыл за посылкой',
-  IN_PROGRESS: 'Посылка в пути',
-  COMPLETED: 'Посылка доставлена',
-  CANCELLED: 'Доставка отменена',
-}
 
 export default function PassengerActiveParcelPage() {
   const { activeParcelOrder } = useAppState()
   const actions = useAppActions()
+  const isDevParcelFlow = import.meta.env.DEV
 
-  if (!activeParcelOrder) {
+  if (!isDevParcelFlow) {
     return (
       <PageCard
         eyebrow="Посылка"
-        title="Активная доставка"
-        description="Активная доставка не найдена."
+        title="Посылки скоро"
+        description="Parcel flow пока не готов к боевому запуску."
       >
+        <div className="rounded-2xl bg-surface-soft p-4 text-sm text-ink">
+          Сейчас это coming soon сценарий, а не live flow.
+        </div>
         <button
           type="button"
           onClick={() => actions.setScreen('passengerParcels')}
           className="rounded-2xl bg-accent px-4 py-3 text-sm font-semibold text-white"
         >
-          Вернуться к форме
+          Вернуться к разделу
+        </button>
+      </PageCard>
+    )
+  }
+
+  if (!activeParcelOrder) {
+    return (
+      <PageCard
+        eyebrow="Посылка"
+        title="Посылки скоро"
+        description="Parcel flow пока не готов к боевому запуску."
+      >
+        <div className="rounded-2xl bg-surface-soft p-4 text-sm text-ink">
+          Сейчас это dev-only или coming soon сценарий. Боевой backend для parcel flow ещё не подключён.
+        </div>
+        <button
+          type="button"
+          onClick={() => actions.setScreen('passengerParcels')}
+          className="rounded-2xl bg-accent px-4 py-3 text-sm font-semibold text-white"
+        >
+          Вернуться к разделу
         </button>
       </PageCard>
     )
@@ -38,8 +55,8 @@ export default function PassengerActiveParcelPage() {
     <div className="space-y-4">
       <PageCard
         eyebrow="Посылка"
-        title={statusText[activeParcelOrder.status]}
-        description="Пассажир не завершает доставку сам. Завершение эмулируется водителем."
+        title={formatRideOrderStatusLabel(activeParcelOrder.status)}
+        description="Parcel flow доступен только как dev-only preview до готовности backend."
       >
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="rounded-2xl bg-surface-soft p-4">
@@ -132,26 +149,8 @@ export default function PassengerActiveParcelPage() {
         </button>
       </div>
 
-      <div className="rounded-[28px] border border-dashed border-border bg-slate-50 p-4">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">
-          Демо-симуляция водителя
-        </p>
-        <div className="mt-3 grid grid-cols-2 gap-2">
-          <button
-            type="button"
-            onClick={() => actions.setActiveParcelStatus('IN_PROGRESS')}
-            className="rounded-2xl bg-white px-4 py-3 text-sm font-semibold text-ink"
-          >
-            Водитель забрал посылку
-          </button>
-          <button
-            type="button"
-            onClick={actions.completeParcelAndOpenHistory}
-            className="rounded-2xl bg-accent px-4 py-3 text-sm font-semibold text-white"
-          >
-            Водитель доставил посылку
-          </button>
-        </div>
+      <div className="rounded-[28px] border border-dashed border-border bg-slate-50 p-4 text-sm text-muted">
+        Завершение посылок пока не является боевым flow.
       </div>
     </div>
   )

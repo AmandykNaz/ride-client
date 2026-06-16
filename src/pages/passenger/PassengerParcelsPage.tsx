@@ -7,9 +7,10 @@ import { useAppActions, useAppState } from '../../providers/AppStateProvider'
 import { PageCard } from '../../shared/ui/PageCard'
 
 const sizeOptions = [
-  { value: 'small' as const, label: 'Маленькая до 5 кг', hint: 'До 5 кг' },
-  { value: 'medium' as const, label: 'Средняя 5–15 кг', hint: '5–15 кг' },
-  { value: 'large' as const, label: 'Большая 15+ кг', hint: '15+ кг' },
+  { value: 'SMALL' as const, label: 'Маленькая до 5 кг', hint: 'До 5 кг' },
+  { value: 'MEDIUM' as const, label: 'Средняя 5–15 кг', hint: '5–15 кг' },
+  { value: 'LARGE' as const, label: 'Большая 15+ кг', hint: '15+ кг' },
+  { value: 'OVERSIZED' as const, label: 'Негабарит', hint: 'Очень крупная' },
 ]
 
 function statusBanner(status: string) {
@@ -34,6 +35,7 @@ export default function PassengerParcelsPage() {
   const { passengerStatus, passengerProfile, verifiedPhone, parcelDraft } = useAppState()
   const actions = useAppActions()
   const [error, setError] = useState('')
+  const isDevParcelFlow = import.meta.env.DEV
 
   useEffect(() => {
     if (parcelDraft.senderName || !passengerProfile?.name) return
@@ -56,6 +58,11 @@ export default function PassengerParcelsPage() {
     !parcelDraft.price
 
   const handleSearch = () => {
+    if (!isDevParcelFlow) {
+      setError('Parcel flow скоро появится.')
+      return
+    }
+
     if (passengerStatus === 'LIMITED' || passengerStatus === 'BLOCKED') {
       return
     }
@@ -93,8 +100,8 @@ export default function PassengerParcelsPage() {
 
       <PageCard
         eyebrow="Пассажир"
-        title="Отправить посылку"
-        description="Каркас формы отправки посылки между городами Казахстана."
+        title="Посылки"
+        description={isDevParcelFlow ? 'Внутренний preview parcel flow.' : 'Parcel flow пока в разработке.'}
       >
         <div className="rounded-2xl bg-surface-soft p-4">
           <div className="flex items-center gap-2 text-sm font-semibold text-ink">
@@ -102,12 +109,25 @@ export default function PassengerParcelsPage() {
             Посылка
           </div>
           <p className="mt-2 text-sm text-muted">
-            Фото можно прикрепить позже, это демо-тоггл без загрузки файла.
+            {isDevParcelFlow
+              ? 'Фото можно прикрепить позже, это внутренний preview без загрузки файла.'
+              : 'Боевой parcel flow ещё не подключён.'}
           </p>
         </div>
       </PageCard>
 
-      <div className="rounded-[30px] border border-border bg-white p-4 shadow-sm">
+      {!isDevParcelFlow ? (
+        <div className="rounded-[30px] border border-border bg-white p-4 shadow-sm">
+          <div className="space-y-3 rounded-[28px] border border-dashed border-border bg-slate-50 p-4 text-sm text-muted">
+            <p className="font-semibold text-ink">Parcel flow coming soon</p>
+            <p>
+              Сейчас мы не создаём реальные заявки на посылки из этого клиента. Когда backend будет
+              готов, здесь откроется полноценная форма отправки.
+            </p>
+          </div>
+        </div>
+      ) : (
+        <div className="rounded-[30px] border border-border bg-white p-4 shadow-sm">
         <div className="grid gap-3">
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="block">
@@ -302,7 +322,8 @@ export default function PassengerParcelsPage() {
             Найти водителя
           </button>
         </div>
-      </div>
+        </div>
+      )}
     </div>
   )
 }

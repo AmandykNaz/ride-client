@@ -11,6 +11,11 @@ import { cn } from '../../lib/cn'
 import { formatKzt, formatRoute } from '../../lib/format'
 import { useAppActions, useAppState } from '../../providers/AppStateProvider'
 import { PageCard } from '../../shared/ui/PageCard'
+import {
+  getDriverAccessState,
+  getDriverVerificationStatusLabel,
+  getDriverWalletShortfall,
+} from '../../features/driver/driver-status'
 
 function StatusRow({
   icon: Icon,
@@ -50,8 +55,11 @@ export default function DriverDashboardPage() {
     isDriverActionLoading,
   } = useAppState()
   const actions = useAppActions()
+  const accessState = getDriverAccessState(driverVerificationStatus, driverWallet)
+  const verificationStatusLabel = getDriverVerificationStatusLabel(driverVerificationStatus)
+  const walletShortfall = getDriverWalletShortfall(driverWallet)
 
-  if (driverVerificationStatus === 'NOT_STARTED') {
+  if (accessState === 'NOT_STARTED') {
     return (
       <div className="space-y-4">
         <PageCard
@@ -84,13 +92,21 @@ export default function DriverDashboardPage() {
     )
   }
 
-  if (driverVerificationStatus === 'DRAFT') {
+  if (accessState === 'DRAFT') {
     return (
       <PageCard
         eyebrow="Водитель"
-        title="Продолжите регистрацию"
-        description="Ваше заявление сохранено в черновике."
+        title="Заявка не завершена"
+        description="Вы начали регистрацию водителя, но ещё не отправили заявку на проверку."
       >
+        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
+          Вы начали регистрацию водителя, но ещё не отправили заявку на проверку.
+        </div>
+        <StatusRow
+          icon={SlidersHorizontal}
+          title="Статус"
+          value={verificationStatusLabel}
+        />
         <StatusRow
           icon={SlidersHorizontal}
           title="Текущий шаг"
@@ -106,21 +122,21 @@ export default function DriverDashboardPage() {
           onClick={() => actions.setScreen('driverRegistration')}
           className="w-full rounded-2xl bg-accent px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-accent/20"
         >
-          Продолжить
+          Продолжить регистрацию
         </button>
       </PageCard>
     )
   }
 
-  if (driverVerificationStatus === 'PENDING_REVIEW') {
+  if (accessState === 'PENDING_REVIEW') {
     return (
       <div className="space-y-4">
         <PageCard
           eyebrow="Водитель"
-          title="Заявка на проверке"
+          title="На проверке"
           description="Обычно проверка занимает до 24 часов."
         >
-          <StatusRow icon={BadgeCheck} title="Статус" value="Заявка отправлена модератору" />
+          <StatusRow icon={BadgeCheck} title="Статус" value={verificationStatusLabel} />
           <div className="rounded-2xl bg-surface-soft p-4 text-sm text-muted">
             Мы уведомим вас после проверки.
           </div>
@@ -133,43 +149,15 @@ export default function DriverDashboardPage() {
           </button>
         </PageCard>
 
-        <div className="rounded-[28px] border border-dashed border-border bg-white p-4">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-muted">
-            Demo moderation controls
-          </p>
-          <div className="mt-3 grid gap-2 sm:grid-cols-3">
-            <button
-              type="button"
-              onClick={actions.demoApproveDriver}
-              className="rounded-2xl bg-accent px-4 py-3 text-sm font-semibold text-white"
-            >
-              Одобрить водителя
-            </button>
-            <button
-              type="button"
-              onClick={() => actions.demoRequestDriverChanges('Нужно уточнить фото документов и госномер.')}
-              className="rounded-2xl border border-border bg-white px-4 py-3 text-sm font-semibold text-ink"
-            >
-              Запросить исправления
-            </button>
-            <button
-              type="button"
-              onClick={() => actions.demoBlockDriver('Заявка заблокирована в демо-режиме.')}
-              className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700"
-            >
-              Заблокировать
-            </button>
-          </div>
-        </div>
       </div>
     )
   }
 
-  if (driverVerificationStatus === 'NEEDS_CHANGES') {
+  if (accessState === 'NEEDS_CHANGES') {
     return (
       <PageCard
         eyebrow="Водитель"
-        title="Нужно исправить данные"
+        title="Нужно исправить заявку"
         description="Модератор запросил уточнения по заявке."
       >
         <StatusRow
@@ -183,7 +171,7 @@ export default function DriverDashboardPage() {
             onClick={actions.editDriverApplicationAfterChanges}
             className="rounded-2xl bg-accent px-4 py-3 text-sm font-semibold text-white"
           >
-            Исправить данные
+            Исправить заявку
           </button>
           <button
             type="button"
@@ -197,7 +185,7 @@ export default function DriverDashboardPage() {
     )
   }
 
-  if (driverVerificationStatus === 'BLOCKED') {
+  if (accessState === 'BLOCKED') {
     return (
       <PageCard
         eyebrow="Водитель"
@@ -229,11 +217,47 @@ export default function DriverDashboardPage() {
     )
   }
 
+  if (accessState === 'SUSPENDED') {
+    return (
+      <PageCard
+        eyebrow="Водитель"
+        title="Профиль приостановлен"
+        description="Статус временно ограничивает доступ к кабинету."
+      >
+        <StatusRow
+          icon={CircleAlert}
+          title="Статус"
+          value={verificationStatusLabel}
+        />
+        <div className="grid gap-2 sm:grid-cols-2">
+          <button
+            type="button"
+            onClick={() => actions.setScreen('support')}
+            className="rounded-2xl bg-accent px-4 py-3 text-sm font-semibold text-white"
+          >
+            Связаться с поддержкой
+          </button>
+          <button
+            type="button"
+            onClick={actions.returnToPassengerMode}
+            className="rounded-2xl border border-border bg-white px-4 py-3 text-sm font-semibold text-ink"
+          >
+            Вернуться в пассажирский режим
+          </button>
+        </div>
+      </PageCard>
+    )
+  }
+
   return (
     <PageCard
       eyebrow="Водитель"
-      title="Кабинет водителя"
-      description="Ваш профиль подтверждён. Можно включать онлайн-режим и пользоваться кабинетом."
+      title={accessState === 'APPROVED_LOW_BALANCE' ? 'Профиль одобрен' : 'Кабинет водителя'}
+      description={
+        accessState === 'APPROVED_LOW_BALANCE'
+          ? `Пополните баланс минимум до ${formatKzt(driverWallet.minBalance)} чтобы выйти на линию.`
+          : 'Ваш профиль подтверждён. Можно включать онлайн-режим и пользоваться кабинетом.'
+      }
     >
       {driverFlowError ? (
         <div className="rounded-2xl bg-red-50 px-4 py-3 text-sm text-red-700">
@@ -241,7 +265,20 @@ export default function DriverDashboardPage() {
         </div>
       ) : null}
 
-      <StatusRow icon={BadgeCheck} title="Статус" value="Проверен" />
+      {accessState === 'APPROVED_LOW_BALANCE' ? (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+          <p className="font-semibold">Профиль одобрен</p>
+          <p className="mt-1">
+            Пополните баланс минимум до {formatKzt(driverWallet.minBalance)}.
+          </p>
+        </div>
+      ) : null}
+
+      <StatusRow
+        icon={BadgeCheck}
+        title="Статус"
+        value={accessState === 'APPROVED_LOW_BALANCE' ? 'Профиль одобрен' : 'Готов к линии'}
+      />
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="rounded-2xl bg-surface-soft p-4">
           <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">
@@ -300,34 +337,30 @@ export default function DriverDashboardPage() {
       <div
         className={cn(
           'rounded-2xl p-4 text-sm font-semibold',
-          driverWallet.canGoOnline
+          accessState === 'APPROVED_READY'
             ? 'bg-emerald-50 text-emerald-700'
             : 'bg-amber-50 text-amber-800',
         )}
       >
-        {driverWallet.isBlocked
-          ? 'Кошелек заблокирован'
-          : driverWallet.canGoOnline
-            ? 'Доступ к заказам активен'
-            : 'Доступ к заказам ограничен'}
+        {accessState === 'APPROVED_READY'
+          ? 'Доступ к заказам активен'
+          : accessState === 'APPROVED_LOW_BALANCE'
+            ? 'Доступ к заказам будет открыт после пополнения баланса'
+            : 'Кошелек заблокирован'}
       </div>
 
-      {!driverWallet.canGoOnline ? (
+      {accessState === 'APPROVED_LOW_BALANCE' ? (
         <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-          <p className="font-semibold">
-            {driverWallet.isBlocked ? 'Кошелек заблокирован' : 'Баланс ниже минимального'}
-          </p>
+          <p className="font-semibold">Пополните баланс минимум до {formatKzt(driverWallet.minBalance)}</p>
           <p className="mt-1">
-            {driverWallet.isBlocked
-              ? driverWallet.blockedReason || 'Пополните баланс или обратитесь в поддержку.'
-              : 'Пополните баланс, чтобы видеть заказы.'}
+            Сейчас не хватает {formatKzt(walletShortfall)}.
           </p>
           <button
             type="button"
             onClick={() => actions.setScreen('driverBalance')}
             className="mt-3 rounded-2xl bg-accent px-4 py-3 text-sm font-semibold text-white"
           >
-            Пополнить
+            Перейти в баланс
           </button>
         </div>
       ) : null}
@@ -344,7 +377,11 @@ export default function DriverDashboardPage() {
           </div>
           <button
             type="button"
-            onClick={actions.toggleDriverOnlineStatus}
+            onClick={
+              accessState === 'APPROVED_LOW_BALANCE'
+                ? () => actions.setScreen('driverBalance')
+                : actions.toggleDriverOnlineStatus
+            }
             disabled={isDriverActionLoading}
             className={cn(
               'rounded-2xl px-4 py-3 text-sm font-semibold',
@@ -354,7 +391,11 @@ export default function DriverDashboardPage() {
               isDriverActionLoading && 'cursor-not-allowed opacity-60',
             )}
           >
-          {driverProfile?.isOnline ? 'Онлайн' : 'Оффлайн'}
+          {accessState === 'APPROVED_LOW_BALANCE'
+            ? 'Пополнить баланс'
+            : driverProfile?.isOnline
+              ? 'Онлайн'
+              : 'Оффлайн'}
           </button>
         </div>
       </div>

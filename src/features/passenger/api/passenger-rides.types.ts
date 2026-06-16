@@ -1,4 +1,4 @@
-import type { ActiveRideStatus, RideRequestStatus, TripType } from '../../../types/domain'
+import type { RideOrderStatus, RideRequestStatus, TripType } from '../../../types/domain'
 
 export type RideServiceType = 'INTERCITY_RIDE' | 'PARCEL'
 export type RideType = 'SHARED' | 'FULL'
@@ -77,7 +77,7 @@ export type AcceptRideOfferResponse =
 export type RideOrderEvent = {
   id: string
   orderId?: string
-  status: ActiveRideStatus | string
+  status: RideOrderStatus | string
   message: string
   createdAt: string
   raw: unknown
@@ -86,7 +86,7 @@ export type RideOrderEvent = {
 export type RideOrder = {
   id: string
   requestId?: string
-  status: ActiveRideStatus | string
+  status: RideOrderStatus | string
   serviceType: string
   rideType?: TripType | string
   from: string

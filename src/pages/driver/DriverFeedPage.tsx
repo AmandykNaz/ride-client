@@ -8,6 +8,7 @@ import { PageCard } from '../../shared/ui/PageCard'
 import { DriverCounterOfferSheet } from '../../features/driver/components/DriverCounterOfferSheet'
 import { DriverFeedOrderCard } from '../../features/driver/components/DriverFeedOrderCard'
 import type { DriverCounterOffer, DriverFeedOrder } from '../../types/domain'
+import { getDriverAccessState, getDriverWalletShortfall } from '../../features/driver/driver-status'
 
 type FeedFilter = 'all' | 'ride' | 'parcel' | 'full'
 
@@ -39,8 +40,10 @@ export default function DriverFeedPage() {
   } = useAppState()
   const actions = useAppActions()
   const [feedFilter, setFeedFilter] = useState<FeedFilter>('all')
+  const accessState = getDriverAccessState(driverVerificationStatus, driverWallet)
+  const walletShortfall = getDriverWalletShortfall(driverWallet)
 
-  const lowBalance = !driverWallet.canGoOnline
+  const lowBalance = accessState === 'APPROVED_LOW_BALANCE'
   const visibleOrders = useMemo(
     () =>
       driverFeedOrders
@@ -56,7 +59,14 @@ export default function DriverFeedPage() {
     }, {})
   }, [driverCounterOffers])
 
-  if (driverVerificationStatus !== 'APPROVED') {
+  if (
+    accessState === 'NOT_STARTED' ||
+    accessState === 'DRAFT' ||
+    accessState === 'PENDING_REVIEW' ||
+    accessState === 'NEEDS_CHANGES' ||
+    accessState === 'BLOCKED' ||
+    accessState === 'SUSPENDED'
+  ) {
     return (
       <PageCard
         eyebrow="Водитель"
@@ -70,10 +80,14 @@ export default function DriverFeedPage() {
         <div className="grid gap-2 sm:grid-cols-2">
           <button
             type="button"
-            onClick={() => actions.setScreen('driverRegistration')}
+            onClick={
+              accessState === 'NOT_STARTED'
+                ? actions.startDriverRegistration
+                : () => actions.setScreen('driverRegistration')
+            }
             className="rounded-2xl bg-accent px-4 py-3 text-sm font-semibold text-white"
           >
-            Перейти к регистрации
+            {accessState === 'DRAFT' ? 'Продолжить регистрацию' : 'Перейти к регистрации'}
           </button>
           <button
             type="button"
@@ -91,16 +105,17 @@ export default function DriverFeedPage() {
     return (
       <PageCard
         eyebrow="Водитель"
-        title={driverWallet.isBlocked ? 'Кошелек заблокирован' : 'Баланс ниже минимального'}
-        description="Пополните баланс, чтобы видеть заказы."
+        title="Профиль одобрен"
+        description={`Пополните баланс минимум до ${formatKzt(driverWallet.minBalance)}, чтобы выйти на линию.`}
       >
-        <div className="flex items-center gap-3 rounded-2xl bg-amber-50 p-4 text-amber-900">
+        <div className="flex items-center gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-900">
           <Sparkles className="h-5 w-5" />
-          <p className="text-sm">
-            {driverWallet.isBlocked
-              ? driverWallet.blockedReason || 'Пополните баланс, чтобы снова видеть заказы.'
-              : 'Пополните баланс, чтобы видеть заказы.'}
-          </p>
+          <div className="min-w-0">
+            <p className="text-sm font-semibold">Профиль одобрен</p>
+            <p className="text-sm">
+              Не хватает {formatKzt(walletShortfall)} до минимального баланса.
+            </p>
+          </div>
         </div>
         <div className="grid gap-2 sm:grid-cols-2">
           <button
@@ -108,7 +123,7 @@ export default function DriverFeedPage() {
             onClick={() => actions.setScreen('driverBalance')}
             className="rounded-2xl bg-accent px-4 py-3 text-sm font-semibold text-white"
           >
-            Пополнить баланс
+            Перейти в баланс
           </button>
           <button
             type="button"
@@ -202,7 +217,7 @@ export default function DriverFeedPage() {
             driverProfile?.isOnline
               ? 'bg-emerald-100 text-emerald-700'
               : 'bg-slate-100 text-slate-700',
-            isDriverActionLoading && 'cursor-not-allowed opacity-60',
+          isDriverActionLoading && 'cursor-not-allowed opacity-60',
           )}
         >
           {driverProfile?.isOnline ? 'Сейчас онлайн' : 'Сейчас оффлайн'}
@@ -236,7 +251,6 @@ export default function DriverFeedPage() {
             counterOffer={counterOffersByOrderId[order.id]}
             onAccept={() => actions.acceptDriverFeedOrder(order.id)}
             onOpenCounterOffer={() => actions.openDriverCounterOfferSheet(order.id)}
-            onAcceptCounterOfferDemo={actions.acceptDemoCounterOfferAsPassenger}
           />
         ))}
       </div>

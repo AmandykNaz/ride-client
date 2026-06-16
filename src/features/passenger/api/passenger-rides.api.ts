@@ -1,6 +1,7 @@
 import { backendGet, backendPost } from '../../../shared/api/backend'
 import type {
   ActiveRide,
+  RideOrderStatus,
   RideRequestStatus,
 } from '../../../types/domain'
 import type {
@@ -28,6 +29,38 @@ function asString(value: unknown, fallback = '') {
 
 function asNumber(value: unknown, fallback = 0) {
   return typeof value === 'number' && Number.isFinite(value) ? value : fallback
+}
+
+function normalizeRideRequestStatus(value: unknown): RideRequestStatus {
+  const normalized = asString(value, 'SEARCHING').toUpperCase()
+  if (
+    normalized === 'SEARCHING' ||
+    normalized === 'OFFERED' ||
+    normalized === 'ACCEPTED' ||
+    normalized === 'CANCELLED' ||
+    normalized === 'EXPIRED' ||
+    normalized === 'CONVERTED_TO_ORDER'
+  ) {
+    return normalized
+  }
+
+  return 'SEARCHING'
+}
+
+function normalizeRideOrderStatus(value: unknown): RideOrderStatus {
+  const normalized = asString(value, 'DRIVER_ASSIGNED').toUpperCase()
+
+  if (normalized === 'DRIVER_ASSIGNED' || normalized === 'GOING_TO_CLIENT' || normalized === 'ACCEPTED') {
+    return 'DRIVER_ASSIGNED'
+  }
+  if (normalized === 'DRIVER_ON_WAY') return 'DRIVER_ON_WAY'
+  if (normalized === 'DRIVER_ARRIVED' || normalized === 'ARRIVED') return 'DRIVER_ARRIVED'
+  if (normalized === 'IN_PROGRESS' || normalized === 'STARTED') return 'IN_PROGRESS'
+  if (normalized === 'COMPLETED' || normalized === 'FINISHED') return 'COMPLETED'
+  if (normalized === 'CANCELLED' || normalized === 'CANCELED') return 'CANCELLED'
+  if (normalized === 'DISPUTE') return 'DISPUTE'
+
+  return 'DRIVER_ASSIGNED'
 }
 
 function isNumericString(value: unknown) {
@@ -160,7 +193,7 @@ export function mapRideRequestToViewModel(raw: unknown): RideRequest {
     id: backendId ?? localId ?? `request-${Date.now()}`,
     backendId,
     localId,
-    status: (asString(record.status, 'SEARCHING') as RideRequestStatus) || 'SEARCHING',
+    status: normalizeRideRequestStatus(record.status),
     serviceType: asString(record.serviceType ?? record.service_type, 'INTERCITY_RIDE'),
     rideType: asTripType(record.rideType ?? record.ride_type ?? record.type),
     time: asString(record.time ?? record.requestTime ?? record.request_time, createdAt.slice(11, 16) || '08:00'),
@@ -285,7 +318,7 @@ export function mapRideOrderToViewModel(raw: unknown): RideOrder {
   return {
     id: asString(record.id, `order-${Date.now()}`),
     requestId: asString(record.requestId ?? record.request_id),
-    status: asString(record.status, 'DRIVER_COMING'),
+    status: normalizeRideOrderStatus(record.status),
     serviceType: asString(record.serviceType ?? record.service_type, 'ride'),
     rideType: asTripType(record.rideType ?? record.ride_type ?? record.type),
     from,
@@ -435,7 +468,7 @@ export function mapRideOrderToActiveRideViewModel(order: RideOrder): ActiveRide 
   return {
     id: order.id,
     requestId: order.requestId ?? order.id,
-    status: order.status as ActiveRide['status'],
+    status: normalizeRideOrderStatus(order.status),
     driverName: order.driverName,
     driverPhone: order.driverPhone,
     driverRating: order.driverRating,

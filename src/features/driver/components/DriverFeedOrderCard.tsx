@@ -1,7 +1,7 @@
 import { Clock3, MessageSquareQuote, Phone, Route, Sparkles, Truck } from 'lucide-react'
 
 import { cn } from '../../../lib/cn'
-import { formatKzt, formatRoute } from '../../../lib/format'
+import { formatKzt, formatParcelSizeLabel, formatRoute } from '../../../lib/format'
 import type { DriverCounterOffer, DriverFeedOrder } from '../../../types/domain'
 
 function maskPhone(phone: string) {
@@ -31,7 +31,6 @@ type DriverFeedOrderCardProps = {
   counterOffer?: DriverCounterOffer
   onAccept: () => void
   onOpenCounterOffer: () => void
-  onAcceptCounterOfferDemo: (orderId: string) => void
 }
 
 export function DriverFeedOrderCard({
@@ -39,7 +38,6 @@ export function DriverFeedOrderCard({
   counterOffer,
   onAccept,
   onOpenCounterOffer,
-  onAcceptCounterOfferDemo,
 }: DriverFeedOrderCardProps) {
   const isOfferPending = counterOffer?.status === 'pending'
   const isAccepted = order.status === 'accepted'
@@ -100,7 +98,9 @@ export function DriverFeedOrderCard({
           <div className="grid gap-2 rounded-2xl bg-surface-soft p-4 text-sm text-ink">
             <div className="flex items-center gap-2">
               <MessageSquareQuote className="h-4 w-4 text-accent" />
-              <span className="font-semibold">Размер: {order.parcelSize}</span>
+              <span className="font-semibold">
+                Размер: {formatParcelSizeLabel(order.parcelSize)}
+              </span>
             </div>
             {order.parcelDescription ? (
               <p className="text-sm text-muted">{order.parcelDescription}</p>
@@ -128,13 +128,6 @@ export function DriverFeedOrderCard({
             <div className="rounded-2xl bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800">
               Ваше предложение отправлено
             </div>
-            <button
-              type="button"
-              onClick={() => onAcceptCounterOfferDemo(order.id)}
-              className="w-full rounded-2xl bg-accent px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-accent/20"
-            >
-              Пассажир принял предложение
-            </button>
           </div>
         ) : (
           <div className="grid gap-2 sm:grid-cols-2">

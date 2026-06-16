@@ -78,7 +78,16 @@ export default function PassengerProfilePage() {
               <LogOut className="h-4 w-4" />
               Выйти
             </button>
-          ) : null}
+          ) : (
+            <button
+              type="button"
+              onClick={() => actions.openAuthSheet()}
+              className="inline-flex items-center gap-2 rounded-2xl bg-accent px-4 py-3 text-sm font-semibold text-white"
+            >
+              <LogOut className="h-4 w-4" />
+              Войти
+            </button>
+          )}
         </div>
       ) : (
         <div className="space-y-3 rounded-2xl bg-surface-soft p-4">
@@ -100,7 +109,16 @@ export default function PassengerProfilePage() {
               <LogOut className="h-4 w-4" />
               Выйти
             </button>
-          ) : null}
+          ) : (
+            <button
+              type="button"
+              onClick={() => actions.openAuthSheet()}
+              className="inline-flex items-center gap-2 rounded-2xl bg-accent px-4 py-3 text-sm font-semibold text-white"
+            >
+              <LogOut className="h-4 w-4" />
+              Войти
+            </button>
+          )}
         </div>
       )}
     </PageCard>

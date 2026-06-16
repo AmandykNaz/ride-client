@@ -39,9 +39,6 @@ export function DriverCounterOfferSheet() {
         isDriverActionLoading={isDriverActionLoading}
         onClose={actions.closeDriverCounterOfferSheet}
         onWithdrawOffer={(offerId) => actions.withdrawDriverOffer(offerId)}
-        onAcceptDemoCounterOffer={() =>
-          actions.acceptDemoCounterOfferAsPassenger(selectedOrder.id)
-        }
         onSubmit={(price, comment, setError) => {
           const numericPrice = Number(price)
 
@@ -64,7 +61,6 @@ function CounterOfferForm({
   isDriverActionLoading,
   onClose,
   onWithdrawOffer,
-  onAcceptDemoCounterOffer,
   onSubmit,
 }: {
   selectedOrder: DriverFeedOrder
@@ -72,7 +68,6 @@ function CounterOfferForm({
   isDriverActionLoading: boolean
   onClose: () => void
   onWithdrawOffer: (offerId: string) => Promise<void>
-  onAcceptDemoCounterOffer: () => void
   onSubmit: (price: string, comment: string, setError: (value: string) => void) => void
 }) {
   const [price, setPrice] = useState(
@@ -126,13 +121,6 @@ function CounterOfferForm({
 
       {selectedCounterOffer?.status === 'pending' ? (
         <div className="space-y-2">
-          <button
-            type="button"
-            onClick={onAcceptDemoCounterOffer}
-            className="w-full rounded-2xl border border-accent/20 bg-accent/10 px-4 py-3 text-sm font-semibold text-accent"
-          >
-            Пассажир принял предложение
-          </button>
           <button
             type="button"
             disabled={isDriverActionLoading}

@@ -13,17 +13,24 @@ export type DriverVerificationStatus =
   | 'NEEDS_CHANGES'
   | 'APPROVED'
   | 'BLOCKED'
+  | 'SUSPENDED'
 
 export type RideRequestStatus =
-  | 'DRAFT'
   | 'SEARCHING'
   | 'OFFERED'
   | 'ACCEPTED'
-  | 'DRIVER_COMING'
-  | 'ARRIVED'
+  | 'CANCELLED'
+  | 'EXPIRED'
+  | 'CONVERTED_TO_ORDER'
+
+export type RideOrderStatus =
+  | 'DRIVER_ASSIGNED'
+  | 'DRIVER_ON_WAY'
+  | 'DRIVER_ARRIVED'
   | 'IN_PROGRESS'
   | 'COMPLETED'
   | 'CANCELLED'
+  | 'DISPUTE'
 
 export type WalletTransactionType =
   | 'TOP_UP_APPROVED'
@@ -103,15 +110,53 @@ export type PassengerProfile = {
   tripsCount: number
 }
 
-export type DriverVehicleBodyType = 'sedan' | 'suv' | 'minivan' | 'alphard'
+export type DriverVehicleBodyType =
+  | 'sedan'
+  | 'suv'
+  | 'minivan'
+  | 'alphard'
+  | 'van'
+  | 'truck'
+  | 'other'
+
+export const DRIVER_VEHICLE_BODY_TYPES: DriverVehicleBodyType[] = [
+  'sedan',
+  'suv',
+  'minivan',
+  'alphard',
+  'van',
+  'truck',
+  'other',
+]
+
+export type DriverVehicleBodyTypeApi =
+  | 'SEDAN'
+  | 'SUV'
+  | 'MINIVAN'
+  | 'ALPHARD'
+  | 'VAN'
+  | 'TRUCK'
+  | 'OTHER'
+
+export const DRIVER_VEHICLE_BODY_TYPE_API_MAP: Record<DriverVehicleBodyType, DriverVehicleBodyTypeApi> = {
+  sedan: 'SEDAN',
+  suv: 'SUV',
+  minivan: 'MINIVAN',
+  alphard: 'ALPHARD',
+  van: 'VAN',
+  truck: 'TRUCK',
+  other: 'OTHER',
+}
 
 export type DriverVehicle = {
   brand: string
   model: string
   year: string
   plate: string
+  plateNumber?: string
   color: string
   seats: string
+  seatsCount?: number
   bodyType: DriverVehicleBodyType
 }
 
@@ -129,19 +174,29 @@ export type DriverProfile = {
   vehicle?: DriverVehicle
 }
 
-export type DriverApplicationDocuments = {
-  driverLicenseFront: boolean
-  driverLicenseBack: boolean
-  vehicleRegistration: boolean
-  carFrontPhoto: boolean
-  carBackPhoto: boolean
-  interiorPhoto: boolean
-  trunkPhoto: boolean
+export type DriverApplicationDocumentType =
+  | 'DRIVER_LICENSE_FRONT'
+  | 'DRIVER_LICENSE_BACK'
+  | 'VEHICLE_REGISTRATION'
+  | 'CAR_FRONT_PHOTO'
+  | 'CAR_BACK_PHOTO'
+  | 'INTERIOR_PHOTO'
+  | 'TRUNK_PHOTO'
+  | 'OTHER'
+
+export type DriverApplicationDocument = {
+  id?: string
+  type: DriverApplicationDocumentType
+  filePath: string
+  fileName?: string
+  mimeType?: string
+  sizeBytes?: number
 }
 
 export type DriverApplicationStep = 1 | 2 | 3 | 4 | 5
 
 export type DriverApplicationDraft = {
+  id?: string
   step: DriverApplicationStep
   fullName: string
   phone: string
@@ -155,7 +210,7 @@ export type DriverApplicationDraft = {
   vehicleColor: string
   vehicleSeats: string
   vehicleBodyType: DriverVehicleBodyType
-  documents: DriverApplicationDocuments
+  documents: DriverApplicationDocument[]
   submittedAt?: string
   moderatorComment?: string
 }
@@ -199,16 +254,7 @@ export type DriverCounterOffer = {
   status: DriverCounterOfferStatus
 }
 
-export type DriverActiveOrderStatus =
-  | 'DRIVER_ASSIGNED'
-  | 'DRIVER_ON_WAY'
-  | 'DRIVER_ARRIVED'
-  | 'GOING_TO_CLIENT'
-  | 'ARRIVED'
-  | 'IN_PROGRESS'
-  | 'COMPLETED'
-  | 'CANCELLED'
-  | 'DISPUTE'
+export type DriverActiveOrderStatus = RideOrderStatus
 
 export type DriverActiveOrder = {
   id: string
@@ -246,7 +292,7 @@ export type RideDraft = {
   price: number
 }
 
-export type ParcelSize = 'small' | 'medium' | 'large'
+export type ParcelSize = 'SMALL' | 'MEDIUM' | 'LARGE' | 'OVERSIZED'
 
 export type ParcelDraft = {
   senderName: string
@@ -324,17 +370,11 @@ export type ActiveRide = {
   price: number
 }
 
-export type ActiveRideStatus = Exclude<
-  RideRequestStatus,
-  'DRAFT' | 'SEARCHING' | 'OFFERED' | 'CANCELLED'
->
+export type ActiveRideStatus = RideOrderStatus
 
 export type ParcelRequestStatus = RideRequestStatus
 
-export type ActiveParcelStatus = Exclude<
-  ParcelRequestStatus,
-  'DRAFT' | 'SEARCHING' | 'OFFERED' | 'CANCELLED'
->
+export type ActiveParcelStatus = RideOrderStatus
 
 export type PassengerHistoryItem = {
   id: string

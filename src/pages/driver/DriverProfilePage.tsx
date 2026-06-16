@@ -1,25 +1,53 @@
-import { BadgeCheck, CircleAlert, ShieldCheck, UserCog } from 'lucide-react'
+import { BadgeCheck, CircleAlert, LogOut, ShieldCheck, UserCog } from 'lucide-react'
 
 import { formatKzt } from '../../lib/format'
 import { useAppActions, useAppState } from '../../providers/AppStateProvider'
 import { PageCard } from '../../shared/ui/PageCard'
+import {
+  getDriverAccessState,
+  getDriverVerificationStatusLabel,
+  getDriverWalletShortfall,
+} from '../../features/driver/driver-status'
+
+const documentDefinitions = [
+  ['DRIVER_LICENSE_FRONT', 'ВУ лицевая'],
+  ['DRIVER_LICENSE_BACK', 'ВУ обратная'],
+  ['VEHICLE_REGISTRATION', 'Техпаспорт'],
+  ['CAR_FRONT_PHOTO', 'Фото авто'],
+  ['CAR_BACK_PHOTO', 'Фото авто сзади'],
+  ['INTERIOR_PHOTO', 'Фото салона'],
+  ['TRUNK_PHOTO', 'Фото багажника'],
+] as const
 
 export default function DriverProfilePage() {
   const {
+    passengerStatus,
     driverVerificationStatus,
     driverProfile,
     driverApplicationDraft,
     driverWallet,
   } = useAppState()
   const actions = useAppActions()
-  const documentRows: Array<[string, boolean]> = [
-    ['ВУ лицевая', driverApplicationDraft.documents.driverLicenseFront],
-    ['ВУ обратная', driverApplicationDraft.documents.driverLicenseBack],
-    ['Техпаспорт', driverApplicationDraft.documents.vehicleRegistration],
-    ['Фото авто', driverApplicationDraft.documents.carFrontPhoto],
-  ]
+  const accessState = getDriverAccessState(driverVerificationStatus, driverWallet)
+  const verificationStatusLabel = getDriverVerificationStatusLabel(driverVerificationStatus)
+  const walletShortfall = getDriverWalletShortfall(driverWallet)
+  const documentRows = documentDefinitions.map(([type, label]) => {
+    const document = driverApplicationDraft.documents.find((item) => item.type === type)
+    return [label, Boolean(document?.filePath.trim()), document?.filePath ?? ''] as const
+  })
 
-  if (driverVerificationStatus === 'NOT_STARTED') {
+  const logoutButton = (
+    <button
+      type="button"
+      onClick={actions.logout}
+      className="inline-flex items-center gap-2 rounded-2xl border border-border bg-white px-4 py-3 text-sm font-semibold text-ink"
+    >
+      <LogOut className="h-4 w-4" />
+      Выйти
+    </button>
+  )
+
+  if (accessState === 'NOT_STARTED') {
     return (
       <PageCard
         eyebrow="Водитель"
@@ -28,29 +56,70 @@ export default function DriverProfilePage() {
       >
         <div className="flex items-center gap-3 rounded-2xl bg-surface-soft p-4">
           <ShieldCheck className="h-5 w-5 text-accent" />
-          <p className="text-sm text-ink">Статус заявки: NOT_STARTED</p>
+          <p className="text-sm text-ink">
+            {driverProfile
+              ? `Статус заявки: ${verificationStatusLabel}`
+              : 'Профиль водителя не найден. Можно подать заявку.'}
+          </p>
         </div>
-        <button
-          type="button"
-          onClick={actions.startDriverRegistration}
-          className="w-full rounded-2xl bg-accent px-4 py-3 text-sm font-semibold text-white"
-        >
-          Стать водителем
-        </button>
+        <div className="grid gap-2 sm:grid-cols-2">
+          {passengerStatus === 'GUEST' ? (
+            <button
+              type="button"
+              onClick={() => actions.openAuthSheet()}
+              className="rounded-2xl bg-accent px-4 py-3 text-sm font-semibold text-white"
+            >
+              Войти как водитель
+            </button>
+          ) : null}
+          <button
+            type="button"
+            onClick={actions.startDriverRegistration}
+            className="rounded-2xl bg-accent px-4 py-3 text-sm font-semibold text-white"
+          >
+            Стать водителем
+          </button>
+        </div>
+        {logoutButton}
       </PageCard>
     )
   }
 
-  if (driverVerificationStatus === 'PENDING_REVIEW') {
+  if (accessState === 'DRAFT') {
     return (
       <PageCard
         eyebrow="Водитель"
-        title="Заявка на проверке"
+        title="Заявка не завершена"
+        description="Вы начали регистрацию водителя, но ещё не отправили заявку на проверку."
+      >
+        <div className="flex items-start gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-900">
+          <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0" />
+          <p className="text-sm">
+            Вы начали регистрацию водителя, но ещё не отправили заявку на проверку.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => actions.setScreen('driverRegistration')}
+          className="w-full rounded-2xl bg-accent px-4 py-3 text-sm font-semibold text-white"
+        >
+          Продолжить регистрацию
+        </button>
+        {logoutButton}
+      </PageCard>
+    )
+  }
+
+  if (accessState === 'PENDING_REVIEW') {
+    return (
+      <PageCard
+        eyebrow="Водитель"
+        title="На проверке"
         description="Профиль пока недоступен до решения модератора."
       >
         <div className="rounded-2xl bg-surface-soft p-4">
           <p className="text-sm font-semibold text-ink">Статус заявки</p>
-          <p className="mt-1 text-sm text-muted">PENDING_REVIEW</p>
+          <p className="mt-1 text-sm text-muted">{verificationStatusLabel}</p>
         </div>
         <button
           type="button"
@@ -59,11 +128,12 @@ export default function DriverProfilePage() {
         >
           Вернуться в пассажирский режим
         </button>
+        {logoutButton}
       </PageCard>
     )
   }
 
-  if (driverVerificationStatus === 'NEEDS_CHANGES') {
+  if (accessState === 'NEEDS_CHANGES') {
     return (
       <PageCard
         eyebrow="Водитель"
@@ -82,24 +152,27 @@ export default function DriverProfilePage() {
           onClick={actions.editDriverApplicationAfterChanges}
           className="w-full rounded-2xl bg-accent px-4 py-3 text-sm font-semibold text-white"
         >
-          Исправить данные
+          Исправить заявку
         </button>
+        {logoutButton}
       </PageCard>
     )
   }
 
-  if (driverVerificationStatus === 'BLOCKED') {
+  if (accessState === 'BLOCKED') {
     return (
       <PageCard
         eyebrow="Водитель"
-        title="Доступ заблокирован"
+        title="Заявка заблокирована"
         description="Водительский профиль ограничен."
       >
         <div className="flex items-start gap-3 rounded-2xl bg-red-50 p-4 text-red-700">
           <CircleAlert className="mt-0.5 h-5 w-5 shrink-0" />
           <div>
             <p className="text-sm font-semibold">Причина</p>
-            <p className="mt-1 text-sm">{driverApplicationDraft.moderatorComment || 'Блокировка в демо-режиме'}</p>
+            <p className="mt-1 text-sm">
+              {driverApplicationDraft.moderatorComment || verificationStatusLabel || 'Заявка заблокирована модератором'}
+            </p>
           </div>
         </div>
         <div className="grid gap-2 sm:grid-cols-2">
@@ -118,17 +191,67 @@ export default function DriverProfilePage() {
             Вернуться в пассажирский режим
           </button>
         </div>
+        {logoutButton}
       </PageCard>
     )
   }
 
-  if (driverVerificationStatus === 'APPROVED') {
+  if (accessState === 'SUSPENDED') {
+    return (
+      <PageCard
+        eyebrow="Водитель"
+        title="Профиль приостановлен"
+        description="Доступ к водительскому профилю временно ограничен."
+      >
+        <div className="flex items-start gap-3 rounded-2xl bg-amber-50 p-4 text-amber-900">
+          <CircleAlert className="mt-0.5 h-5 w-5 shrink-0" />
+          <div>
+            <p className="text-sm font-semibold">Статус заявки</p>
+            <p className="mt-1 text-sm">{verificationStatusLabel}</p>
+          </div>
+        </div>
+        <div className="grid gap-2 sm:grid-cols-2">
+          <button
+            type="button"
+            onClick={() => actions.setScreen('support')}
+            className="rounded-2xl bg-accent px-4 py-3 text-sm font-semibold text-white"
+          >
+            Связаться с поддержкой
+          </button>
+          <button
+            type="button"
+            onClick={actions.returnToPassengerMode}
+            className="rounded-2xl border border-border bg-white px-4 py-3 text-sm font-semibold text-ink"
+          >
+            Вернуться в пассажирский режим
+          </button>
+        </div>
+        {logoutButton}
+      </PageCard>
+    )
+  }
+
+  if (accessState === 'APPROVED_READY' || accessState === 'APPROVED_LOW_BALANCE') {
     return (
       <PageCard
         eyebrow="Водитель"
         title="Профиль водителя"
-        description="Полные данные подтверждённого водителя."
+        description={
+          accessState === 'APPROVED_LOW_BALANCE'
+            ? `Профиль одобрен, но для выхода на линию нужно пополнить баланс минимум до ${formatKzt(driverWallet.minBalance)}.`
+            : 'Полные данные подтверждённого водителя.'
+        }
       >
+        {accessState === 'APPROVED_LOW_BALANCE' ? (
+          <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+            <p className="font-semibold">Профиль одобрен</p>
+            <p className="mt-1">
+              Пополните баланс минимум до {formatKzt(driverWallet.minBalance)}.
+            </p>
+            <p className="mt-1">Не хватает {formatKzt(walletShortfall)}.</p>
+          </div>
+        ) : null}
+
         <div className="rounded-2xl bg-surface-soft p-4">
           <div className="flex items-center gap-3">
             <BadgeCheck className="h-5 w-5 text-accent" />
@@ -177,20 +300,26 @@ export default function DriverProfilePage() {
             <p className="mt-2 text-sm font-semibold text-ink">
               {formatKzt(driverWallet.balance)}
             </p>
+            {accessState === 'APPROVED_LOW_BALANCE' ? (
+              <p className="mt-1 text-xs text-amber-800">
+                Пополните до {formatKzt(driverWallet.minBalance)}
+              </p>
+            ) : null}
           </div>
           <div className="rounded-2xl bg-surface-soft p-4">
             <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">Документы</p>
             <p className="mt-2 text-sm font-semibold text-ink">Статус проверен</p>
             <div className="mt-3 space-y-2 text-xs text-muted">
-              {documentRows.map(([label, uploaded]) => (
+              {documentRows.map(([label, uploaded, filePath]) => (
                 <div key={label} className="flex items-center justify-between rounded-2xl bg-white px-3 py-2">
                   <span>{label}</span>
-                  <span>{uploaded ? 'Загружено' : 'Нет'}</span>
+                  <span>{uploaded ? filePath : 'Нет'}</span>
                 </div>
               ))}
             </div>
           </div>
         </div>
+        {logoutButton}
       </PageCard>
     )
   }
@@ -205,13 +334,14 @@ export default function DriverProfilePage() {
         <UserCog className="h-5 w-5 text-accent" />
         <div>
           <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">
-            DriverVerificationStatus
+            Статус заявки
           </p>
           <p className="mt-1 text-sm font-semibold text-ink">
-            {driverVerificationStatus}
+            {verificationStatusLabel}
           </p>
         </div>
       </div>
+      {logoutButton}
     </PageCard>
   )
 }

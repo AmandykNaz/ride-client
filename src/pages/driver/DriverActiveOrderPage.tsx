@@ -9,32 +9,26 @@ import {
   ShieldAlert,
 } from 'lucide-react'
 
-import { formatKzt, formatRoute } from '../../lib/format'
+import { formatKzt, formatParcelSizeLabel, formatRideOrderStatusLabel, formatRoute } from '../../lib/format'
 import { useAppActions, useAppState } from '../../providers/AppStateProvider'
 import { PageCard } from '../../shared/ui/PageCard'
 
 function formatDriverStatus(status: string) {
-  if (status === 'DRIVER_ASSIGNED' || status === 'GOING_TO_CLIENT') return 'Водитель в пути'
-  if (status === 'DRIVER_ON_WAY') return 'Водитель в пути'
-  if (status === 'DRIVER_ARRIVED' || status === 'ARRIVED') return 'Водитель на месте'
-  if (status === 'IN_PROGRESS') return 'Поездка идет'
-  if (status === 'COMPLETED') return 'Завершен'
-  if (status === 'CANCELLED') return 'Отменен'
-  return status
+  return formatRideOrderStatusLabel(status)
 }
 
 function getNextActionLabel(category: 'ride' | 'parcel', status: string) {
   if (category === 'ride') {
-    if (status === 'DRIVER_ASSIGNED' || status === 'GOING_TO_CLIENT') return 'Я в пути'
+    if (status === 'DRIVER_ASSIGNED') return 'Я в пути'
     if (status === 'DRIVER_ON_WAY') return 'Я прибыл'
-    if (status === 'ARRIVED') return 'Начать поездку'
+    if (status === 'DRIVER_ARRIVED') return 'Начать поездку'
     if (status === 'IN_PROGRESS') return 'Завершить поездку'
   }
 
   if (category === 'parcel') {
-    if (status === 'DRIVER_ASSIGNED' || status === 'GOING_TO_CLIENT') return 'Я в пути за посылкой'
+    if (status === 'DRIVER_ASSIGNED') return 'Я в пути за посылкой'
     if (status === 'DRIVER_ON_WAY') return 'Я прибыл за посылкой'
-    if (status === 'ARRIVED') return 'Забрал посылку'
+    if (status === 'DRIVER_ARRIVED') return 'Забрал посылку'
     if (status === 'IN_PROGRESS') return 'Доставил посылку'
   }
 
@@ -109,8 +103,8 @@ export default function DriverActiveOrderPage() {
   const nextActionLabel = getNextActionLabel(driverActiveOrder.category, driverActiveOrder.status)
   const isCompleted = driverActiveOrder.status === 'COMPLETED'
   const isCancelled = driverActiveOrder.status === 'CANCELLED'
-  const balanceBefore = driverActiveOrder.completedBalanceBefore ?? driverWallet.balance + commission
-  const balanceAfter = driverActiveOrder.completedBalanceAfter ?? driverWallet.balance
+  const balanceBefore = driverActiveOrder.completedBalanceBefore
+  const balanceAfter = driverActiveOrder.completedBalanceAfter
 
   return (
     <PageCard
@@ -196,7 +190,9 @@ export default function DriverActiveOrderPage() {
           <div className="grid gap-3 rounded-2xl bg-surface-soft p-4 text-sm text-ink">
             <div className="flex items-center gap-2">
               <PackageSearch className="h-4 w-4 text-accent" />
-              <span className="font-semibold">Размер: {driverActiveOrder.parcelSize}</span>
+              <span className="font-semibold">
+                Размер: {formatParcelSizeLabel(driverActiveOrder.parcelSize)}
+              </span>
             </div>
             {driverActiveOrder.parcelDescription ? (
               <p className="text-sm text-muted">{driverActiveOrder.parcelDescription}</p>
@@ -213,7 +209,7 @@ export default function DriverActiveOrderPage() {
         {isCompleted ? (
           <div className="space-y-3 rounded-2xl bg-emerald-50 p-4 text-sm text-emerald-800">
             <p className="font-semibold">Заказ завершён</p>
-            <p>Комиссия списана с баланса.</p>
+            <p>Состояние и списания приходят из backend после смены статуса.</p>
             <div className="grid gap-2 rounded-2xl bg-white/70 p-3 text-emerald-900">
               <div className="flex items-center justify-between gap-3">
                 <span>Цена заказа</span>
@@ -223,16 +219,24 @@ export default function DriverActiveOrderPage() {
                 <span>Комиссия 8%</span>
                 <span className="font-semibold">-{formatKzt(commission)}</span>
               </div>
-              <div className="flex items-center justify-between gap-3">
-                <span>Баланс до</span>
-                <span className="font-semibold">{formatKzt(balanceBefore)}</span>
-              </div>
-              <div className="flex items-center justify-between gap-3">
-                <span>Баланс после</span>
-                <span className="font-semibold">{formatKzt(balanceAfter)}</span>
-              </div>
+              {balanceBefore != null && balanceAfter != null ? (
+                <>
+                  <div className="flex items-center justify-between gap-3">
+                    <span>Баланс до</span>
+                    <span className="font-semibold">{formatKzt(balanceBefore)}</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-3">
+                    <span>Баланс после</span>
+                    <span className="font-semibold">{formatKzt(balanceAfter)}</span>
+                  </div>
+                </>
+              ) : (
+                <div className="rounded-2xl bg-white/70 px-3 py-2 text-emerald-900">
+                  Баланс обновится после ответа backend.
+                </div>
+              )}
             </div>
-            {balanceAfter < driverWallet.minBalance ? (
+            {typeof balanceAfter === 'number' && balanceAfter < driverWallet.minBalance ? (
               <div className="rounded-2xl bg-amber-100 px-4 py-3 text-amber-900">
                 Баланс стал ниже минимума.
               </div>

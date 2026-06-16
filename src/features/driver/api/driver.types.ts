@@ -4,7 +4,10 @@ import type {
   DriverCounterOffer,
   DriverFeedOrder,
   DriverProfile,
+  DriverVehicleBodyType,
+  DriverVehicleBodyTypeApi,
   DriverVerificationStatus,
+  RideOrderStatus,
 } from '../../../types/domain'
 
 export type RideDriverVehicle = {
@@ -12,17 +15,23 @@ export type RideDriverVehicle = {
   model?: string
   year?: string
   plate?: string
+  plateNumber?: string
   color?: string
   seats?: string | number
-  bodyType?: string
+  seatsCount?: number
+  bodyType?: DriverVehicleBodyType | DriverVehicleBodyTypeApi
 }
 
 export type RideDriverApplicationDocument = {
+  id?: string
   type?: string
   filePath?: string
   url?: string
   name?: string
   status?: string
+  fileName?: string
+  mimeType?: string
+  sizeBytes?: number
   raw?: unknown
 }
 
@@ -40,11 +49,21 @@ export type RideDriverApplication = {
   vehiclePlate?: string
   vehicleColor?: string
   vehicleSeats?: string | number
-  vehicleBodyType?: string
+  vehicleBodyType?: DriverVehicleBodyTypeApi
   documents?: RideDriverApplicationDocument[]
   submittedAt?: string
   moderatorComment?: string
+  rejectionReason?: string
+  blockedReason?: string
   raw?: unknown
+}
+
+export type RideCity = {
+  id: number
+  name: string
+  code?: string
+  pickupEnabled: boolean
+  dropoffEnabled: boolean
 }
 
 export type RideDriverCustomer = {
@@ -96,8 +115,18 @@ export type RideDriverMe = {
   driverProfile?: RideDriverDriverProfile | null
   profile?: RideDriverProfile | null
   application?: RideDriverApplication | null
+  currentApplication?: RideDriverApplication | null
   applicationId?: string
   vehicle?: RideDriverVehicle | null
+  vehicles?: RideDriverVehicle[] | null
+  wallet?: {
+    id?: string
+    balance?: number
+    minimumBalance?: number
+    currency?: string
+    isBlocked?: boolean
+    blockedReason?: string | null
+  } | null
   documents?: RideDriverApplicationDocument[] | null
   verificationStatus?: DriverVerificationStatus | string
   isOnline?: boolean
@@ -144,13 +173,7 @@ export type RideDriverOffer = {
 }
 
 export type RideDriverOrderStatus =
-  | 'DRIVER_ASSIGNED'
-  | 'DRIVER_ON_WAY'
-  | 'DRIVER_ARRIVED'
-  | 'IN_PROGRESS'
-  | 'COMPLETED'
-  | 'CANCELLED'
-  | 'DISPUTE'
+  | RideOrderStatus
   | string
 
 export type RideDriverOrder = {
@@ -203,11 +226,21 @@ export type DriverApplicationPayload = {
   vehicleModel?: string
   vehicleYear?: string
   vehiclePlate?: string
+  vehiclePlateNumber?: string
   vehicleColor?: string
   vehicleSeats?: string
+  vehicleSeatsCount?: string | number
   vehicleBodyType?: string
   documents?: RideDriverApplicationDocument[]
-  vehicle?: RideDriverVehicle
+  vehicle?: {
+    brand?: string
+    model?: string
+    year?: string
+    plateNumber?: string
+    color?: string
+    seatsCount?: string | number
+    bodyType?: DriverVehicleBodyTypeApi
+  }
 }
 
 export type DriverCounterOfferPayload = {
@@ -229,7 +262,19 @@ export type DriverMeViewModel = {
     moderatorComment?: string
     status?: DriverVerificationStatus | string
   }
+  currentApplication: DriverApplicationDraft | null
   applicationId?: string
+  vehicle?: RideDriverVehicle | null
+  vehicles?: RideDriverVehicle[]
+  wallet?: {
+    id?: string
+    balance?: number
+    minimumBalance?: number
+    currency?: string
+    isBlocked?: boolean
+    blockedReason?: string | null
+  } | null
+  documents?: RideDriverApplicationDocument[] | null
   verificationStatus: DriverVerificationStatus
   isOnline: boolean
   raw: unknown

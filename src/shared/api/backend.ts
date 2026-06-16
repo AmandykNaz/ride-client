@@ -1,4 +1,4 @@
-import { clearRideAccessToken, getRideAccessToken } from '../auth/tokenStorage'
+import { clearRideAuthSession, getRideAccessToken, setRideAccessToken } from '../auth/tokenStorage'
 
 export const API_BASE_URL =
   (import.meta.env.VITE_API_BASE_URL?.trim() || 'http://localhost:4000/api/v1')
@@ -24,6 +24,7 @@ type BackendRequestOptions = {
   body?: unknown
   skipAuth?: boolean
   headers?: HeadersInit
+  skipRefresh?: boolean
 }
 
 export class BackendApiError extends Error {
@@ -76,9 +77,11 @@ async function parseResponseBody(response: Response) {
   }
 }
 
-function buildHeaders(skipAuth?: boolean, headers?: HeadersInit) {
+function buildHeaders(skipAuth?: boolean, headers?: HeadersInit, includeJsonContentType = true) {
   const requestHeaders = new Headers(headers)
-  requestHeaders.set('Content-Type', 'application/json')
+  if (includeJsonContentType) {
+    requestHeaders.set('Content-Type', 'application/json')
+  }
 
   if (!skipAuth) {
     const token = getRideAccessToken()
@@ -90,17 +93,100 @@ function buildHeaders(skipAuth?: boolean, headers?: HeadersInit) {
   return requestHeaders
 }
 
+type RideAuthRefreshPayload = {
+  accessToken?: string
+  token?: string
+  [key: string]: unknown
+}
+
+let authRefreshPromise: Promise<RideAuthRefreshPayload | null> | null = null
+
+function resolveAccessToken(value: unknown) {
+  if (!isPlainObject(value)) return ''
+
+  const accessToken = value.accessToken ?? value.token
+  return typeof accessToken === 'string' && accessToken.trim() ? accessToken : ''
+}
+
+async function performRideAuthRefresh() {
+  if (authRefreshPromise) {
+    return authRefreshPromise
+  }
+
+  authRefreshPromise = (async () => {
+    let response: Response
+
+    try {
+      response = await fetch(`${API_BASE_URL}/ride/auth/refresh`, {
+        method: 'POST',
+        credentials: 'include',
+      })
+    } catch {
+      return null
+    }
+
+    const parsed = (await parseResponseBody(response)) as RideAuthRefreshPayload | string | null
+    const isEnvelope = isPlainObject(parsed) && 'success' in parsed && 'data' in parsed
+    const payload = isEnvelope ? (parsed.data as RideAuthRefreshPayload) : (parsed as RideAuthRefreshPayload | null)
+
+    if (!response.ok || (isEnvelope && !parsed.success)) {
+      if (response.status === 401) {
+        clearRideAuthSession()
+      }
+
+      return null
+    }
+
+    const accessToken = resolveAccessToken(payload)
+    if (accessToken) {
+      setRideAccessToken(accessToken)
+    }
+
+    return payload ?? null
+  })().finally(() => {
+    authRefreshPromise = null
+  })
+
+  return authRefreshPromise
+}
+
+export async function refreshRideAuthSession() {
+  const refreshed = await performRideAuthRefresh()
+  const accessToken = resolveAccessToken(refreshed)
+
+  if (!accessToken) {
+    throw new BackendAuthError('Session expired. Please sign in again.')
+  }
+
+  return refreshed ?? { accessToken }
+}
+
+export async function logoutRideAuthSession() {
+  try {
+    await fetch(`${API_BASE_URL}/ride/auth/logout`, {
+      method: 'POST',
+      credentials: 'include',
+    })
+  } catch {
+    // Best effort; local session is cleared below.
+  } finally {
+    clearRideAuthSession()
+  }
+}
+
 async function requestBackend<T>(
   path: string,
-  { method, body, skipAuth, headers }: BackendRequestOptions,
+  { method, body, skipAuth, headers, skipRefresh }: BackendRequestOptions,
 ): Promise<T> {
+  const isFormData = typeof FormData !== 'undefined' && body instanceof FormData
   let response: Response
 
   try {
     response = await fetch(`${API_BASE_URL}${path}`, {
       method,
-      headers: buildHeaders(skipAuth, headers),
-      body: body === undefined ? undefined : JSON.stringify(body),
+      headers: buildHeaders(skipAuth, headers, !isFormData),
+      credentials: 'include',
+      body: body === undefined ? undefined : isFormData ? body : JSON.stringify(body),
     })
   } catch (error) {
     throw new BackendApiError(
@@ -112,14 +198,24 @@ async function requestBackend<T>(
 
   const parsed = (await parseResponseBody(response)) as Partial<BackendEnvelope<T>> | T | string | null
   const isEnvelope = isPlainObject(parsed) && 'success' in parsed && 'data' in parsed
+  const retryEligible = !skipAuth && !skipRefresh
 
   if (!response.ok) {
     if (response.status === 401) {
-      clearRideAccessToken()
+      if (retryEligible) {
+        const refreshed = await performRideAuthRefresh()
+        const refreshedToken = resolveAccessToken(refreshed)
+
+        if (refreshedToken) {
+          return requestBackend<T>(path, { method, body, skipAuth, headers, skipRefresh: true })
+        }
+      }
+
+      clearRideAuthSession()
       throw new BackendAuthError(
         getErrorMessage(
           isEnvelope ? parsed.message : parsed,
-          'Your session expired. Please sign in again.',
+          'Сессия истекла. Войдите снова.',
         ),
       )
     }
@@ -137,7 +233,7 @@ async function requestBackend<T>(
     if (!parsed.success) {
       const message = getErrorMessage(parsed.message, 'Backend request failed')
       if (response.status === 401) {
-        clearRideAccessToken()
+        clearRideAuthSession()
         throw new BackendAuthError(message)
       }
 

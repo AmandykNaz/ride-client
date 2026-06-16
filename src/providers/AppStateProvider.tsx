@@ -3,9 +3,11 @@
 import { createContext, useCallback, useContext, useEffect, useReducer, useRef, type ReactNode } from 'react'
 
 import { defaultScreenByRole } from '../navigation/navigation'
-import { BackendAuthError } from '../shared/api/backend'
-import { getRideAccessToken, clearRideAccessToken } from '../shared/auth/tokenStorage'
+import { formatKzt } from '../lib/format'
+import { BackendApiError, BackendAuthError } from '../shared/api/backend'
+import { getRideAccessToken, clearRideAccessToken, clearRideAuthSession } from '../shared/auth/tokenStorage'
 import { getPassengerMe, toRidePassengerProfile } from '../features/passenger/api/passenger.api'
+import { refreshRideSession, logoutRideSession } from '../features/ride-auth/api/ride-auth.api'
 import {
   cancelRideRequest,
   acceptRideOffer,
@@ -72,6 +74,7 @@ import type {
   ActiveParcelStatus,
   ActiveRideStatus,
   AppScreen,
+  DriverApplicationDocument,
   DriverActiveOrder,
   DriverActiveOrderStatus,
   DriverApplicationDraft,
@@ -88,21 +91,21 @@ import type {
   ParcelDraft,
   ParcelOrder,
   ParcelRequest,
-  ParcelRequestStatus,
   RideDraft,
-  RideRequestStatus,
   DriverWallet,
   WalletTransaction,
   TopUpRequest,
   TopUpRequestMethod,
   UserRole,
 } from '../types/domain'
+import { DRIVER_VEHICLE_BODY_TYPES } from '../types/domain'
+import { canDriverGoOnline, getDriverWalletShortfall } from '../features/driver/driver-status'
 import type { CreateRideRequestPayload } from '../features/passenger/api/passenger-rides.types'
 import type { CreateRideReviewPayload } from '../features/ride-safety/api/ride-reviews.types'
 import type { CreateRideComplaintPayload } from '../features/ride-safety/api/ride-complaints.types'
 
 type PassengerOrdersTab = 'rides' | 'parcels' | 'buses'
-type PassengerFlow = 'ride' | 'parcel' | null
+type PassengerFlow = 'ride' | 'parcel' | 'login' | 'driverRegistrationStart' | 'driverRegistrationResume' | null
 
 type AppState = {
   role: UserRole
@@ -199,7 +202,7 @@ type AppContextValue = {
       field: K,
       value: DriverApplicationDraft[K],
     ) => void
-    uploadDriverDocumentMock: (field: keyof DriverApplicationDraft['documents']) => void
+    uploadDriverDocumentMock: (documentType: DriverApplicationDocument['type'], filePath?: string) => void
     nextDriverRegistrationStep: () => void
     prevDriverRegistrationStep: () => void
     submitDriverApplication: () => void
@@ -258,6 +261,12 @@ type AppContextValue = {
     updateRideDraft: (patch: Partial<RideDraft>) => void
     updateParcelDraft: (patch: Partial<ParcelDraft>) => void
     openPhoneVerifySheet: () => void
+    openAuthSheet: (flow?: PassengerFlow) => void
+    startLoginFlow: () => void
+    refreshAuthenticatedSession: (phone?: string, flow?: PassengerFlow) => Promise<{
+      passengerProfile: PassengerProfile | null
+      driverProfile: DriverProfile | null
+    }>
     closePhoneVerifySheet: () => void
     openPassengerOnboarding: () => void
     closePassengerOnboarding: () => void
@@ -276,8 +285,8 @@ type AppContextValue = {
     rejectActiveRideOffer: (offerId: string) => Promise<void>
     acceptActiveRideOffer: (offerId: string) => Promise<void>
     acceptParcelOffer: (offerId: string) => void
-    setActiveRideStatus: (status: RideRequestStatus) => void
-    setActiveParcelStatus: (status: ParcelRequestStatus) => void
+    setActiveRideStatus: (status: ActiveRideStatus) => void
+    setActiveParcelStatus: (status: ActiveParcelStatus) => void
     cancelActiveRide: () => Promise<void>
     cancelActiveParcel: () => void
     setPassengerProfile: (profile: PassengerProfile) => void
@@ -374,7 +383,8 @@ type AppAction =
     }
   | {
       type: 'uploadDriverDocumentMock'
-      field: keyof DriverApplicationDraft['documents']
+      documentType: DriverApplicationDocument['type']
+      filePath?: string
     }
   | { type: 'nextDriverRegistrationStep' }
   | { type: 'prevDriverRegistrationStep' }
@@ -406,6 +416,7 @@ type AppAction =
   | { type: 'updateRideDraft'; patch: Partial<RideDraft> }
   | { type: 'updateParcelDraft'; patch: Partial<ParcelDraft> }
   | { type: 'openPhoneVerifySheet' }
+  | { type: 'openAuthSheet'; flow?: PassengerFlow }
   | { type: 'closePhoneVerifySheet' }
   | { type: 'openPassengerOnboarding' }
   | { type: 'closePassengerOnboarding' }
@@ -420,8 +431,8 @@ type AppAction =
   | { type: 'createParcelFromDraft' }
   | { type: 'acceptOffer'; offerId: string }
   | { type: 'acceptParcelOffer'; offerId: string }
-  | { type: 'setActiveRideStatus'; status: RideRequestStatus }
-  | { type: 'setActiveParcelStatus'; status: ParcelRequestStatus }
+  | { type: 'setActiveRideStatus'; status: ActiveRideStatus }
+  | { type: 'setActiveParcelStatus'; status: ActiveParcelStatus }
   | { type: 'cancelActiveRide' }
   | { type: 'cancelActiveParcel' }
   | { type: 'completeRideAndOpenRating' }
@@ -460,7 +471,7 @@ function defaultParcelDraft(): ParcelDraft {
     receiverPhone: '',
     from: 'Алматы',
     to: 'Шымкент',
-    size: 'small',
+    size: 'SMALL',
     weightKg: 2,
     description: '',
     photoAttached: false,
@@ -482,16 +493,16 @@ function defaultDriverApplicationDraft(): DriverApplicationDraft {
     vehiclePlate: '',
     vehicleColor: '',
     vehicleSeats: '',
-    vehicleBodyType: 'sedan',
-    documents: {
-      driverLicenseFront: false,
-      driverLicenseBack: false,
-      vehicleRegistration: false,
-      carFrontPhoto: false,
-      carBackPhoto: false,
-      interiorPhoto: false,
-      trunkPhoto: false,
-    },
+    vehicleBodyType: DRIVER_VEHICLE_BODY_TYPES[0],
+    documents: [
+      { type: 'DRIVER_LICENSE_FRONT', filePath: '' },
+      { type: 'DRIVER_LICENSE_BACK', filePath: '' },
+      { type: 'VEHICLE_REGISTRATION', filePath: '' },
+      { type: 'CAR_FRONT_PHOTO', filePath: '' },
+      { type: 'CAR_BACK_PHOTO', filePath: '' },
+      { type: 'INTERIOR_PHOTO', filePath: '' },
+      { type: 'TRUNK_PHOTO', filePath: '' },
+    ],
   }
 }
 
@@ -528,14 +539,28 @@ function cloneDriverApplicationDraft(
 ): DriverApplicationDraft {
   return {
     ...application,
-    documents: { ...application.documents },
+    documents: application.documents.map((document) => ({ ...document })),
   }
 }
 
 function hasRealDriverApplicationDocuments(documents: unknown): boolean {
   if (!Array.isArray(documents)) return false
 
-  return documents.some((document) => {
+  const requiredDocumentTypes = [
+    'DRIVER_LICENSE_FRONT',
+    'DRIVER_LICENSE_BACK',
+    'VEHICLE_REGISTRATION',
+    'CAR_FRONT_PHOTO',
+  ] as const
+
+  return requiredDocumentTypes.every((requiredType) => {
+    const document = documents.find((item) => {
+      if (typeof item !== 'object' || item === null || Array.isArray(item)) return false
+      return (item as Record<string, unknown>).type === requiredType
+    }) as Record<string, unknown> | undefined
+
+    if (!document) return false
+
     if (typeof document !== 'object' || document === null || Array.isArray(document)) {
       return false
     }
@@ -672,7 +697,7 @@ function defaultDriverFeedOrders(): DriverFeedOrder[] {
       date: '2026-06-12',
       time: '11:00',
       requestedPrice: 6200,
-      parcelSize: 'medium',
+      parcelSize: 'MEDIUM',
       parcelDescription: 'Документы и небольшой короб.',
       senderName: 'Данияр',
       receiverName: 'Салтанат',
@@ -709,7 +734,7 @@ function defaultDriverFeedOrders(): DriverFeedOrder[] {
       date: '2026-06-12',
       time: '18:10',
       requestedPrice: 5400,
-      parcelSize: 'small',
+      parcelSize: 'SMALL',
       parcelDescription: 'Подарочная коробка.',
       senderName: 'Жанна',
       receiverName: 'Марат',
@@ -756,18 +781,13 @@ function nextDriverOrderStatus(
 ): DriverActiveOrderStatus {
   switch (status) {
     case 'DRIVER_ASSIGNED':
-    case 'GOING_TO_CLIENT':
       return 'DRIVER_ON_WAY'
     case 'DRIVER_ON_WAY':
       return 'DRIVER_ARRIVED'
     case 'DRIVER_ARRIVED':
-    case 'ARRIVED':
       return 'IN_PROGRESS'
     case 'IN_PROGRESS':
       return 'COMPLETED'
-    case 'COMPLETED':
-    case 'CANCELLED':
-      return status
     default:
       return status
   }
@@ -789,8 +809,8 @@ function defaultDriverWallet(): DriverWallet {
 }
 
 function syncDriverWalletAccessState(wallet: DriverWallet): DriverWallet {
-  const missingAmount = Math.max(0, wallet.minBalance - wallet.balance)
-  const canGoOnline = wallet.isBlocked !== true && wallet.balance >= wallet.minBalance
+  const missingAmount = getDriverWalletShortfall(wallet)
+  const canGoOnline = canDriverGoOnline(wallet)
 
   return {
     ...wallet,
@@ -871,6 +891,7 @@ function syncDriverProfileWithWallet(
     ...profile,
     balance: wallet.balance,
     minBalance: wallet.minBalance,
+    isOnline: profile.isOnline && canDriverGoOnline(wallet),
   }
 }
 
@@ -903,8 +924,7 @@ function formatTopUpMethod(method: TopUpRequestMethod) {
 function canAccessDriverOrders(state: Pick<AppState, 'driverVerificationStatus' | 'driverWallet'>) {
   return (
     state.driverVerificationStatus === 'APPROVED' &&
-    state.driverWallet.isBlocked !== true &&
-    (state.driverWallet.canGoOnline ?? state.driverWallet.balance >= state.driverWallet.minBalance)
+    canDriverGoOnline(state.driverWallet)
   )
 }
 
@@ -984,8 +1004,8 @@ function chargeCommissionIfNeeded(
   }
 }
 
-function isOpenRideRequestStatus(status: RideRequestStatus) {
-  return status === 'SEARCHING' || status === 'OFFERED' || status === 'ACCEPTED'
+function isOpenRideRequestStatus(status: PassengerRideRequest['status']) {
+  return status === 'SEARCHING' || status === 'OFFERED'
 }
 
 function isActiveRideOrderStatus(status: string) {
@@ -995,9 +1015,6 @@ function isActiveRideOrderStatus(status: string) {
     'DRIVER_ARRIVED',
     'IN_PROGRESS',
     'DISPUTE',
-    'DRIVER_COMING',
-    'ARRIVED',
-    'ACCEPTED',
   ].includes(status)
 }
 
@@ -1111,68 +1128,7 @@ function appReducer(state: AppState, action: AppAction): AppState {
     case 'setPassengerStatus':
       return { ...state, passengerStatus: action.status }
     case 'resetPassengerSession':
-      return {
-        ...state,
-        passengerStatus: 'GUEST',
-        passengerProfile: null,
-        driverVerificationStatus: 'NOT_STARTED',
-        driverProfile: null,
-        driverApplicationDraft: defaultDriverApplicationDraft(),
-        driverRegistrationStep: 1,
-        driverFeedOrders: defaultDriverFeedOrders(),
-        driverOrders: [],
-        driverActiveOrder: null,
-        driverCounterOffers: [],
-        isDriverCounterOfferSheetOpen: false,
-        driverCounterOfferOrderId: null,
-        driverCounterOfferPrice: '',
-        driverCounterOfferComment: '',
-        isDriverFeedLoading: false,
-        isDriverActionLoading: false,
-        isDriverWalletLoading: false,
-        isDriverTopUpSubmitting: false,
-        isRideReviewSubmitting: false,
-        isRideComplaintSubmitting: false,
-        driverFlowError: null,
-        driverWalletError: null,
-        rideSafetyError: null,
-        driverWallet: defaultDriverWallet(),
-        driverWalletTransactions: [],
-        driverTopUpRequests: [],
-        passengerReviewSummary: null,
-        driverReviewSummary: null,
-        passengerReviews: [],
-        driverReviews: [],
-        passengerComplaints: [],
-        driverComplaints: [],
-        orderReviews: [],
-        orderComplaints: [],
-        verifiedPhone: '',
-        pendingPassengerFlow: null,
-        passengerRideRequests: [],
-        passengerRideOrders: [],
-        activeRideEvents: [],
-        activeRideRequest: null,
-        activeRide: null,
-        driverOffers: [],
-        isRideListLoading: false,
-        isPassengerOrdersLoading: false,
-        isRideRequestLoading: false,
-        isRideOffersLoading: false,
-        isRideActionLoading: false,
-        rideFlowError: null,
-        isPhoneVerifySheetOpen: false,
-        isPassengerOnboardingOpen: false,
-        isPassengerRatingOpen: false,
-        isRideComplaintOpen: false,
-        rideComplaintForm: {
-          category: 'other',
-          message: '',
-        },
-        currentScreen: defaultScreenByRole.passenger,
-        role: 'passenger',
-        isMenuOpen: false,
-      }
+      return createInitialState()
     case 'setRideListLoading':
       return { ...state, isRideListLoading: action.loading }
     case 'setPassengerOrdersLoading':
@@ -1270,6 +1226,7 @@ function appReducer(state: AppState, action: AppAction): AppState {
         driverWallet: action.driverWallet,
         driverWalletTransactions: action.driverWalletTransactions,
         driverTopUpRequests: action.driverTopUpRequests,
+        driverProfile: syncDriverProfileWithWallet(state.driverProfile, action.driverWallet),
         driverFlowError: null,
         driverWalletError: null,
       }
@@ -1277,6 +1234,7 @@ function appReducer(state: AppState, action: AppAction): AppState {
       return {
         ...state,
         driverWallet: action.driverWallet,
+        driverProfile: syncDriverProfileWithWallet(state.driverProfile, action.driverWallet),
         driverFlowError: null,
         driverWalletError: null,
       }
@@ -1332,6 +1290,28 @@ function appReducer(state: AppState, action: AppAction): AppState {
     case 'setPendingPassengerFlow':
       return { ...state, pendingPassengerFlow: action.flow }
     case 'startDriverRegistration':
+      if (!getRideAccessToken()) {
+        return {
+          ...state,
+          isPhoneVerifySheetOpen: true,
+          pendingPassengerFlow: 'driverRegistrationStart',
+        }
+      }
+
+      if (
+        state.driverVerificationStatus === 'PENDING_REVIEW' ||
+        state.driverVerificationStatus === 'APPROVED' ||
+        state.driverVerificationStatus === 'BLOCKED' ||
+        state.driverVerificationStatus === 'SUSPENDED'
+      ) {
+        return {
+          ...state,
+          role: 'driver',
+          currentScreen: 'driverDashboard',
+          isMenuOpen: false,
+        }
+      }
+
       return {
         ...state,
         role: 'driver',
@@ -1349,10 +1329,6 @@ function appReducer(state: AppState, action: AppAction): AppState {
         },
       }
     case 'updateDriverApplicationField': {
-      if (action.field === 'documents') {
-        return state
-      }
-
       return {
         ...state,
         driverApplicationDraft: {
@@ -1362,14 +1338,21 @@ function appReducer(state: AppState, action: AppAction): AppState {
       }
     }
     case 'uploadDriverDocumentMock':
+      if (!import.meta.env.DEV) return state
       return {
         ...state,
         driverApplicationDraft: {
           ...state.driverApplicationDraft,
-          documents: {
-            ...state.driverApplicationDraft.documents,
-            [action.field]: !state.driverApplicationDraft.documents[action.field],
-          },
+          documents: state.driverApplicationDraft.documents.map((document) =>
+            document.type === action.documentType
+              ? {
+                  ...document,
+                  filePath:
+                    (action.filePath ?? document.filePath) ||
+                    `/mock/ride/driver-docs/${document.type.toLowerCase()}.jpg`,
+                }
+              : document,
+          ),
         },
       }
     case 'nextDriverRegistrationStep':
@@ -1417,6 +1400,7 @@ function appReducer(state: AppState, action: AppAction): AppState {
         isMenuOpen: false,
       }
     case 'demoApproveDriver': {
+      if (!import.meta.env.DEV) return state
       const approvedProfile = makeDriverProfileFromApplication(state.driverApplicationDraft)
       const wallet = {
         ...state.driverWallet,
@@ -1443,6 +1427,7 @@ function appReducer(state: AppState, action: AppAction): AppState {
       }
     }
     case 'demoRequestDriverChanges':
+      if (!import.meta.env.DEV) return state
       return {
         ...state,
         driverVerificationStatus: 'NEEDS_CHANGES',
@@ -1457,6 +1442,7 @@ function appReducer(state: AppState, action: AppAction): AppState {
         role: 'driver',
       }
     case 'demoBlockDriver':
+      if (!import.meta.env.DEV) return state
       return {
         ...state,
         driverVerificationStatus: 'BLOCKED',
@@ -1562,6 +1548,7 @@ function appReducer(state: AppState, action: AppAction): AppState {
       }
     }
     case 'demoApproveTopUpRequest': {
+      if (!import.meta.env.DEV) return state
       const request = state.driverTopUpRequests.find((item) => item.id === action.requestId)
       if (!request || request.status !== 'PENDING_REVIEW') return state
 
@@ -1603,6 +1590,7 @@ function appReducer(state: AppState, action: AppAction): AppState {
       }
     }
     case 'demoRejectTopUpRequest': {
+      if (!import.meta.env.DEV) return state
       const request = state.driverTopUpRequests.find((item) => item.id === action.requestId)
       if (!request || request.status !== 'PENDING_REVIEW') return state
 
@@ -1634,6 +1622,7 @@ function appReducer(state: AppState, action: AppAction): AppState {
       }
     }
     case 'chargeCommissionForCompletedOrder': {
+      if (!import.meta.env.DEV) return state
       const result = chargeCommissionIfNeeded(state, action.orderId)
 
       if (result.driverWallet === state.driverWallet && result.driverActiveOrder === state.driverActiveOrder) {
@@ -1656,6 +1645,7 @@ function appReducer(state: AppState, action: AppAction): AppState {
       }
     }
     case 'refundCommissionDemo': {
+      if (!import.meta.env.DEV) return state
       const activeOrder = state.driverActiveOrder
       if (!activeOrder || activeOrder.sourceOrderId !== action.orderId) return state
 
@@ -1753,6 +1743,7 @@ function appReducer(state: AppState, action: AppAction): AppState {
       }
     }
     case 'acceptDemoCounterOfferAsPassenger': {
+      if (!import.meta.env.DEV) return state
       if (state.driverActiveOrder || !canAccessDriverOrders(state)) return state
 
       const pendingOffer = state.driverCounterOffers.find((item) =>
@@ -1795,6 +1786,7 @@ function appReducer(state: AppState, action: AppAction): AppState {
       }
     }
     case 'driverOrderNextStatus': {
+      if (!import.meta.env.DEV) return state
       if (!state.driverActiveOrder) return state
 
       const nextStatus = nextDriverOrderStatus(state.driverActiveOrder.status)
@@ -1844,6 +1836,12 @@ function appReducer(state: AppState, action: AppAction): AppState {
       return { ...state, parcelDraft: { ...state.parcelDraft, ...action.patch } }
     case 'openPhoneVerifySheet':
       return { ...state, isPhoneVerifySheetOpen: true }
+    case 'openAuthSheet':
+      return {
+        ...state,
+        isPhoneVerifySheetOpen: true,
+        pendingPassengerFlow: action.flow ?? 'login',
+      }
     case 'closePhoneVerifySheet':
       return { ...state, isPhoneVerifySheetOpen: false }
     case 'openPassengerOnboarding':
@@ -1872,6 +1870,16 @@ function appReducer(state: AppState, action: AppAction): AppState {
       }
     case 'createParcelFromDraft':
     case 'startParcelSearch':
+      if (!import.meta.env.DEV) {
+        return {
+          ...state,
+          pendingPassengerFlow: null,
+          activeParcelRequest: null,
+          activeParcelOrder: null,
+          parcelOffers: [],
+          currentScreen: 'passengerParcels',
+        }
+      }
       return {
         ...createActiveParcelRequest(state),
         pendingPassengerFlow: null,
@@ -1886,13 +1894,13 @@ function appReducer(state: AppState, action: AppAction): AppState {
         ...state,
         activeRideRequest: {
           ...state.activeRideRequest,
-          status: 'ACCEPTED',
+          status: 'CONVERTED_TO_ORDER',
           selectedOfferId: offer.id,
         },
         activeRide: {
           id: makeId('ride'),
           requestId: state.activeRideRequest.id,
-          status: 'DRIVER_COMING',
+          status: 'DRIVER_ASSIGNED',
           driverName: offer.driverName,
           driverPhone: '+7 700 000 00 00',
           driverRating: offer.rating,
@@ -1907,6 +1915,7 @@ function appReducer(state: AppState, action: AppAction): AppState {
       }
     }
     case 'acceptParcelOffer': {
+      if (!import.meta.env.DEV) return state
       if (!state.activeParcelRequest) return state
       const offer = state.parcelOffers.find((item) => item.id === action.offerId)
 
@@ -1916,13 +1925,13 @@ function appReducer(state: AppState, action: AppAction): AppState {
         ...state,
         activeParcelRequest: {
           ...state.activeParcelRequest,
-          status: 'ACCEPTED',
+          status: 'CONVERTED_TO_ORDER',
           selectedOfferId: offer.id,
         },
         activeParcelOrder: {
           id: makeId('parcel'),
           requestId: state.activeParcelRequest.id,
-          status: 'DRIVER_COMING',
+          status: 'DRIVER_ASSIGNED',
           driverName: offer.driverName,
           driverPhone: '+7 700 000 00 00',
           driverRating: offer.rating,
@@ -1940,29 +1949,24 @@ function appReducer(state: AppState, action: AppAction): AppState {
       }
     }
     case 'setActiveRideStatus':
-      if (!state.activeRideRequest) return state
+      if (!import.meta.env.DEV) return state
       return {
         ...state,
-        activeRideRequest: { ...state.activeRideRequest, status: action.status },
         activeRide: state.activeRide
           ? {
               ...state.activeRide,
-              status: action.status as ActiveRideStatus,
+              status: action.status,
             }
           : state.activeRide,
       }
     case 'setActiveParcelStatus':
-      if (!state.activeParcelRequest) return state
+      if (!import.meta.env.DEV) return state
       return {
         ...state,
-        activeParcelRequest: {
-          ...state.activeParcelRequest,
-          status: action.status,
-        },
         activeParcelOrder: state.activeParcelOrder
           ? {
               ...state.activeParcelOrder,
-              status: action.status as ActiveParcelStatus,
+              status: action.status,
             }
           : state.activeParcelOrder,
       }
@@ -1993,6 +1997,7 @@ function appReducer(state: AppState, action: AppAction): AppState {
       }
     }
     case 'cancelActiveParcel': {
+      if (!import.meta.env.DEV) return state
       const cancelledHistory: PassengerHistoryItem | null = state.activeParcelRequest
         ? {
             id: makeId('hist'),
@@ -2024,14 +2029,12 @@ function appReducer(state: AppState, action: AppAction): AppState {
       }
     }
     case 'completeRideAndOpenRating':
+      if (!import.meta.env.DEV) return state
       return {
         ...state,
         activeRide: state.activeRide
           ? { ...state.activeRide, status: 'COMPLETED' }
           : state.activeRide,
-        activeRideRequest: state.activeRideRequest
-          ? { ...state.activeRideRequest, status: 'COMPLETED' }
-          : state.activeRideRequest,
         isPassengerRatingOpen: true,
       }
     case 'completePassengerRideAfterReview':
@@ -2052,10 +2055,11 @@ function appReducer(state: AppState, action: AppAction): AppState {
         isPassengerRatingOpen: false,
       }
     case 'completeParcelAndOpenHistory': {
+      if (!import.meta.env.DEV) return state
       if (!state.activeParcelRequest || !state.activeParcelOrder) return state
       const completedParcelOrder = {
         ...state.activeParcelOrder,
-        status: 'COMPLETED' as ActiveParcelStatus,
+        status: 'COMPLETED',
       }
 
       const completedHistory: PassengerHistoryItem = {
@@ -2161,7 +2165,8 @@ function appReducer(state: AppState, action: AppAction): AppState {
   }
 }
 
-const initialState: AppState = {
+function createInitialState(): AppState {
+  return {
   role: 'passenger',
   passengerStatus: 'GUEST',
   driverVerificationStatus: 'NOT_STARTED',
@@ -2236,12 +2241,13 @@ const initialState: AppState = {
   isPhoneVerifySheetOpen: false,
   isPassengerOnboardingOpen: false,
   isPassengerRatingOpen: false,
+  }
 }
 
 const AppStateContext = createContext<AppContextValue | null>(null)
 
 export function AppStateProvider({ children }: { children: ReactNode }) {
-  const [state, dispatch] = useReducer(appReducer, initialState)
+  const [state, dispatch] = useReducer(appReducer, undefined as never, createInitialState)
   const didHydrateRef = useRef(false)
   const loadedRideTokenRef = useRef<string | null>(null)
   const loadedDriverTokenRef = useRef<string | null>(null)
@@ -2444,42 +2450,6 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   }
 
   useEffect(() => {
-    if (didHydrateRef.current) return
-    didHydrateRef.current = true
-
-    if (!getRideAccessToken()) return
-
-    let cancelled = false
-
-    const hydratePassengerSession = async () => {
-      try {
-        const me = await getPassengerMe()
-
-        if (cancelled) return
-
-        const profile = toRidePassengerProfile(me)
-        dispatch({ type: 'setPassengerProfile', profile })
-
-        if (profile.phone) {
-          dispatch({ type: 'setVerifiedPhone', phone: profile.phone })
-        }
-      } catch (error) {
-        if (cancelled) return
-
-        if (error instanceof BackendAuthError) {
-          dispatch({ type: 'resetPassengerSession' })
-        }
-      }
-    }
-
-    void hydratePassengerSession()
-
-    return () => {
-      cancelled = true
-    }
-  }, [])
-
-  useEffect(() => {
     const token = getRideAccessToken()
 
     if (!token) {
@@ -2496,7 +2466,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   }, [state.passengerProfile?.id, state.passengerStatus, state.verifiedPhone])
 
   const logoutPassengerSession = () => {
-    clearRideAccessToken()
+    void logoutRideSession()
+    clearRideAuthSession()
     loadedRideTokenRef.current = null
     loadedDriverTokenRef.current = null
     driverApplicationIdRef.current = null
@@ -2559,9 +2530,9 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
           item.id === state.activeRideRequest?.id
             ? {
                 ...item,
-                status: 'ACCEPTED',
-              selectedOfferId: offerId,
-            }
+                status: 'CONVERTED_TO_ORDER',
+                selectedOfferId: offerId,
+              }
             : item,
         ),
         passengerRideOrders: [
@@ -2571,7 +2542,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         activeRideRequest: state.activeRideRequest
           ? {
               ...state.activeRideRequest,
-              status: 'ACCEPTED',
+              status: 'CONVERTED_TO_ORDER',
               selectedOfferId: offerId,
             }
           : state.activeRideRequest,
@@ -3018,7 +2989,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     }
   }, [dispatch, state.currentScreen, state.driverActiveOrder, state.driverVerificationStatus])
 
-  const refreshDriverSnapshot = useCallback(async () => {
+  const refreshDriverSnapshot = useCallback(async (screenOverride?: AppScreen) => {
     const token = getRideAccessToken()
 
     if (!token) {
@@ -3028,7 +2999,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
     try {
       const me = await getDriverMe()
-      driverApplicationIdRef.current = me.applicationId ?? me.application?.id ?? null
+      const currentApplication = me.currentApplication ?? me.application ?? null
+      driverApplicationIdRef.current = me.applicationId ?? currentApplication?.id ?? null
 
       const verificationStatus =
         me.verificationStatus === 'NOT_STARTED' && state.driverVerificationStatus === 'DRAFT'
@@ -3045,12 +3017,15 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
               isOnline: me.isOnline,
             }
           : state.driverProfile,
-        driverApplicationDraft: me.application ?? state.driverApplicationDraft,
+        driverApplicationDraft: currentApplication ? { ...state.driverApplicationDraft, ...currentApplication } : state.driverApplicationDraft,
         driverFeedOrders: state.driverFeedOrders,
         driverOrders: state.driverOrders,
         driverCounterOffers: state.driverCounterOffers,
         driverActiveOrder: state.driverActiveOrder,
-        currentScreen: state.currentScreen,
+        currentScreen:
+          verificationStatus === 'PENDING_REVIEW'
+            ? 'driverDashboard'
+            : screenOverride ?? state.currentScreen,
       })
 
       if (verificationStatus === 'APPROVED') {
@@ -3099,9 +3074,115 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     refreshDriverComplaints,
   ])
 
+  const refreshAuthenticatedSession = async (
+    phone?: string,
+    flow: PassengerFlow = 'login',
+  ) => {
+    const token = getRideAccessToken()
+    if (!token) return { passengerProfile: null, driverProfile: null }
+
+    let passengerProfile: PassengerProfile | null = null
+    let driverProfile: DriverProfile | null = null
+
+    try {
+      const me = await getPassengerMe()
+      passengerProfile = toRidePassengerProfile(me, phone || state.verifiedPhone || '')
+      dispatch({ type: 'setPassengerProfile', profile: passengerProfile })
+      if (passengerProfile.phone) {
+        dispatch({ type: 'setVerifiedPhone', phone: passengerProfile.phone })
+      }
+    } catch {
+      // Best effort: passenger profile may be absent for driver login-only flow.
+    }
+
+    const driverMe = await getDriverMe().catch(() => null)
+
+    if (driverMe) {
+      const currentApplication = driverMe.currentApplication ?? driverMe.application ?? null
+      driverApplicationIdRef.current = driverMe.applicationId ?? currentApplication?.id ?? null
+
+      const verificationStatus =
+        driverMe.verificationStatus === 'NOT_STARTED' && state.driverVerificationStatus === 'DRAFT'
+          ? 'DRAFT'
+          : driverMe.verificationStatus
+
+      driverProfile = driverMe.profile
+        ? {
+            ...driverMe.profile,
+            verificationStatus,
+            isOnline: driverMe.isOnline,
+          }
+        : null
+
+      dispatch({
+        type: 'setDriverSnapshot',
+        driverVerificationStatus: verificationStatus,
+        driverProfile,
+        driverApplicationDraft: currentApplication ? { ...state.driverApplicationDraft, ...currentApplication } : state.driverApplicationDraft,
+        driverFeedOrders: state.driverFeedOrders,
+        driverOrders: state.driverOrders,
+        driverCounterOffers: state.driverCounterOffers,
+        driverActiveOrder: state.driverActiveOrder,
+        currentScreen:
+          verificationStatus === 'PENDING_REVIEW'
+            ? 'driverDashboard'
+            : state.currentScreen,
+      })
+
+      if (verificationStatus === 'APPROVED') {
+        await Promise.all([
+          refreshDriverWallet(true),
+          refreshDriverWalletTransactions(true),
+          refreshDriverTopUpRequests(true),
+          refreshDriverReviewSummary(),
+          refreshDriverReviews(),
+          refreshDriverComplaints(),
+          refreshDriverFeed(true),
+          refreshDriverOffers(true),
+          refreshDriverOrders(true),
+        ])
+      }
+    }
+
+    if (flow === 'login' && driverMe) {
+      dispatch({
+        type: 'setRole',
+        role: 'driver',
+        screen: driverMe.verificationStatus === 'PENDING_REVIEW' ? 'driverDashboard' : 'driverProfile',
+      })
+    } else if (flow === 'login' && passengerProfile) {
+      dispatch({ type: 'setRole', role: 'passenger', screen: 'passengerProfile' })
+    }
+
+    return { passengerProfile, driverProfile }
+  }
+
+  useEffect(() => {
+    if (didHydrateRef.current) return
+    didHydrateRef.current = true
+
+    const token = getRideAccessToken()
+
+    if (token) {
+      void refreshAuthenticatedSession(undefined, 'login')
+      return
+    }
+
+    void refreshRideSession()
+      .then(() => refreshAuthenticatedSession(undefined, 'login'))
+      .catch(() => {
+        // No active auth session. Stay guest.
+      })
+    // Mount-only hydrate; auth refresh is intentionally run once.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   const saveDriverApplication = async () => {
     const application = state.driverApplicationDraft
-    const shouldUpdate = Boolean(driverApplicationIdRef.current)
+    const shouldUpdate =
+      Boolean(driverApplicationIdRef.current) &&
+      (state.driverVerificationStatus === 'NEEDS_CHANGES' ||
+        (state.driverVerificationStatus === 'DRAFT' && !state.driverApplicationDraft.submittedAt))
 
     if (shouldUpdate) {
       await updateDriverApplication(application)
@@ -3117,8 +3198,16 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     dispatch({ type: 'setDriverFlowError', error: null })
 
     try {
+      if (
+        state.driverVerificationStatus !== 'DRAFT' &&
+        state.driverVerificationStatus !== 'NEEDS_CHANGES'
+      ) {
+        await refreshDriverSnapshot('driverDashboard')
+        return
+      }
+
       await saveDriverApplication()
-      if (!hasRealDriverApplicationDocuments((state.driverApplicationDraft as unknown as { documents?: unknown }).documents)) {
+      if (!hasRealDriverApplicationDocuments(state.driverApplicationDraft.documents)) {
         dispatch({
           type: 'setDriverFlowError',
           error: 'Для отправки заявки загрузите документы',
@@ -3133,7 +3222,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         type: 'setDriverSnapshot',
         driverVerificationStatus: submitted.verificationStatus,
         driverProfile: submitted.profile ?? state.driverProfile,
-        driverApplicationDraft: submitted.application ?? state.driverApplicationDraft,
+        driverApplicationDraft: submitted.application ? { ...state.driverApplicationDraft, ...submitted.application } : state.driverApplicationDraft,
         driverFeedOrders: state.driverFeedOrders,
         driverOrders: state.driverOrders,
         driverCounterOffers: state.driverCounterOffers,
@@ -3141,11 +3230,17 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         currentScreen: 'driverDashboard',
       })
 
-      void refreshDriverSnapshot()
+      await refreshDriverSnapshot('driverDashboard')
     } catch (error) {
       if (error instanceof BackendAuthError) {
         clearRideAccessToken()
         dispatch({ type: 'resetPassengerSession' })
+        return
+      }
+
+      if (error instanceof BackendApiError && /pending review/i.test(error.message)) {
+        dispatch({ type: 'setDriverFlowError', error: null })
+        await refreshDriverSnapshot('driverDashboard')
         return
       }
 
@@ -3161,11 +3256,20 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const toggleDriverOnlineStatusAction = async () => {
     if (!state.driverProfile) return
 
+    const nextOnline = !state.driverProfile.isOnline
+    if (nextOnline && !canDriverGoOnline(state.driverWallet)) {
+      dispatch({
+        type: 'setDriverFlowError',
+        error: `Пополните баланс минимум до ${formatKzt(state.driverWallet.minBalance)} чтобы выйти на линию.`,
+      })
+      return
+    }
+
     dispatch({ type: 'setDriverActionLoading', loading: true })
     dispatch({ type: 'setDriverFlowError', error: null })
 
     try {
-      const result = await setDriverOnlineApi(!state.driverProfile.isOnline)
+      const result = await setDriverOnlineApi(nextOnline)
       dispatch({
         type: 'setDriverSnapshot',
         driverVerificationStatus: result.verificationStatus,
@@ -3200,6 +3304,13 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const setDriverOnlineAction = async (online: boolean) => {
     if (!state.driverProfile) return
     if (state.driverProfile.isOnline === online) return
+    if (online && !canDriverGoOnline(state.driverWallet)) {
+      dispatch({
+        type: 'setDriverFlowError',
+        error: `Пополните баланс минимум до ${formatKzt(state.driverWallet.minBalance)} чтобы выйти на линию.`,
+      })
+      return
+    }
 
     dispatch({ type: 'setDriverActionLoading', loading: true })
     dispatch({ type: 'setDriverFlowError', error: null })
@@ -3481,14 +3592,12 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const driverOrderNextStatusAction = async () => {
     if (!state.driverActiveOrder) return
 
-      const nextStatus =
-      state.driverActiveOrder.status === 'DRIVER_ASSIGNED' ||
-      state.driverActiveOrder.status === 'GOING_TO_CLIENT'
+    const nextStatus =
+      state.driverActiveOrder.status === 'DRIVER_ASSIGNED'
         ? 'DRIVER_ON_WAY'
         : state.driverActiveOrder.status === 'DRIVER_ON_WAY'
           ? 'DRIVER_ARRIVED'
-          : state.driverActiveOrder.status === 'DRIVER_ARRIVED' ||
-              state.driverActiveOrder.status === 'ARRIVED'
+          : state.driverActiveOrder.status === 'DRIVER_ARRIVED'
             ? 'IN_PROGRESS'
             : state.driverActiveOrder.status === 'IN_PROGRESS'
               ? 'COMPLETED'
@@ -3656,8 +3765,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       startDriverRegistration: () => dispatch({ type: 'startDriverRegistration' }),
       updateDriverApplicationField: (field, value) =>
         dispatch({ type: 'updateDriverApplicationField', field, value }),
-      uploadDriverDocumentMock: (field) =>
-        dispatch({ type: 'uploadDriverDocumentMock', field }),
+      uploadDriverDocumentMock: (documentType, filePath) =>
+        dispatch({ type: 'uploadDriverDocumentMock', documentType, filePath }),
       nextDriverRegistrationStep: () =>
         dispatch({ type: 'nextDriverRegistrationStep' }),
       prevDriverRegistrationStep: () =>
@@ -3719,6 +3828,9 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       updateParcelDraft: (patch) =>
         dispatch({ type: 'updateParcelDraft', patch }),
       openPhoneVerifySheet: () => dispatch({ type: 'openPhoneVerifySheet' }),
+      openAuthSheet: (flow) => dispatch({ type: 'openAuthSheet', flow }),
+      startLoginFlow: () => dispatch({ type: 'openAuthSheet', flow: 'login' }),
+      refreshAuthenticatedSession: (phone, flow) => refreshAuthenticatedSession(phone, flow),
       closePhoneVerifySheet: () => dispatch({ type: 'closePhoneVerifySheet' }),
       openPassengerOnboarding: () => dispatch({ type: 'openPassengerOnboarding' }),
       closePassengerOnboarding: () => dispatch({ type: 'closePassengerOnboarding' }),

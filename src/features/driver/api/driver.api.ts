@@ -1,13 +1,19 @@
 import { backendGet, backendPatch, backendPost } from '../../../shared/api/backend'
 import type {
+  DriverApplicationDocument,
   DriverActiveOrder,
   DriverApplicationDraft,
   DriverCounterOffer,
   DriverFeedOrder,
   DriverProfile,
   DriverVehicle,
+  DriverVehicleBodyType,
+  DriverVehicleBodyTypeApi,
   DriverVerificationStatus,
+  ParcelSize,
+  RideOrderStatus,
 } from '../../../types/domain'
+import { DRIVER_VEHICLE_BODY_TYPE_API_MAP } from '../../../types/domain'
 import type {
   DriverApplicationPayload,
   DriverCounterOfferPayload,
@@ -18,7 +24,9 @@ import type {
   DriverOrderViewModel,
   DriverFeedViewModel,
   RideDriverApplication,
+  RideCity,
 } from './driver.types'
+export type { RideCity } from './driver.types'
 
 type BackendRecord = Record<string, unknown>
 
@@ -46,6 +54,32 @@ function firstRecord(...values: unknown[]) {
   return values.find(isRecord) as BackendRecord | undefined
 }
 
+function normalizeRideOrderStatus(value: unknown): RideOrderStatus {
+  const normalized = asString(value, 'DRIVER_ASSIGNED').toUpperCase()
+
+  if (normalized === 'DRIVER_ASSIGNED' || normalized === 'GOING_TO_CLIENT' || normalized === 'ACCEPTED') {
+    return 'DRIVER_ASSIGNED'
+  }
+  if (normalized === 'DRIVER_ON_WAY') return 'DRIVER_ON_WAY'
+  if (normalized === 'DRIVER_ARRIVED' || normalized === 'ARRIVED') return 'DRIVER_ARRIVED'
+  if (normalized === 'IN_PROGRESS' || normalized === 'STARTED') return 'IN_PROGRESS'
+  if (normalized === 'COMPLETED' || normalized === 'FINISHED') return 'COMPLETED'
+  if (normalized === 'CANCELLED' || normalized === 'CANCELED') return 'CANCELLED'
+  if (normalized === 'DISPUTE') return 'DISPUTE'
+
+  return 'DRIVER_ASSIGNED'
+}
+
+function normalizeParcelSize(value: unknown): ParcelSize {
+  const normalized = asString(value, 'SMALL').toUpperCase()
+
+  if (normalized === 'SMALL' || normalized === 'MEDIUM' || normalized === 'LARGE' || normalized === 'OVERSIZED') {
+    return normalized
+  }
+
+  return 'SMALL'
+}
+
 function unwrapRecord(value: unknown, keys: string[]) {
   if (!isRecord(value)) return value
 
@@ -55,34 +89,6 @@ function unwrapRecord(value: unknown, keys: string[]) {
   }
 
   return value
-}
-
-function normalizeDocumentType(value: unknown) {
-  const normalized = asString(value).toLowerCase().replace(/[\s-]+/g, '_')
-
-  if (normalized === 'driver_license_front' || normalized === 'license_front' || normalized === 'front_license') {
-    return 'driverLicenseFront'
-  }
-  if (normalized === 'driver_license_back' || normalized === 'license_back' || normalized === 'back_license') {
-    return 'driverLicenseBack'
-  }
-  if (normalized === 'vehicle_registration' || normalized === 'registration' || normalized === 'tech_passport') {
-    return 'vehicleRegistration'
-  }
-  if (normalized === 'car_front_photo' || normalized === 'vehicle_front_photo' || normalized === 'front_photo') {
-    return 'carFrontPhoto'
-  }
-  if (normalized === 'car_back_photo' || normalized === 'vehicle_back_photo' || normalized === 'back_photo') {
-    return 'carBackPhoto'
-  }
-  if (normalized === 'interior_photo' || normalized === 'salon_photo') {
-    return 'interiorPhoto'
-  }
-  if (normalized === 'trunk_photo' || normalized === 'boot_photo') {
-    return 'trunkPhoto'
-  }
-
-  return undefined
 }
 
 function mapApplicationDocuments(raw: unknown): RideDriverApplicationDocument[] {
@@ -105,62 +111,32 @@ function mapApplicationDocuments(raw: unknown): RideDriverApplicationDocument[] 
       const status = asString(record.status ?? record.uploadStatus ?? record.upload_status)
 
       return {
+        id: asString(record.id ?? record.documentId ?? record.document_id),
         type,
         filePath,
         url,
         name,
         status,
+        fileName: asString(record.fileName ?? record.file_name ?? record.filename),
+        mimeType: asString(record.mimeType ?? record.mime_type),
+        sizeBytes: asOptionalNumber(record.sizeBytes ?? record.size_bytes),
         raw: item,
       }
     })
     .filter((document) => document.type || document.filePath || document.url || document.name || document.status)
 }
 
-function mapDocumentFlags(raw: unknown): Record<string, boolean> {
-  const flags: Record<string, boolean> = {
-    driverLicenseFront: false,
-    driverLicenseBack: false,
-    vehicleRegistration: false,
-    carFrontPhoto: false,
-    carBackPhoto: false,
-    interiorPhoto: false,
-    trunkPhoto: false,
-  }
-
-  if (isRecord(raw)) {
-    const list = Array.isArray(raw.items)
-      ? raw.items
-      : Array.isArray(raw.data)
-        ? raw.data
-        : undefined
-
-    if (list) {
-      for (const document of mapApplicationDocuments(list)) {
-        const key = normalizeDocumentType(document.type ?? document.name)
-        if (!key) continue
-        flags[key] = Boolean(document.filePath || document.url || document.status)
-      }
-
-      return flags
-    }
-
-    for (const [key, value] of Object.entries(raw)) {
-      if (typeof value !== 'boolean') continue
-      if (key in flags) {
-        flags[key] = value
-      }
-    }
-
-    return flags
-  }
-
-  for (const document of mapApplicationDocuments(raw)) {
-    const key = normalizeDocumentType(document.type ?? document.name)
-    if (!key) continue
-    flags[key] = Boolean(document.filePath || document.url || document.status)
-  }
-
-  return flags
+function mapApplicationDocumentsToDraft(raw: unknown): DriverApplicationDocument[] {
+  return mapApplicationDocuments(raw)
+    .map((document) => ({
+      id: document.id || undefined,
+      type: asString(document.type ?? document.name).trim().toUpperCase() as DriverApplicationDocument['type'],
+      filePath: asString(document.filePath || document.url).trim(),
+      fileName: document.fileName || document.name || undefined,
+      mimeType: document.mimeType || undefined,
+      sizeBytes: document.sizeBytes ?? undefined,
+    }))
+    .filter((document) => Boolean(document.type && document.filePath))
 }
 
 function extractList(value: unknown) {
@@ -215,19 +191,35 @@ function mapVerificationStatus(value: unknown): DriverVerificationStatus {
   if (status === 'PENDING_REVIEW' || status === 'PENDING') return 'PENDING_REVIEW'
   if (status === 'NEEDS_CHANGES' || status === 'NEEDS_CHANGE') return 'NEEDS_CHANGES'
   if (status === 'APPROVED' || status === 'ACTIVE' || status === 'VERIFIED') return 'APPROVED'
-  if (status === 'BLOCKED' || status === 'REJECTED') return 'BLOCKED'
+  if (status === 'REJECTED') return 'NEEDS_CHANGES'
+  if (status === 'BLOCKED') return 'BLOCKED'
+  if (status === 'SUSPENDED') return 'SUSPENDED'
 
   return 'NOT_STARTED'
 }
 
-function mapVehicleBodyType(value: unknown): DriverVehicle['bodyType'] {
-  const normalized = asString(value).toLowerCase()
+function mapVehicleBodyType(value: unknown): DriverVehicleBodyType {
+  const normalized = asString(value).trim().toLowerCase()
 
-  if (normalized === 'suv') return 'suv'
-  if (normalized === 'minivan' || normalized === 'van') return 'minivan'
-  if (normalized === 'alphard') return 'alphard'
+  if (normalized === 'sedan' || normalized === 'suv' || normalized === 'minivan' || normalized === 'alphard' || normalized === 'van' || normalized === 'truck' || normalized === 'other') {
+    return normalized
+  }
 
-  return 'sedan'
+  const uppercase = asString(value).trim().toUpperCase()
+
+  if (uppercase === 'SEDAN') return 'sedan'
+  if (uppercase === 'SUV') return 'suv'
+  if (uppercase === 'MINIVAN') return 'minivan'
+  if (uppercase === 'ALPHARD') return 'alphard'
+  if (uppercase === 'VAN') return 'van'
+  if (uppercase === 'TRUCK') return 'truck'
+  if (uppercase === 'OTHER') return 'other'
+
+  return 'other'
+}
+
+function toVehicleBodyTypeApi(value: unknown): DriverVehicleBodyTypeApi {
+  return DRIVER_VEHICLE_BODY_TYPE_API_MAP[mapVehicleBodyType(value)]
 }
 
 function mapVehicle(raw: unknown): DriverVehicle | undefined {
@@ -237,11 +229,13 @@ function mapVehicle(raw: unknown): DriverVehicle | undefined {
     brand: asString(raw.brand ?? raw.make ?? raw.vehicleBrand ?? raw.vehicle_brand),
     model: asString(raw.model ?? raw.vehicleModel ?? raw.vehicle_model),
     year: asString(raw.year ?? raw.vehicleYear ?? raw.vehicle_year),
-    plate: asString(raw.plate ?? raw.number ?? raw.vehiclePlate ?? raw.vehicle_plate),
+    plate: asString(raw.plate ?? raw.plateNumber ?? raw.number ?? raw.vehiclePlate ?? raw.vehicle_plate),
+    plateNumber: asString(raw.plateNumber ?? raw.plate ?? raw.vehiclePlate ?? raw.vehicle_plate),
     color: asString(raw.color ?? raw.vehicleColor ?? raw.vehicle_color),
     seats:
       asString(raw.seats ?? raw.vehicleSeats ?? raw.vehicle_seats) ||
       String(asNumber(raw.seats ?? raw.vehicleSeats ?? raw.vehicle_seats)),
+    seatsCount: asOptionalNumber(raw.seatsCount ?? raw.vehicleSeats ?? raw.vehicle_seats),
     bodyType: mapVehicleBodyType(raw.bodyType ?? raw.body_type ?? raw.type),
   }
 }
@@ -265,16 +259,40 @@ function mapApplication(raw: unknown): RideDriverApplication | null {
     vehicleBrand: asString(record.vehicleBrand ?? record.vehicle_brand ?? vehicle?.brand ?? vehicle?.make),
     vehicleModel: asString(record.vehicleModel ?? record.vehicle_model ?? vehicle?.model),
     vehicleYear: asString(record.vehicleYear ?? record.vehicle_year ?? vehicle?.year),
-    vehiclePlate: asString(record.vehiclePlate ?? record.vehicle_plate ?? vehicle?.plate),
+    vehiclePlate: asString(record.vehiclePlate ?? record.vehicle_plate ?? vehicle?.plateNumber ?? vehicle?.plate),
     vehicleColor: asString(record.vehicleColor ?? record.vehicle_color ?? vehicle?.color),
     vehicleSeats:
-      asString(record.vehicleSeats ?? record.vehicle_seats ?? vehicle?.seats) ||
-      String(asNumber(record.vehicleSeats ?? record.vehicle_seats ?? vehicle?.seats)),
-    vehicleBodyType: asString(record.vehicleBodyType ?? record.vehicle_body_type ?? vehicle?.bodyType ?? vehicle?.body_type),
-    documents: mapApplicationDocuments(documents),
+      asString(record.vehicleSeats ?? record.vehicle_seats ?? vehicle?.seatsCount ?? vehicle?.seats) ||
+      String(asNumber(record.vehicleSeats ?? record.vehicle_seats ?? vehicle?.seatsCount ?? vehicle?.seats)),
+    vehicleBodyType: toVehicleBodyTypeApi(record.vehicleBodyType ?? record.vehicle_body_type ?? vehicle?.bodyType ?? vehicle?.body_type),
+    documents: mapApplicationDocumentsToDraft(documents),
     submittedAt: asString(record.submittedAt ?? record.submitted_at),
-    moderatorComment: asString(record.moderatorComment ?? record.moderator_comment),
+    moderatorComment: asString(
+      record.moderatorComment ??
+        record.moderator_comment ??
+        record.changesRequestedReason ??
+        record.rejectionReason ??
+        record.blockedReason,
+    ),
     raw,
+  }
+}
+
+function mapRideCity(raw: unknown): RideCity | null {
+  if (!isRecord(raw)) return null
+
+  const id = asOptionalNumber(raw.id)
+  const name = asString(raw.name)
+  const code = asString(raw.code)
+
+  if (id == null || !name) return null
+
+  return {
+    id,
+    name,
+    ...(code ? { code } : {}),
+    pickupEnabled: asBoolean(raw.pickupEnabled, true),
+    dropoffEnabled: asBoolean(raw.dropoffEnabled, true),
   }
 }
 
@@ -349,18 +367,7 @@ function mapProfile(raw: unknown): DriverProfile | null {
 }
 
 function mapActiveDriverStatus(status: unknown): DriverActiveOrder['status'] {
-  const normalized = asString(status).toUpperCase()
-
-  if (normalized === 'DRIVER_ASSIGNED' || normalized === 'GOING_TO_CLIENT' || normalized === 'ACCEPTED') {
-    return 'DRIVER_ASSIGNED'
-  }
-  if (normalized === 'DRIVER_ON_WAY') return 'DRIVER_ON_WAY'
-  if (normalized === 'DRIVER_ARRIVED' || normalized === 'ARRIVED') return 'ARRIVED'
-  if (normalized === 'IN_PROGRESS' || normalized === 'STARTED') return 'IN_PROGRESS'
-  if (normalized === 'COMPLETED' || normalized === 'FINISHED') return 'COMPLETED'
-  if (normalized === 'CANCELLED' || normalized === 'CANCELED') return 'CANCELLED'
-
-  return 'DRIVER_ASSIGNED'
+  return normalizeRideOrderStatus(status)
 }
 
 function mapFeedStatus(status: unknown): DriverFeedOrder['status'] {
@@ -447,7 +454,7 @@ function mapFeedRequest(raw: unknown): DriverFeedOrder {
     requestedPrice,
     passengersCount: asNumber(record.passengersCount ?? record.passengers_count, 1) || undefined,
     rideType: asString(record.rideType ?? record.ride_type) as DriverFeedOrder['rideType'],
-    parcelSize: asString(record.parcelSize ?? record.parcel_size) as DriverFeedOrder['parcelSize'],
+    parcelSize: normalizeParcelSize(record.parcelSize ?? record.parcel_size),
     parcelDescription: asString(record.parcelDescription ?? record.parcel_description),
     senderName: asString(record.senderName ?? record.sender_name),
     receiverName: asString(record.receiverName ?? record.receiver_name),
@@ -530,7 +537,7 @@ function mapDriverOrder(raw: unknown): DriverActiveOrder {
     commissionPreview: asNumber(record.commissionPreview ?? record.commission_preview, Math.round(price * 0.08)),
     rideType: asString(record.rideType ?? record.ride_type) as DriverActiveOrder['rideType'],
     passengersCount: asNumber(record.passengersCount ?? record.passengers_count, 1) || undefined,
-    parcelSize: asString(record.parcelSize ?? record.parcel_size) as DriverActiveOrder['parcelSize'],
+    parcelSize: normalizeParcelSize(record.parcelSize ?? record.parcel_size),
     parcelDescription: asString(record.parcelDescription ?? record.parcel_description),
     senderName: asString(record.senderName ?? record.sender_name),
     receiverName: asString(record.receiverName ?? record.receiver_name),
@@ -562,7 +569,6 @@ function isRealApplicationDocument(document: unknown): document is RideDriverApp
 function buildApplicationDocumentsPayload(
   documents: unknown,
 ): RideDriverApplicationDocument[] | undefined {
-  // TODO: wire a real document upload flow and populate this from uploaded file metadata.
   if (!Array.isArray(documents)) return undefined
 
   const realDocuments = documents
@@ -570,6 +576,9 @@ function buildApplicationDocumentsPayload(
     .map((document) => ({
       type: asString(document.type).trim(),
       filePath: asString(document.filePath).trim(),
+      ...(asString(document.fileName ?? document.name).trim() ? { fileName: asString(document.fileName ?? document.name).trim() } : {}),
+      ...(asString(document.mimeType).trim() ? { mimeType: asString(document.mimeType).trim() } : {}),
+      ...(asOptionalNumber(document.sizeBytes) ? { sizeBytes: asOptionalNumber(document.sizeBytes) } : {}),
     }))
 
   return realDocuments.length > 0 ? realDocuments : undefined
@@ -607,7 +616,7 @@ function mapDriverApplicationDraft(application: RideDriverApplication | null): D
       asString(application?.vehicleSeats) ||
       String(typeof application?.vehicleSeats === 'number' ? application.vehicleSeats : ''),
     vehicleBodyType: mapVehicleBodyType(application?.vehicleBodyType),
-    documents: mapDocumentFlags(documentSource) as DriverApplicationDraft['documents'],
+    documents: mapApplicationDocumentsToDraft(documentSource),
     submittedAt: application?.submittedAt,
     moderatorComment: application?.moderatorComment,
   }
@@ -629,15 +638,14 @@ function buildApplicationPayload(
     fullName: application.fullName,
     phone: application.phone,
     cityId,
-    frequentRoutes: application.frequentRoutes,
     vehicle: {
       brand: application.vehicleBrand,
       model: application.vehicleModel,
       year: application.vehicleYear,
-      plate: application.vehiclePlate,
+      plateNumber: application.vehiclePlate,
       color: application.vehicleColor,
-      seats: application.vehicleSeats,
-      bodyType: application.vehicleBodyType,
+      seatsCount: application.vehicleSeats,
+      bodyType: toVehicleBodyTypeApi(application.vehicleBodyType),
     },
     ...(documents ? { documents } : {}),
   }
@@ -649,8 +657,11 @@ export function mapDriverMeToViewModel(raw: unknown): DriverMeViewModel {
   const applicationRecord = firstRecord(
     record.application,
     record.driverApplication,
+    record.currentApplication,
+    record.current_application,
     data?.application,
     data?.driverApplication,
+    data?.currentApplication,
   )
 
   const application = mapApplication(applicationRecord ?? record.application)
@@ -662,6 +673,13 @@ export function mapDriverMeToViewModel(raw: unknown): DriverMeViewModel {
       profile?.verificationStatus,
   )
   const isOnline = asBoolean(record.isOnline ?? record.is_online ?? profile?.isOnline)
+  const vehiclesRaw = Array.isArray(record.vehicles)
+    ? record.vehicles
+    : Array.isArray(data?.vehicles)
+      ? data?.vehicles
+      : []
+  const walletRaw = firstRecord(record.wallet, record.driverWallet, data?.wallet)
+  const primaryVehicle = mapVehicle(firstRecord(record.vehicle, data?.vehicle)) ?? profile?.vehicle ?? null
 
   return {
     profile: profile
@@ -672,7 +690,21 @@ export function mapDriverMeToViewModel(raw: unknown): DriverMeViewModel {
         } satisfies DriverProfile)
       : null,
     application: mapDriverApplicationDraft(application),
+    currentApplication: application ? mapDriverApplicationDraft(application) : null,
     applicationId: application?.id,
+    vehicle: primaryVehicle,
+    vehicles: vehiclesRaw.map(mapVehicle).filter((vehicle): vehicle is NonNullable<ReturnType<typeof mapVehicle>> => Boolean(vehicle)),
+    wallet: isRecord(walletRaw)
+      ? {
+          id: asString(walletRaw.id, ''),
+          balance: asNumber(walletRaw.balance, 0),
+          minimumBalance: asNumber(walletRaw.minimumBalance, 0),
+          currency: asString(walletRaw.currency, 'KZT'),
+          isBlocked: asBoolean(walletRaw.isBlocked),
+          blockedReason: asString(walletRaw.blockedReason ?? walletRaw.rejectionReason),
+        }
+      : undefined,
+    documents: application?.documents ?? undefined,
     verificationStatus,
     isOnline,
     raw,
@@ -693,6 +725,22 @@ export function mapDriverOrderToViewModel(raw: unknown): DriverOrderViewModel {
 
 export async function getDriverMe() {
   return mapDriverMeToViewModel(await backendGet('/ride/driver/me'))
+}
+
+export async function getRideCities() {
+  const rows = await backendGet<unknown>('/ride/cities')
+
+  return (Array.isArray(rows) ? rows : [])
+    .map(mapRideCity)
+    .filter((city): city is RideCity => Boolean(city))
+}
+
+export async function uploadDriverDocument(type: RideDriverApplicationDocument['type'], file: File) {
+  const formData = new FormData()
+  formData.set('type', String(type ?? '').trim())
+  formData.set('file', file)
+
+  return backendPost<DriverApplicationDocument>('/ride/driver/documents/upload', formData)
 }
 
 export async function createDriverApplication(payload: DriverApplicationDraft) {
@@ -783,7 +831,7 @@ export async function updateDriverOrderStatus(
   return mapDriverOrderToViewModel(
     unwrapRecord(
       await backendPost(`/ride/driver/orders/${String(orderId)}/status`, {
-        status: payload.status,
+        status: normalizeRideOrderStatus(payload.status),
       }),
       ['order', 'rideOrder', 'data'],
     ),

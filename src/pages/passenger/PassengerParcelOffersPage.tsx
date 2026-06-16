@@ -2,13 +2,35 @@ import { useEffect, useState } from 'react'
 import { Clock3, Package2, Sparkles } from 'lucide-react'
 
 import { cn } from '../../lib/cn'
-import { formatKzt, formatRoute } from '../../lib/format'
+import { formatKzt, formatParcelSizeLabel, formatRoute } from '../../lib/format'
 import { useAppActions, useAppState } from '../../providers/AppStateProvider'
 import { PageCard } from '../../shared/ui/PageCard'
 
 export default function PassengerParcelOffersPage() {
   const { activeParcelRequest, parcelOffers } = useAppState()
   const actions = useAppActions()
+  const isDevParcelFlow = import.meta.env.DEV
+
+  if (!isDevParcelFlow) {
+    return (
+      <PageCard
+        eyebrow="Пассажир"
+        title="Посылки скоро"
+        description="Parcel flow пока не готов к боевому запуску."
+      >
+        <div className="rounded-2xl bg-surface-soft p-4 text-sm text-ink">
+          Этот экран доступен только как dev-only preview, пока backend для посылок не готов.
+        </div>
+        <button
+          type="button"
+          onClick={() => actions.setScreen('passengerParcels')}
+          className="rounded-2xl bg-accent px-4 py-3 text-sm font-semibold text-white"
+        >
+          Вернуться к разделу
+        </button>
+      </PageCard>
+    )
+  }
 
   if (!activeParcelRequest) {
     return (
@@ -68,7 +90,9 @@ export default function PassengerParcelOffersPage() {
             <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">
               Размер
             </p>
-            <p className="mt-2 text-sm font-semibold text-ink">{activeParcelRequest.size}</p>
+            <p className="mt-2 text-sm font-semibold text-ink">
+              {formatParcelSizeLabel(activeParcelRequest.size)}
+            </p>
             <p className="mt-1 text-sm text-muted">
               {activeParcelRequest.weightKg ?? '—'} кг
             </p>

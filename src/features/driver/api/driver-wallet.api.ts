@@ -39,6 +39,14 @@ function firstRecord(...values: unknown[]) {
   return values.find(isRecord) as BackendRecord | undefined
 }
 
+function unwrapWalletResponse(raw: unknown) {
+  if (isRecord(raw) && isRecord(raw.wallet)) {
+    return raw.wallet
+  }
+
+  return raw
+}
+
 function normalizeWalletMethod(value: unknown): DriverTopUpRequest['method'] {
   const normalized = asString(value).toUpperCase()
 
@@ -178,7 +186,7 @@ function normalizeTopUpPayload(payload: CreateDriverTopUpRequestPayload) {
 
 export async function getDriverWallet(): Promise<DriverWallet> {
   const response = await backendGet<unknown>('/ride/driver/wallet')
-  return mapWallet(response)
+  return mapWallet(unwrapWalletResponse(response))
 }
 
 export async function getDriverWalletTransactions(

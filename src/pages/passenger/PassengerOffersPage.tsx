@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Clock3, Sparkles } from 'lucide-react'
 
-import { formatKzt, formatRoute } from '../../lib/format'
+import { formatKzt, formatRideRequestStatusLabel, formatRoute } from '../../lib/format'
 import { cn } from '../../lib/cn'
 import { useAppActions, useAppState } from '../../providers/AppStateProvider'
 import { PageCard } from '../../shared/ui/PageCard'
@@ -91,7 +91,9 @@ export default function PassengerOffersPage() {
             <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">
               Статус
             </p>
-            <p className="mt-2 text-sm font-semibold text-ink">{activeRideRequest.status}</p>
+            <p className="mt-2 text-sm font-semibold text-ink">
+              {formatRideRequestStatusLabel(activeRideRequest.status)}
+            </p>
           </div>
           <div className="rounded-2xl bg-surface-soft p-4">
             <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">
