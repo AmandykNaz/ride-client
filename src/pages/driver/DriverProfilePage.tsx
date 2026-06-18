@@ -1,6 +1,6 @@
 import { BadgeCheck, CircleAlert, LogOut, ShieldCheck, UserCog } from 'lucide-react'
 
-import { formatKzt } from '../../lib/format'
+import { formatKzPlateNumber, formatKzt } from '../../lib/format'
 import { useAppActions, useAppState } from '../../providers/AppStateProvider'
 import { PageCard } from '../../shared/ui/PageCard'
 import {
@@ -31,10 +31,29 @@ export default function DriverProfilePage() {
   const accessState = getDriverAccessState(driverVerificationStatus, driverWallet)
   const verificationStatusLabel = getDriverVerificationStatusLabel(driverVerificationStatus)
   const walletShortfall = getDriverWalletShortfall(driverWallet)
-  const documentRows = documentDefinitions.map(([type, label]) => {
-    const document = driverApplicationDraft.documents.find((item) => item.type === type)
-    return [label, Boolean(document?.filePath.trim()), document?.filePath ?? ''] as const
-  })
+  const resolvedCity =
+    driverProfile?.city?.trim() ||
+    driverProfile?.cityName?.trim() ||
+    driverApplicationDraft.city?.trim() ||
+    'Не указан'
+  const profileDocuments = driverProfile?.documents ?? []
+  const applicationDocuments = driverApplicationDraft.documents ?? []
+  const resolvedDocuments = profileDocuments.length > 0 ? profileDocuments : applicationDocuments
+  const hasDocumentProof = resolvedDocuments.length > 0
+  const isApprovedProfile = accessState === 'APPROVED_READY' || accessState === 'APPROVED_LOW_BALANCE'
+  const documentStatusText = hasDocumentProof
+    ? 'Загружено и проверено'
+    : isApprovedProfile
+      ? 'Документы проверены администратором'
+      : 'Документы не загружены'
+  const documentRows = resolvedDocuments.length > 0
+    ? documentDefinitions.map(([type, label]) => {
+        const document = resolvedDocuments.find((item) => item.type === type)
+        const uploaded = Boolean(document?.filePath?.trim())
+        const status = uploaded ? (isApprovedProfile ? 'Проверено' : 'Загружено') : 'Не загружено'
+        return [label, status, document?.filePath ?? ''] as const
+      })
+    : []
 
   const logoutButton = (
     <button
@@ -270,7 +289,7 @@ export default function DriverProfilePage() {
           <div className="rounded-2xl bg-surface-soft p-4">
             <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">Город</p>
             <p className="mt-2 text-sm font-semibold text-ink">
-              {driverProfile?.city || driverApplicationDraft.city}
+              {resolvedCity}
             </p>
           </div>
           <div className="rounded-2xl bg-surface-soft p-4">
@@ -280,7 +299,7 @@ export default function DriverProfilePage() {
               {driverProfile?.vehicle?.model || driverApplicationDraft.vehicleModel}
             </p>
             <p className="mt-1 text-sm text-muted">
-              {driverProfile?.vehicle?.plate || driverApplicationDraft.vehiclePlate}
+              {formatKzPlateNumber(driverProfile?.vehicle?.plate || driverApplicationDraft.vehiclePlate)}
             </p>
           </div>
           <div className="rounded-2xl bg-surface-soft p-4">
@@ -308,15 +327,21 @@ export default function DriverProfilePage() {
           </div>
           <div className="rounded-2xl bg-surface-soft p-4">
             <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">Документы</p>
-            <p className="mt-2 text-sm font-semibold text-ink">Статус проверен</p>
-            <div className="mt-3 space-y-2 text-xs text-muted">
-              {documentRows.map(([label, uploaded, filePath]) => (
-                <div key={label} className="flex items-center justify-between rounded-2xl bg-white px-3 py-2">
-                  <span>{label}</span>
-                  <span>{uploaded ? filePath : 'Нет'}</span>
-                </div>
-              ))}
-            </div>
+            <p className="mt-2 text-sm font-semibold text-ink">{documentStatusText}</p>
+            {documentRows.length > 0 ? (
+              <div className="mt-3 space-y-2 text-xs text-muted">
+                {documentRows.map(([label, status, filePath]) => (
+                  <div key={label} className="flex items-center justify-between rounded-2xl bg-white px-3 py-2">
+                    <span>{label}</span>
+                    <span>{status}{filePath ? ` · ${filePath}` : ''}</span>
+                  </div>
+                ))}
+              </div>
+            ) : isApprovedProfile ? (
+              <p className="mt-3 text-xs text-muted">Документы проверены администратором.</p>
+            ) : (
+              <p className="mt-3 text-xs text-muted">Загруженные документы не найдены.</p>
+            )}
           </div>
         </div>
         {logoutButton}

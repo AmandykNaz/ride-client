@@ -1,4 +1,5 @@
 import { backendGet, backendPatch, backendPost } from '../../../shared/api/backend'
+import { getKzPlateValidationError, normalizeKzPlateInput } from '../../../lib/format'
 import type {
   DriverApplicationDocument,
   DriverActiveOrder,
@@ -25,6 +26,10 @@ import type {
   DriverFeedViewModel,
   RideDriverApplication,
   RideCity,
+  RideVehicleBodyTypeOption,
+  RideVehicleBrandOption,
+  RideVehicleColorOption,
+  RideVehicleModelOption,
 } from './driver.types'
 export type { RideCity } from './driver.types'
 
@@ -225,18 +230,30 @@ function toVehicleBodyTypeApi(value: unknown): DriverVehicleBodyTypeApi {
 function mapVehicle(raw: unknown): DriverVehicle | undefined {
   if (!isRecord(raw)) return undefined
 
+  const brandName = asString(raw.brandName ?? raw.brand ?? raw.make ?? raw.vehicleBrand ?? raw.vehicle_brand)
+  const modelName = asString(raw.modelName ?? raw.model ?? raw.vehicleModel ?? raw.vehicle_model)
+  const colorName = asString(raw.colorName ?? raw.color ?? raw.vehicleColor ?? raw.vehicle_color)
+  const bodyTypeCode = asString(raw.bodyTypeCode ?? raw.bodyType ?? raw.body_type ?? raw.type)
+
   return {
-    brand: asString(raw.brand ?? raw.make ?? raw.vehicleBrand ?? raw.vehicle_brand),
-    model: asString(raw.model ?? raw.vehicleModel ?? raw.vehicle_model),
+    brandId: asOptionalNumber(raw.brandId ?? raw.brand_id),
+    modelId: asOptionalNumber(raw.modelId ?? raw.model_id),
+    colorId: asOptionalNumber(raw.colorId ?? raw.color_id),
+    brandName: brandName || undefined,
+    modelName: modelName || undefined,
+    brand: brandName,
+    model: modelName,
     year: asString(raw.year ?? raw.vehicleYear ?? raw.vehicle_year),
     plate: asString(raw.plate ?? raw.plateNumber ?? raw.number ?? raw.vehiclePlate ?? raw.vehicle_plate),
     plateNumber: asString(raw.plateNumber ?? raw.plate ?? raw.vehiclePlate ?? raw.vehicle_plate),
-    color: asString(raw.color ?? raw.vehicleColor ?? raw.vehicle_color),
+    color: colorName,
+    colorName: colorName || undefined,
     seats:
       asString(raw.seats ?? raw.vehicleSeats ?? raw.vehicle_seats) ||
       String(asNumber(raw.seats ?? raw.vehicleSeats ?? raw.vehicle_seats)),
     seatsCount: asOptionalNumber(raw.seatsCount ?? raw.vehicleSeats ?? raw.vehicle_seats),
-    bodyType: mapVehicleBodyType(raw.bodyType ?? raw.body_type ?? raw.type),
+    bodyType: mapVehicleBodyType(bodyTypeCode),
+    bodyTypeCode: toVehicleBodyTypeApi(bodyTypeCode),
   }
 }
 
@@ -245,26 +262,69 @@ function mapApplication(raw: unknown): RideDriverApplication | null {
 
   const record = raw as BackendRecord
   const data = isRecord(record.data) ? record.data : undefined
-  const vehicle = firstRecord(record.vehicle, record.car, record.auto, data?.vehicle)
+  const vehicle = firstRecord(
+    record.vehicleSnapshot,
+    record.vehicle_snapshot,
+    record.vehicle,
+    record.car,
+    record.auto,
+    data?.vehicleSnapshot,
+    data?.vehicle_snapshot,
+    data?.vehicle,
+  )
   const documents = firstRecord(record.documents, record.files, data?.documents)
+  const vehicleRecord = isRecord(vehicle) ? (vehicle as BackendRecord) : undefined
+  const vehicleBrandId = asOptionalNumber(vehicleRecord?.brandId ?? vehicleRecord?.brand_id)
+  const vehicleModelId = asOptionalNumber(vehicleRecord?.modelId ?? vehicleRecord?.model_id)
+  const vehicleColorId = asOptionalNumber(vehicleRecord?.colorId ?? vehicleRecord?.color_id)
+  const vehicleBodyType = vehicleRecord
+    ? toVehicleBodyTypeApi(
+        vehicleRecord.bodyTypeCode ??
+          vehicleRecord.body_type_code ??
+          vehicleRecord.bodyType ??
+          vehicleRecord.body_type,
+      )
+    : toVehicleBodyTypeApi(record.vehicleBodyType ?? record.vehicle_body_type)
 
   return {
     id: asString(record.id, ''),
     status: asString(record.status, ''),
     fullName: asString(record.fullName ?? record.full_name ?? record.name),
     phone: asString(record.phone ?? record.mobile),
-    city: asString(record.city),
+    city: asString(record.city ?? record.cityName ?? record.city_name ?? data?.city ?? data?.cityName ?? data?.city_name),
+    cityName: asString(record.cityName ?? record.city_name ?? data?.cityName ?? data?.city_name),
     cityId: asString(record.cityId ?? record.city_id ?? data?.cityId ?? data?.city_id),
     frequentRoutes: asString(record.frequentRoutes ?? record.frequent_routes),
-    vehicleBrand: asString(record.vehicleBrand ?? record.vehicle_brand ?? vehicle?.brand ?? vehicle?.make),
-    vehicleModel: asString(record.vehicleModel ?? record.vehicle_model ?? vehicle?.model),
-    vehicleYear: asString(record.vehicleYear ?? record.vehicle_year ?? vehicle?.year),
-    vehiclePlate: asString(record.vehiclePlate ?? record.vehicle_plate ?? vehicle?.plateNumber ?? vehicle?.plate),
-    vehicleColor: asString(record.vehicleColor ?? record.vehicle_color ?? vehicle?.color),
+    vehicleSnapshot: vehicleRecord ?? null,
+    vehicleBrandId,
+    vehicleBrand: asString(
+      record.vehicleBrand ??
+        record.vehicle_brand ??
+        vehicleRecord?.brandName ??
+        vehicleRecord?.brand ??
+        vehicleRecord?.make ??
+        (vehicleBrandId != null ? vehicleRecord?.brandName ?? vehicleRecord?.brand ?? vehicleRecord?.make : ''),
+    ),
+    vehicleModelId,
+    vehicleModel: asString(
+      record.vehicleModel ??
+        record.vehicle_model ??
+        vehicleRecord?.modelName ??
+        vehicleRecord?.model,
+    ),
+    vehicleYear: asString(record.vehicleYear ?? record.vehicle_year ?? vehicleRecord?.year),
+    vehiclePlate: asString(record.vehiclePlate ?? record.vehicle_plate ?? vehicleRecord?.plateNumber ?? vehicleRecord?.plate),
+    vehicleColorId,
+    vehicleColor: asString(
+      record.vehicleColor ??
+        record.vehicle_color ??
+        vehicleRecord?.colorName ??
+        vehicleRecord?.color,
+    ),
     vehicleSeats:
-      asString(record.vehicleSeats ?? record.vehicle_seats ?? vehicle?.seatsCount ?? vehicle?.seats) ||
-      String(asNumber(record.vehicleSeats ?? record.vehicle_seats ?? vehicle?.seatsCount ?? vehicle?.seats)),
-    vehicleBodyType: toVehicleBodyTypeApi(record.vehicleBodyType ?? record.vehicle_body_type ?? vehicle?.bodyType ?? vehicle?.body_type),
+      asString(record.vehicleSeats ?? record.vehicle_seats ?? vehicleRecord?.seatsCount ?? vehicleRecord?.seats) ||
+      String(asNumber(record.vehicleSeats ?? record.vehicle_seats ?? vehicleRecord?.seatsCount ?? vehicleRecord?.seats)),
+    vehicleBodyType,
     documents: mapApplicationDocumentsToDraft(documents),
     submittedAt: asString(record.submittedAt ?? record.submitted_at),
     moderatorComment: asString(
@@ -313,6 +373,21 @@ function mapProfile(raw: unknown): DriverProfile | null {
     application?.vehicle,
     data?.vehicle,
   )
+  const documents = mapApplicationDocumentsToDraft(
+    firstRecord(record.documents, record.files, driverProfile?.documents, application?.documents, data?.documents),
+  )
+  const city = asString(
+    customer?.city ??
+      record.city ??
+      record.cityName ??
+      record.city_name ??
+      driverProfile?.city ??
+      driverProfile?.cityName ??
+      driverProfile?.city_name ??
+      application?.city ??
+      application?.cityName ??
+      application?.city_name,
+  )
 
   return {
     id: asString(record.id ?? customer?.id ?? driverProfile?.id, ''),
@@ -334,12 +409,8 @@ function mapProfile(raw: unknown): DriverProfile | null {
         driverProfile?.phone ??
         application?.phone,
     ),
-    city: asString(
-      customer?.city ??
-        record.city ??
-        driverProfile?.city ??
-        application?.city,
-    ),
+    city,
+    cityName: city || undefined,
     rating: asNumber(
       driverProfile?.rating ?? record.rating ?? record.ratingAvg ?? record.rating_avg ?? customer?.rating,
       5,
@@ -363,6 +434,7 @@ function mapProfile(raw: unknown): DriverProfile | null {
         application?.status,
     ),
     vehicle: mapVehicle(vehicle),
+    documents,
   }
 }
 
@@ -599,6 +671,9 @@ function mapDriverApplicationDraft(application: RideDriverApplication | null): D
     application?.documents && application.documents.length > 0
       ? application.documents
       : rawDocuments
+  const vehicleSnapshot = isRecord(application?.vehicleSnapshot)
+    ? (application?.vehicleSnapshot as BackendRecord)
+    : undefined
 
   return {
     step: 1,
@@ -607,11 +682,16 @@ function mapDriverApplicationDraft(application: RideDriverApplication | null): D
     city: application?.city ?? '',
     cityId: application?.cityId ?? '',
     frequentRoutes: application?.frequentRoutes ?? '',
-    vehicleBrand: application?.vehicleBrand ?? '',
-    vehicleModel: application?.vehicleModel ?? '',
+    vehicleBrandId: application?.vehicleBrandId ?? asOptionalNumber(vehicleSnapshot?.brandId ?? vehicleSnapshot?.brand_id),
+    vehicleBrand: application?.vehicleBrand ?? asString(vehicleSnapshot?.brandName ?? vehicleSnapshot?.brand ?? vehicleSnapshot?.make),
+    vehicleModelId: application?.vehicleModelId ?? asOptionalNumber(vehicleSnapshot?.modelId ?? vehicleSnapshot?.model_id),
+    vehicleModel: application?.vehicleModel ?? asString(vehicleSnapshot?.modelName ?? vehicleSnapshot?.model),
     vehicleYear: application?.vehicleYear ?? '',
-    vehiclePlate: application?.vehiclePlate ?? '',
-    vehicleColor: application?.vehicleColor ?? '',
+    vehiclePlate: normalizeKzPlateInput(
+      application?.vehiclePlate ?? asString(vehicleSnapshot?.plateNumber ?? vehicleSnapshot?.plate) ?? '',
+    ),
+    vehicleColorId: application?.vehicleColorId ?? asOptionalNumber(vehicleSnapshot?.colorId ?? vehicleSnapshot?.color_id),
+    vehicleColor: application?.vehicleColor ?? asString(vehicleSnapshot?.colorName ?? vehicleSnapshot?.color),
     vehicleSeats:
       asString(application?.vehicleSeats) ||
       String(typeof application?.vehicleSeats === 'number' ? application.vehicleSeats : ''),
@@ -629,24 +709,42 @@ function buildApplicationPayload(
   const documents = buildApplicationDocumentsPayload(
     (application as unknown as { documents?: unknown }).documents,
   )
+  const bodyTypeCode = toVehicleBodyTypeApi(application.vehicleBodyType)
 
   if (!cityId) {
     throw new Error('Для отправки заявки на проверку нужен cityId.')
+  }
+
+  const vehicleBrandId = typeof application.vehicleBrandId === 'number' ? application.vehicleBrandId : undefined
+  const vehicleModelId = typeof application.vehicleModelId === 'number' ? application.vehicleModelId : undefined
+  const vehicleColorId = typeof application.vehicleColorId === 'number' ? application.vehicleColorId : undefined
+  const vehicleBrand = application.vehicleBrand.trim()
+  const vehicleModel = application.vehicleModel.trim()
+  const vehicleColor = application.vehicleColor.trim()
+  const vehicleYear = Number(application.vehicleYear.trim())
+  const vehicleSeatsCount = Number(application.vehicleSeats.trim())
+  const vehiclePlate = normalizeKzPlateInput(application.vehiclePlate)
+  const plateValidationError = getKzPlateValidationError(vehiclePlate)
+
+  if (plateValidationError) {
+    throw new Error(plateValidationError)
+  }
+
+  const vehicle: NonNullable<DriverApplicationPayload['vehicle']> = {
+    ...(vehicleBrandId != null ? { brandId: vehicleBrandId } : vehicleBrand ? { brand: vehicleBrand } : {}),
+    ...(vehicleModelId != null ? { modelId: vehicleModelId } : vehicleModel ? { model: vehicleModel } : {}),
+    plateNumber: vehiclePlate,
+    ...(vehicleColorId != null ? { colorId: vehicleColorId } : vehicleColor ? { color: vehicleColor } : {}),
+    bodyTypeCode,
+    ...(Number.isFinite(vehicleYear) ? { year: vehicleYear } : {}),
+    ...(Number.isFinite(vehicleSeatsCount) ? { seatsCount: vehicleSeatsCount } : {}),
   }
 
   return {
     fullName: application.fullName,
     phone: application.phone,
     cityId,
-    vehicle: {
-      brand: application.vehicleBrand,
-      model: application.vehicleModel,
-      year: application.vehicleYear,
-      plateNumber: application.vehiclePlate,
-      color: application.vehicleColor,
-      seatsCount: application.vehicleSeats,
-      bodyType: toVehicleBodyTypeApi(application.vehicleBodyType),
-    },
+    vehicle,
     ...(documents ? { documents } : {}),
   }
 }
@@ -681,12 +779,15 @@ export function mapDriverMeToViewModel(raw: unknown): DriverMeViewModel {
   const walletRaw = firstRecord(record.wallet, record.driverWallet, data?.wallet)
   const primaryVehicle = mapVehicle(firstRecord(record.vehicle, data?.vehicle)) ?? profile?.vehicle ?? null
 
+  const applicationDocuments = mapApplicationDocumentsToDraft(application?.documents ?? undefined)
+
   return {
     profile: profile
       ? ({
           ...profile,
           verificationStatus,
           isOnline,
+          documents: profile.documents ?? applicationDocuments,
         } satisfies DriverProfile)
       : null,
     application: mapDriverApplicationDraft(application),
@@ -704,7 +805,7 @@ export function mapDriverMeToViewModel(raw: unknown): DriverMeViewModel {
           blockedReason: asString(walletRaw.blockedReason ?? walletRaw.rejectionReason),
         }
       : undefined,
-    documents: application?.documents ?? undefined,
+    documents: profile?.documents ?? applicationDocuments ?? undefined,
     verificationStatus,
     isOnline,
     raw,
@@ -733,6 +834,22 @@ export async function getRideCities() {
   return (Array.isArray(rows) ? rows : [])
     .map(mapRideCity)
     .filter((city): city is RideCity => Boolean(city))
+}
+
+export async function getRideVehicleBrands() {
+  return backendGet<RideVehicleBrandOption[]>('/ride/vehicle-catalog/brands')
+}
+
+export async function getRideVehicleModels(brandId: number | string) {
+  return backendGet<RideVehicleModelOption[]>(`/ride/vehicle-catalog/brands/${String(brandId)}/models`)
+}
+
+export async function getRideVehicleColors() {
+  return backendGet<RideVehicleColorOption[]>('/ride/vehicle-catalog/colors')
+}
+
+export async function getRideVehicleBodyTypes() {
+  return backendGet<RideVehicleBodyTypeOption[]>('/ride/vehicle-catalog/body-types')
 }
 
 export async function uploadDriverDocument(type: RideDriverApplicationDocument['type'], file: File) {

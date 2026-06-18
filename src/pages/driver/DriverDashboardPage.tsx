@@ -8,7 +8,7 @@ import {
 import type { LucideIcon } from 'lucide-react'
 
 import { cn } from '../../lib/cn'
-import { formatKzt, formatRoute } from '../../lib/format'
+import { formatKzPlateNumber, formatKzt, formatRideOrderStatusLabel, formatRoute } from '../../lib/format'
 import { useAppActions, useAppState } from '../../providers/AppStateProvider'
 import { PageCard } from '../../shared/ui/PageCard'
 import {
@@ -313,7 +313,7 @@ export default function DriverDashboardPage() {
             {driverProfile?.vehicle?.model || driverApplicationDraft.vehicleModel}
           </p>
           <p className="mt-1 text-sm text-muted">
-            {driverProfile?.vehicle?.plate || driverApplicationDraft.vehiclePlate}
+            {formatKzPlateNumber(driverProfile?.vehicle?.plate || driverApplicationDraft.vehiclePlate)}
           </p>
         </div>
         <div className="rounded-2xl bg-surface-soft p-4">
@@ -346,7 +346,7 @@ export default function DriverDashboardPage() {
           ? 'Доступ к заказам активен'
           : accessState === 'APPROVED_LOW_BALANCE'
             ? 'Доступ к заказам будет открыт после пополнения баланса'
-            : 'Кошелек заблокирован'}
+            : 'Кошелёк заблокирован'}
       </div>
 
       {accessState === 'APPROVED_LOW_BALANCE' ? (
@@ -372,7 +372,7 @@ export default function DriverDashboardPage() {
               Режим
             </p>
             <p className="mt-1 text-sm font-semibold text-ink">
-              {driverProfile?.isOnline ? 'Online' : 'Offline'}
+              {driverProfile?.isOnline ? 'Онлайн' : 'Офлайн'}
             </p>
           </div>
           <button
@@ -395,7 +395,7 @@ export default function DriverDashboardPage() {
             ? 'Пополнить баланс'
             : driverProfile?.isOnline
               ? 'Онлайн'
-              : 'Оффлайн'}
+              : 'Офлайн'}
           </button>
         </div>
       </div>
@@ -445,7 +445,7 @@ export default function DriverDashboardPage() {
                 {formatRoute(driverActiveOrder.from, driverActiveOrder.to)}
               </p>
               <p className="mt-1 text-sm text-muted">
-                {driverActiveOrder.category === 'ride' ? 'Поездка' : 'Посылка'} · {driverActiveOrder.status}
+                {driverActiveOrder.category === 'ride' ? 'Поездка' : 'Посылка'} · {formatRideOrderStatusLabel(driverActiveOrder.status)}
               </p>
             </div>
             <span className="rounded-full bg-accent/10 px-3 py-1 text-xs font-semibold text-accent">

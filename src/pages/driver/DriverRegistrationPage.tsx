@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useState, type InputHTMLAttributes, type ReactNode } from 'react'
 import {
   ArrowLeft,
   ArrowRight,
@@ -11,18 +11,28 @@ import {
 } from 'lucide-react'
 
 import { cn } from '../../lib/cn'
+import { formatKzPlateNumber, getKzPlateValidationError, normalizeKzPlateInput } from '../../lib/format'
 import { useAppActions, useAppState } from '../../providers/AppStateProvider'
 import { PageCard } from '../../shared/ui/PageCard'
 import { BackendAuthError } from '../../shared/api/backend'
 import {
-  DRIVER_VEHICLE_BODY_TYPES,
   type DriverApplicationDocument,
 } from '../../types/domain'
 import {
+  getRideVehicleBodyTypes,
+  getRideVehicleBrands,
+  getRideVehicleColors,
+  getRideVehicleModels,
   getRideCities,
   type RideCity,
   uploadDriverDocument,
 } from '../../features/driver/api/driver.api'
+import type {
+  RideVehicleBodyTypeOption,
+  RideVehicleBrandOption,
+  RideVehicleColorOption,
+  RideVehicleModelOption,
+} from '../../features/driver/api/driver.types'
 import { getDriverVerificationStatusLabel } from '../../features/driver/driver-status'
 
 const requiredDocumentDefinitions: Array<{
@@ -47,6 +57,7 @@ const optionalDocumentDefinitions: Array<{
 ]
 
 const documentDefinitions = [...requiredDocumentDefinitions, ...optionalDocumentDefinitions]
+const allowedVehicleSeats = [2, 3, 4, 5, 6, 7, 8, 12, 16, 20]
 
 const imageAccept = 'image/*'
 const fileAccept = 'image/*,application/pdf'
@@ -81,12 +92,24 @@ function Field({
   onChange,
   placeholder,
   type = 'text',
+  helperText,
+  error,
+  inputMode,
+  autoCapitalize,
+  maxLength,
+  onBlur,
 }: {
   label: string
   value: string
   onChange: (value: string) => void
   placeholder?: string
   type?: string
+  helperText?: string
+  error?: string | null
+  inputMode?: InputHTMLAttributes<HTMLInputElement>['inputMode']
+  autoCapitalize?: InputHTMLAttributes<HTMLInputElement>['autoCapitalize']
+  maxLength?: number
+  onBlur?: () => void
 }) {
   return (
     <label className="block">
@@ -95,11 +118,54 @@ function Field({
         type={type}
         value={value}
         onChange={(event) => onChange(event.target.value)}
+        onBlur={onBlur}
         placeholder={placeholder}
-        className="w-full rounded-2xl border border-border bg-surface-soft px-4 py-3 text-sm outline-none transition focus:border-accent"
+        inputMode={inputMode}
+        autoCapitalize={autoCapitalize}
+        maxLength={maxLength}
+        className={cn(
+          'w-full rounded-2xl border bg-surface-soft px-4 py-3 text-sm outline-none transition focus:border-accent',
+          error ? 'border-rose-300 focus:border-rose-500' : 'border-border',
+        )}
       />
+      {error ? <p className="mt-1 text-xs text-rose-600">{error}</p> : helperText ? <p className="mt-1 text-xs text-muted">{helperText}</p> : null}
     </label>
   )
+}
+
+function SelectField({
+  label,
+  value,
+  onChange,
+  placeholder,
+  disabled,
+  children,
+}: {
+  label: string
+  value: string
+  onChange: (value: string) => void
+  placeholder?: string
+  disabled?: boolean
+  children: ReactNode
+}) {
+  return (
+    <label className="block">
+      <span className="mb-1 block text-sm font-medium text-ink">{label}</span>
+      <select
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        disabled={disabled}
+        className="w-full rounded-2xl border border-border bg-surface-soft px-4 py-3 text-sm outline-none transition focus:border-accent disabled:cursor-not-allowed disabled:opacity-60"
+      >
+        <option value="">{placeholder}</option>
+        {children}
+      </select>
+    </label>
+  )
+}
+
+function normalizeVehicleBodyTypeCode(value?: string | null) {
+  return value?.trim().toUpperCase() ?? ''
 }
 
 export default function DriverRegistrationPage() {
@@ -119,6 +185,16 @@ export default function DriverRegistrationPage() {
   const [uploadingDocumentType, setUploadingDocumentType] = useState<DriverApplicationDocument['type'] | null>(null)
   const [documentUploadError, setDocumentUploadError] = useState<string | null>(null)
   const [documentValidationAttempted, setDocumentValidationAttempted] = useState(false)
+  const [vehicleBrands, setVehicleBrands] = useState<RideVehicleBrandOption[]>([])
+  const [vehicleModels, setVehicleModels] = useState<RideVehicleModelOption[]>([])
+  const [vehicleColors, setVehicleColors] = useState<RideVehicleColorOption[]>([])
+  const [vehicleBodyTypes, setVehicleBodyTypes] = useState<RideVehicleBodyTypeOption[]>([])
+  const [vehicleCatalogLoading, setVehicleCatalogLoading] = useState(true)
+  const [vehicleCatalogError, setVehicleCatalogError] = useState<string | null>(null)
+  const [vehicleModelsLoading, setVehicleModelsLoading] = useState(false)
+  const [vehicleModelsError, setVehicleModelsError] = useState<string | null>(null)
+  const [vehiclePlateTouched, setVehiclePlateTouched] = useState(false)
+  const currentVehicleYear = new Date().getFullYear()
 
   useEffect(() => {
     let alive = true
@@ -143,10 +219,137 @@ export default function DriverRegistrationPage() {
     }
   }, [])
 
+  const loadVehicleCatalog = useCallback(async () => {
+    setVehicleCatalogLoading(true)
+    setVehicleCatalogError(null)
+
+    try {
+      const [brands, colors, bodyTypes] = await Promise.all([
+        getRideVehicleBrands(),
+        getRideVehicleColors(),
+        getRideVehicleBodyTypes(),
+      ])
+
+      setVehicleBrands(brands)
+      setVehicleColors(colors)
+      setVehicleBodyTypes(bodyTypes)
+    } catch (error) {
+      setVehicleBrands([])
+      setVehicleColors([])
+      setVehicleBodyTypes([])
+      setVehicleCatalogError(error instanceof Error ? error.message : 'Не удалось загрузить справочники авто')
+    } finally {
+      setVehicleCatalogLoading(false)
+    }
+  }, [])
+
+  const loadVehicleModels = useCallback(async (brandId: number) => {
+    setVehicleModelsLoading(true)
+    setVehicleModelsError(null)
+
+    try {
+      const models = await getRideVehicleModels(brandId)
+      setVehicleModels(models)
+    } catch (error) {
+      setVehicleModels([])
+      setVehicleModelsError(error instanceof Error ? error.message : 'Не удалось загрузить модели марки')
+    } finally {
+      setVehicleModelsLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    let alive = true
+    const timer = window.setTimeout(() => {
+      if (!alive) return
+      void loadVehicleCatalog()
+    }, 0)
+
+    return () => {
+      alive = false
+      window.clearTimeout(timer)
+    }
+  }, [loadVehicleCatalog])
+
+  useEffect(() => {
+    const brandId = driverApplicationDraft.vehicleBrandId
+    let alive = true
+    const timer = window.setTimeout(() => {
+      if (!alive) return
+
+      if (brandId == null) {
+        setVehicleModels([])
+        setVehicleModelsError(null)
+        setVehicleModelsLoading(false)
+        return
+      }
+
+      setVehicleModelsLoading(true)
+      setVehicleModelsError(null)
+
+      void getRideVehicleModels(brandId)
+        .then((models) => {
+          if (!alive) return
+          setVehicleModels(models)
+        })
+        .catch((error) => {
+          if (!alive) return
+          setVehicleModels([])
+          setVehicleModelsError(error instanceof Error ? error.message : 'Не удалось загрузить модели марки')
+        })
+        .finally(() => {
+          if (!alive) return
+          setVehicleModelsLoading(false)
+        })
+    }, 0)
+
+    return () => {
+      alive = false
+      window.clearTimeout(timer)
+    }
+  }, [driverApplicationDraft.vehicleBrandId])
+
   const selectedRideCity = useMemo(
     () => rideCities.find((city) => String(city.id) === driverApplicationDraft.cityId) ?? null,
     [driverApplicationDraft.cityId, rideCities],
   )
+
+  const selectedVehicleBrand = useMemo(
+    () => vehicleBrands.find((brand) => brand.id === driverApplicationDraft.vehicleBrandId) ?? null,
+    [driverApplicationDraft.vehicleBrandId, vehicleBrands],
+  )
+
+  const selectedVehicleModel = useMemo(
+    () => vehicleModels.find((model) => model.id === driverApplicationDraft.vehicleModelId) ?? null,
+    [driverApplicationDraft.vehicleModelId, vehicleModels],
+  )
+
+  const vehicleCatalogReady = Boolean(
+    !vehicleCatalogLoading &&
+      !vehicleCatalogError &&
+      vehicleBrands.length > 0 &&
+      vehicleColors.length > 0 &&
+      vehicleBodyTypes.length > 0,
+  )
+
+  const vehicleBrandSelected = Boolean(driverApplicationDraft.vehicleBrandId ?? driverApplicationDraft.vehicleBrand.trim())
+  const vehicleModelSelected = Boolean(driverApplicationDraft.vehicleModelId ?? driverApplicationDraft.vehicleModel.trim())
+  const vehicleColorSelected = Boolean(driverApplicationDraft.vehicleColorId ?? driverApplicationDraft.vehicleColor.trim())
+  const vehiclePlateValue = normalizeKzPlateInput(driverApplicationDraft.vehiclePlate)
+  const vehicleYearValue = Number(driverApplicationDraft.vehicleYear)
+  const vehicleSeatsValue = Number(driverApplicationDraft.vehicleSeats)
+  const vehicleYearValid =
+    driverApplicationDraft.vehicleYear.trim().length > 0 &&
+    Number.isInteger(vehicleYearValue) &&
+    vehicleYearValue >= 1990 &&
+    vehicleYearValue <= currentVehicleYear + 1
+  const vehicleSeatsValid =
+    driverApplicationDraft.vehicleSeats.trim().length > 0 &&
+    Number.isInteger(vehicleSeatsValue) &&
+    allowedVehicleSeats.includes(vehicleSeatsValue)
+  const vehiclePlateValid = Boolean(vehiclePlateValue) && getKzPlateValidationError(vehiclePlateValue) === null
+  const vehiclePlateValidationError = vehiclePlateTouched ? getKzPlateValidationError(vehiclePlateValue) : null
+  const vehicleBodyTypeSelected = Boolean(normalizeVehicleBodyTypeCode(driverApplicationDraft.vehicleBodyType))
 
   const driverStatusLabel = getDriverVerificationStatusLabel(driverVerificationStatus)
 
@@ -181,24 +384,27 @@ export default function DriverRegistrationPage() {
     !driverApplicationDraft.fullName.trim() && 'ФИО',
     !driverApplicationDraft.phone.trim() && 'Телефон',
     !driverApplicationDraft.cityId?.trim() && 'Город',
-    !driverApplicationDraft.vehicleBrand.trim() && 'Марка',
-    !driverApplicationDraft.vehicleModel.trim() && 'Модель',
-    !driverApplicationDraft.vehicleYear.trim() && 'Год',
-    !driverApplicationDraft.vehiclePlate.trim() && 'Госномер',
-    !driverApplicationDraft.vehicleColor.trim() && 'Цвет',
-    !driverApplicationDraft.vehicleSeats.trim() && 'Мест',
+    !vehicleBrandSelected && 'Марка',
+    !vehicleModelSelected && 'Модель',
+    !vehicleYearValid && 'Год',
+    !vehiclePlateValid && 'Госномер',
+    !vehicleColorSelected && 'Цвет',
+    !vehicleSeatsValid && 'Мест',
+    !vehicleBodyTypeSelected && 'Тип кузова',
   ].filter((label): label is string => Boolean(label))
 
   const isStep5Ready = Boolean(
     driverApplicationDraft.fullName.trim() &&
       driverApplicationDraft.phone.trim() &&
       driverApplicationDraft.cityId?.trim() &&
-      driverApplicationDraft.vehicleBrand.trim() &&
-      driverApplicationDraft.vehicleModel.trim() &&
-      driverApplicationDraft.vehicleYear.trim() &&
-      driverApplicationDraft.vehiclePlate.trim() &&
-      driverApplicationDraft.vehicleColor.trim() &&
-      driverApplicationDraft.vehicleSeats.trim() &&
+      vehicleBrandSelected &&
+      vehicleModelSelected &&
+      vehicleYearValid &&
+      vehiclePlateValid &&
+      vehicleColorSelected &&
+      vehicleSeatsValid &&
+      vehicleBodyTypeSelected &&
+      vehicleCatalogReady &&
       allRequiredDocsReady,
   )
 
@@ -208,13 +414,13 @@ export default function DriverRegistrationPage() {
 
   const summaryVehicle = useMemo(() => {
     const pieces = [
-      driverApplicationDraft.vehicleBrand,
-      driverApplicationDraft.vehicleModel,
+      selectedVehicleBrand?.name || driverApplicationDraft.vehicleBrand,
+      selectedVehicleModel?.name || driverApplicationDraft.vehicleModel,
       driverApplicationDraft.vehicleYear,
     ].filter(Boolean)
 
     return pieces.join(' ')
-  }, [driverApplicationDraft])
+  }, [driverApplicationDraft.vehicleBrand, driverApplicationDraft.vehicleModel, driverApplicationDraft.vehicleYear, selectedVehicleBrand?.name, selectedVehicleModel?.name])
 
   const step = driverRegistrationStep
 
@@ -267,6 +473,14 @@ export default function DriverRegistrationPage() {
     }
   }
 
+  const yearOptions = useMemo(() => {
+    const years: number[] = []
+    for (let year = currentVehicleYear + 1; year >= 1990; year -= 1) {
+      years.push(year)
+    }
+    return years
+  }, [currentVehicleYear])
+
   const renderFooter = (canContinue = true) => (
     <div className="border-t border-border pt-3">
       <div className="flex gap-2">
@@ -286,6 +500,11 @@ export default function DriverRegistrationPage() {
         <button
           type="button"
           onClick={() => {
+            if (step === 3 && !vehiclePlateValid) {
+              setVehiclePlateTouched(true)
+              return
+            }
+
             if (step === 4 && !allRequiredDocsReady) {
               setDocumentValidationAttempted(true)
               return
@@ -601,78 +820,188 @@ export default function DriverRegistrationPage() {
   if (step === 3) {
     return renderWizardLayout(
       <div className="grid gap-3">
-        <Field
-          label="Марка"
-          value={driverApplicationDraft.vehicleBrand}
-          onChange={(value) => actions.updateDriverApplicationField('vehicleBrand', value)}
-          placeholder="Toyota"
-        />
-
-        <Field
-          label="Модель"
-          value={driverApplicationDraft.vehicleModel}
-          onChange={(value) => actions.updateDriverApplicationField('vehicleModel', value)}
-          placeholder="Camry"
-        />
+        {vehicleCatalogLoading ? (
+          <div className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
+            Загружаем справочники авто...
+          </div>
+        ) : vehicleCatalogError ? (
+          <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+            <p>Не удалось загрузить справочники авто</p>
+            <button
+              type="button"
+              onClick={() => {
+                void loadVehicleCatalog()
+              }}
+              className="mt-3 rounded-2xl border border-rose-200 bg-white px-4 py-2 text-sm font-semibold text-rose-700"
+            >
+              Обновить
+            </button>
+          </div>
+        ) : null}
 
         <div className="grid gap-3 sm:[grid-template-columns:repeat(2,minmax(0,1fr))]">
-          <Field
+          <SelectField
+            label="Марка"
+            value={driverApplicationDraft.vehicleBrandId?.toString() ?? ''}
+            onChange={(value) => {
+              const brandId = value ? Number(value) : undefined
+              const brand = vehicleBrands.find((item) => item.id === brandId) ?? null
+
+              actions.updateDriverApplicationField('vehicleBrandId', brandId)
+              actions.updateDriverApplicationField('vehicleBrand', brand?.name ?? '')
+              actions.updateDriverApplicationField('vehicleModelId', undefined)
+              actions.updateDriverApplicationField('vehicleModel', '')
+              setVehicleModels([])
+              setVehicleModelsError(null)
+            }}
+            placeholder="Выберите марку"
+            disabled={vehicleCatalogLoading || Boolean(vehicleCatalogError)}
+          >
+            {vehicleBrands.map((brand) => (
+              <option key={brand.id} value={brand.id}>
+                {brand.name}
+              </option>
+            ))}
+          </SelectField>
+
+          <SelectField
+            label="Модель"
+            value={driverApplicationDraft.vehicleModelId?.toString() ?? ''}
+            onChange={(value) => {
+              const modelId = value ? Number(value) : undefined
+              const model = vehicleModels.find((item) => item.id === modelId) ?? null
+
+              actions.updateDriverApplicationField('vehicleModelId', modelId)
+              actions.updateDriverApplicationField('vehicleModel', model?.name ?? '')
+            }}
+            placeholder={
+              driverApplicationDraft.vehicleBrandId
+                ? vehicleModelsLoading
+                  ? 'Загрузка моделей...'
+                  : 'Выберите модель'
+                : 'Сначала выберите марку'
+            }
+            disabled={!driverApplicationDraft.vehicleBrandId || vehicleModelsLoading || Boolean(vehicleCatalogError)}
+          >
+            {vehicleModels.map((model) => (
+              <option key={model.id} value={model.id}>
+                {model.name}
+              </option>
+            ))}
+          </SelectField>
+        </div>
+
+        {vehicleModelsError ? (
+          <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+            <p>Не удалось загрузить модели для выбранной марки</p>
+            <button
+              type="button"
+              onClick={() => {
+                if (driverApplicationDraft.vehicleBrandId != null) {
+                  void loadVehicleModels(driverApplicationDraft.vehicleBrandId)
+                }
+              }}
+              className="mt-3 rounded-2xl border border-rose-200 bg-white px-4 py-2 text-sm font-semibold text-rose-700"
+            >
+              Обновить
+            </button>
+          </div>
+        ) : null}
+
+        <div className="grid gap-3 sm:[grid-template-columns:repeat(2,minmax(0,1fr))]">
+          <SelectField
             label="Год"
             value={driverApplicationDraft.vehicleYear}
             onChange={(value) => actions.updateDriverApplicationField('vehicleYear', value)}
-            placeholder="2020"
-          />
+            placeholder="Выберите год"
+          >
+            {yearOptions.map((year) => (
+              <option key={year} value={String(year)}>
+                {year}
+              </option>
+            ))}
+          </SelectField>
           <Field
             label="Госномер"
             value={driverApplicationDraft.vehiclePlate}
-            onChange={(value) => actions.updateDriverApplicationField('vehiclePlate', value)}
-            placeholder="778 AAB 02"
+            onChange={(value) => actions.updateDriverApplicationField('vehiclePlate', normalizeKzPlateInput(value))}
+            onBlur={() => setVehiclePlateTouched(true)}
+            placeholder="Например 765 ABL 13"
+            helperText={vehiclePlateValidationError ? undefined : 'Формат: 123 ABC 02'}
+            error={vehiclePlateValidationError}
+            inputMode="text"
+            autoCapitalize="characters"
+            maxLength={8}
           />
         </div>
 
         <div className="grid gap-3 sm:[grid-template-columns:repeat(2,minmax(0,1fr))]">
-          <Field
+          <SelectField
             label="Цвет"
-            value={driverApplicationDraft.vehicleColor}
-            onChange={(value) => actions.updateDriverApplicationField('vehicleColor', value)}
-            placeholder="Белый"
-          />
-          <Field
+            value={driverApplicationDraft.vehicleColorId?.toString() ?? ''}
+            onChange={(value) => {
+              const colorId = value ? Number(value) : undefined
+              const color = vehicleColors.find((item) => item.id === colorId) ?? null
+
+              actions.updateDriverApplicationField('vehicleColorId', colorId)
+              actions.updateDriverApplicationField('vehicleColor', color?.name ?? '')
+            }}
+            placeholder="Выберите цвет"
+            disabled={vehicleCatalogLoading || Boolean(vehicleCatalogError)}
+          >
+            {vehicleColors.map((color) => (
+              <option key={color.id} value={color.id}>
+                {color.name}
+              </option>
+            ))}
+          </SelectField>
+
+          <SelectField
             label="Мест"
             value={driverApplicationDraft.vehicleSeats}
             onChange={(value) => actions.updateDriverApplicationField('vehicleSeats', value)}
-            placeholder="4"
-          />
+            placeholder="Выберите количество мест"
+          >
+            {allowedVehicleSeats.map((seats) => (
+              <option key={seats} value={String(seats)}>
+                {seats}
+              </option>
+            ))}
+          </SelectField>
         </div>
 
-        <label className="block">
-          <span className="mb-1 block text-sm font-medium text-ink">Тип кузова</span>
+        <div className="space-y-2">
+          <span className="block text-sm font-medium text-ink">Тип кузова</span>
           <div className="flex flex-wrap gap-2">
-            {DRIVER_VEHICLE_BODY_TYPES.map((bodyType) => (
-              <button
-                key={bodyType}
-                type="button"
-                onClick={() => actions.updateDriverApplicationField('vehicleBodyType', bodyType)}
-                className={cn(
-                  'min-w-[110px] flex-1 rounded-2xl border px-3 py-3 text-sm font-semibold capitalize',
-                  driverApplicationDraft.vehicleBodyType === bodyType
-                    ? 'border-accent bg-accent/8 text-accent'
-                    : 'border-border bg-surface-soft text-ink',
-                )}
-              >
-                {bodyType}
-              </button>
-            ))}
+            {vehicleBodyTypes.map((bodyType) => {
+              const bodyTypeValue = normalizeVehicleBodyTypeCode(bodyType.code).toLowerCase() as typeof driverApplicationDraft.vehicleBodyType
+              const isSelected = driverApplicationDraft.vehicleBodyType === bodyTypeValue
+
+              return (
+                <button
+                  key={bodyType.code}
+                  type="button"
+                  onClick={() => actions.updateDriverApplicationField('vehicleBodyType', bodyTypeValue)}
+                  className={cn(
+                    'min-w-[110px] flex-1 rounded-2xl border px-3 py-3 text-sm font-semibold',
+                    isSelected ? 'border-accent bg-accent/8 text-accent' : 'border-border bg-surface-soft text-ink',
+                  )}
+                >
+                  {bodyType.nameRu}
+                </button>
+              )
+            })}
           </div>
-        </label>
+        </div>
       </div>,
       Boolean(
-        driverApplicationDraft.vehicleBrand.trim() &&
-          driverApplicationDraft.vehicleModel.trim() &&
-          driverApplicationDraft.vehicleYear.trim() &&
-          driverApplicationDraft.vehiclePlate.trim() &&
-          driverApplicationDraft.vehicleColor.trim() &&
-          driverApplicationDraft.vehicleSeats.trim(),
+        vehicleCatalogReady &&
+          vehicleBrandSelected &&
+          vehicleModelSelected &&
+          vehicleYearValid &&
+          vehicleColorSelected &&
+          vehicleSeatsValid &&
+          vehicleBodyTypeSelected,
       ),
       {
         title: 'Автомобиль',
@@ -786,6 +1115,13 @@ export default function DriverRegistrationPage() {
       </div>
     ) : canSubmitApplication ? (
       <div className="space-y-3">
+        {!vehicleCatalogReady ? (
+          <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
+            <p className="font-semibold">Не удалось загрузить справочники авто</p>
+            <p className="mt-1">Обновите страницу или вернитесь к шагу "Автомобиль" и попробуйте ещё раз.</p>
+          </div>
+        ) : null}
+
         <div className="rounded-2xl bg-surface-soft p-4 text-sm text-ink">
           <p className="font-semibold">{driverApplicationDraft.fullName || 'ФИО'}</p>
           <p className="mt-1 text-muted">{driverApplicationDraft.phone || 'Телефон'}</p>
@@ -798,7 +1134,7 @@ export default function DriverRegistrationPage() {
             {summaryVehicle || 'Марка, модель, год'}
           </p>
           <p className="mt-1 text-muted">
-            {driverApplicationDraft.vehiclePlate || 'Госномер'}
+            {formatKzPlateNumber(driverApplicationDraft.vehiclePlate) || 'Госномер'}
           </p>
         </div>
 
@@ -841,10 +1177,10 @@ export default function DriverRegistrationPage() {
         </button>
       </div>
     ),
-    canSubmitApplication,
+    canSubmitApplication && vehicleCatalogReady,
     {
       title: 'Проверка и отправка',
       description: 'Проверяем заполненные данные перед отправкой модератору.',
     },
   )
-}
+  }

@@ -10,16 +10,30 @@ import type {
   RideOrderStatus,
 } from '../../../types/domain'
 
+export type {
+  RideVehicleBodyTypeOption,
+  RideVehicleBrandOption,
+  RideVehicleColorOption,
+  RideVehicleModelOption,
+} from '../../../types/domain'
+
 export type RideDriverVehicle = {
+  brandId?: number
+  modelId?: number
+  colorId?: number
   brand?: string
+  brandName?: string
   model?: string
+  modelName?: string
   year?: string
   plate?: string
   plateNumber?: string
   color?: string
+  colorName?: string
   seats?: string | number
   seatsCount?: number
   bodyType?: DriverVehicleBodyType | DriverVehicleBodyTypeApi
+  bodyTypeCode?: DriverVehicleBodyTypeApi
 }
 
 export type RideDriverApplicationDocument = {
@@ -41,12 +55,17 @@ export type RideDriverApplication = {
   fullName?: string
   phone?: string
   city?: string
+  cityName?: string
   cityId?: string
   frequentRoutes?: string
+  vehicleSnapshot?: Record<string, unknown> | null
+  vehicleBrandId?: number
   vehicleBrand?: string
+  vehicleModelId?: number
   vehicleModel?: string
   vehicleYear?: string
   vehiclePlate?: string
+  vehicleColorId?: number
   vehicleColor?: string
   vehicleSeats?: string | number
   vehicleBodyType?: DriverVehicleBodyTypeApi
@@ -100,6 +119,7 @@ export type RideDriverProfile = {
   fullName?: string
   phone?: string
   city?: string
+  cityName?: string
   rating?: number
   tripsCount?: number
   balance?: number
@@ -107,6 +127,7 @@ export type RideDriverProfile = {
   isOnline?: boolean
   verificationStatus?: string
   vehicle?: RideDriverVehicle | null
+  documents?: RideDriverApplicationDocument[] | null
   raw?: unknown
 }
 
@@ -223,22 +244,29 @@ export type DriverApplicationPayload = {
   cityId?: string
   frequentRoutes?: string
   vehicleBrand?: string
+  vehicleBrandId?: number
   vehicleModel?: string
-  vehicleYear?: string
+  vehicleModelId?: number
+  vehicleYear?: number
   vehiclePlate?: string
   vehiclePlateNumber?: string
   vehicleColor?: string
+  vehicleColorId?: number
   vehicleSeats?: string
-  vehicleSeatsCount?: string | number
+  vehicleSeatsCount?: number
   vehicleBodyType?: string
   documents?: RideDriverApplicationDocument[]
   vehicle?: {
+    brandId?: number
+    modelId?: number
+    colorId?: number
     brand?: string
     model?: string
-    year?: string
+    year?: number
     plateNumber?: string
     color?: string
-    seatsCount?: string | number
+    seatsCount?: number
+    bodyTypeCode?: DriverVehicleBodyTypeApi
     bodyType?: DriverVehicleBodyTypeApi
   }
 }
