@@ -4,6 +4,7 @@ import type {
   DriverApplicationDocument,
   DriverActiveOrder,
   DriverApplicationDraft,
+  DriverApplicationHistoryItem,
   DriverCounterOffer,
   DriverFeedOrder,
   DriverProfile,
@@ -57,6 +58,10 @@ function asOptionalNumber(value: unknown) {
 
 function firstRecord(...values: unknown[]) {
   return values.find(isRecord) as BackendRecord | undefined
+}
+
+function firstArray(...values: unknown[]) {
+  return values.find(Array.isArray) as unknown[] | undefined
 }
 
 function normalizeRideOrderStatus(value: unknown): RideOrderStatus {
@@ -142,6 +147,32 @@ function mapApplicationDocumentsToDraft(raw: unknown): DriverApplicationDocument
       sizeBytes: document.sizeBytes ?? undefined,
     }))
     .filter((document) => Boolean(document.type && document.filePath))
+}
+
+function mapApplicationHistory(raw: unknown): DriverApplicationHistoryItem[] {
+  const list =
+    Array.isArray(raw)
+      ? raw
+      : isRecord(raw) && Array.isArray(raw.items)
+        ? raw.items
+        : isRecord(raw) && Array.isArray(raw.data)
+          ? raw.data
+          : []
+
+  return list
+    .map((item) => {
+      const record = isRecord(item) ? item : {}
+      return {
+        action: asString(record.action ?? record.type ?? record.event ?? record.name).trim(),
+        actorLabel: asString(record.actorLabel ?? record.actor_label ?? record.actorName ?? record.actor_name) || undefined,
+        statusFrom: asString(record.statusFrom ?? record.status_from),
+        statusTo: asString(record.statusTo ?? record.status_to),
+        reason: asString(record.reason ?? record.comment ?? record.moderatorComment ?? record.moderator_comment),
+        message: asString(record.message ?? record.text ?? record.description),
+        createdAt: asString(record.createdAt ?? record.created_at),
+      } satisfies DriverApplicationHistoryItem
+    })
+    .filter((item) => Boolean(item.action && item.createdAt))
 }
 
 function extractList(value: unknown) {
@@ -272,7 +303,8 @@ function mapApplication(raw: unknown): RideDriverApplication | null {
     data?.vehicle_snapshot,
     data?.vehicle,
   )
-  const documents = firstRecord(record.documents, record.files, data?.documents)
+  const documents = firstArray(record.documents, record.files, data?.documents)
+  const history = firstArray(record.history, record.applicationHistory, record.application_history, data?.history, data?.applicationHistory, data?.application_history)
   const vehicleRecord = isRecord(vehicle) ? (vehicle as BackendRecord) : undefined
   const vehicleBrandId = asOptionalNumber(vehicleRecord?.brandId ?? vehicleRecord?.brand_id)
   const vehicleModelId = asOptionalNumber(vehicleRecord?.modelId ?? vehicleRecord?.model_id)
@@ -334,6 +366,7 @@ function mapApplication(raw: unknown): RideDriverApplication | null {
         record.rejectionReason ??
         record.blockedReason,
     ),
+    history: mapApplicationHistory(history),
     raw,
   }
 }
@@ -763,6 +796,15 @@ export function mapDriverMeToViewModel(raw: unknown): DriverMeViewModel {
   )
 
   const application = mapApplication(applicationRecord ?? record.application)
+  const applicationHistorySource = firstArray(
+    record.applicationHistory,
+    record.application_history,
+    record.history,
+    data?.applicationHistory,
+    data?.application_history,
+    data?.history,
+    application?.history,
+  )
   const profile = mapProfile(record)
   const verificationStatus = mapVerificationStatus(
     record.verificationStatus ??
@@ -780,6 +822,7 @@ export function mapDriverMeToViewModel(raw: unknown): DriverMeViewModel {
   const primaryVehicle = mapVehicle(firstRecord(record.vehicle, data?.vehicle)) ?? profile?.vehicle ?? null
 
   const applicationDocuments = mapApplicationDocumentsToDraft(application?.documents ?? undefined)
+  const applicationHistory = mapApplicationHistory(applicationHistorySource)
 
   return {
     profile: profile
@@ -790,9 +833,18 @@ export function mapDriverMeToViewModel(raw: unknown): DriverMeViewModel {
           documents: profile.documents ?? applicationDocuments,
         } satisfies DriverProfile)
       : null,
-    application: mapDriverApplicationDraft(application),
-    currentApplication: application ? mapDriverApplicationDraft(application) : null,
+    application: {
+      ...mapDriverApplicationDraft(application),
+      history: applicationHistory,
+    },
+    currentApplication: application
+      ? {
+          ...mapDriverApplicationDraft(application),
+          history: applicationHistory,
+        }
+      : null,
     applicationId: application?.id,
+    applicationHistory,
     vehicle: primaryVehicle,
     vehicles: vehiclesRaw.map(mapVehicle).filter((vehicle): vehicle is NonNullable<ReturnType<typeof mapVehicle>> => Boolean(vehicle)),
     wallet: isRecord(walletRaw)
