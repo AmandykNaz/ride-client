@@ -211,7 +211,9 @@ async function requestBackend<T>(
         }
       }
 
-      clearRideAuthSession()
+      if (!skipAuth) {
+        clearRideAuthSession()
+      }
       throw new BackendAuthError(
         getErrorMessage(
           isEnvelope ? parsed.message : parsed,
@@ -233,7 +235,9 @@ async function requestBackend<T>(
     if (!parsed.success) {
       const message = getErrorMessage(parsed.message, 'Backend request failed')
       if (response.status === 401) {
-        clearRideAuthSession()
+        if (!skipAuth) {
+          clearRideAuthSession()
+        }
         throw new BackendAuthError(message)
       }
 

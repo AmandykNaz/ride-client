@@ -1,7 +1,14 @@
 import { ArrowDownLeft, ArrowUpRight, Lock, RefreshCw } from 'lucide-react'
 
 import { cn } from '../../lib/cn'
-import { formatKzt } from '../../lib/format'
+import {
+  formatKzt,
+  formatWalletTransactionDescription,
+  formatTopUpMethodLabel,
+  formatTopUpStatusLabel,
+  formatWalletTransactionStatusLabel,
+  formatWalletTransactionTypeLabel,
+} from '../../lib/format'
 import { useAppActions, useAppState } from '../../providers/AppStateProvider'
 import { PageCard } from '../../shared/ui/PageCard'
 import { DriverTopUpSheet } from '../../features/driver/components/DriverTopUpSheet'
@@ -13,13 +20,6 @@ function formatDateTime(createdAt: string) {
     hour: '2-digit',
     minute: '2-digit',
   }).format(new Date(createdAt))
-}
-
-function formatTopUpMethod(method: string) {
-  if (method === 'KASPI') return 'Kaspi'
-  if (method === 'HALYK') return 'Halyk'
-  if (method === 'CASH') return 'Cash'
-  return 'Other'
 }
 
 export default function DriverBalancePage() {
@@ -43,7 +43,7 @@ export default function DriverBalancePage() {
       >
         <div className="flex items-center gap-3 rounded-2xl bg-surface-soft p-4">
           <Lock className="h-5 w-5 text-accent" />
-          <p className="text-sm text-ink">Баланс будет доступен после approval</p>
+          <p className="text-sm text-ink">Баланс будет доступен после подтверждения заявки.</p>
         </div>
         <div className="grid gap-2 sm:grid-cols-2">
           <button
@@ -76,7 +76,7 @@ export default function DriverBalancePage() {
     <div className="space-y-4">
       <PageCard
         eyebrow="Водитель"
-        title="Wallet"
+        title="Кошелёк"
         description="Реальный баланс, транзакции и заявки на пополнение."
       >
         <div className="grid gap-3 sm:grid-cols-2">
@@ -109,7 +109,7 @@ export default function DriverBalancePage() {
           )}
         >
           {driverWallet.isBlocked
-            ? 'Кошелек заблокирован'
+            ? 'Кошелёк заблокирован'
             : accessGranted
               ? 'Доступ к заказам активен'
               : 'Доступ к заказам ограничен'}
@@ -132,7 +132,7 @@ export default function DriverBalancePage() {
 
         {driverWallet.canGoOnline === false && !driverWallet.isBlocked ? (
           <div className="rounded-2xl border border-sky-200 bg-sky-50 p-4 text-sm text-sky-900">
-            Кошелек пока не позволяет выйти онлайн. Пополните баланс или дождитесь обработки заявки.
+            Кошелёк пока не позволяет выйти онлайн. Пополните баланс или дождитесь обработки заявки.
           </div>
         ) : null}
 
@@ -183,18 +183,18 @@ export default function DriverBalancePage() {
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <p className="text-base font-semibold text-ink">{formatKzt(request.amount)}</p>
-                    <p className="mt-1 text-sm text-muted">{formatTopUpMethod(request.method)}</p>
+                    <p className="mt-1 text-sm text-muted">{formatTopUpMethodLabel(request.method)}</p>
                   </div>
                   <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-800">
-                    {request.status}
+                    {formatTopUpStatusLabel(request.status)}
                   </span>
                 </div>
-                <div className="mt-3 grid gap-1 text-sm text-muted">
-                  <p>Reference: {request.providerRef || request.referenceNumber || '—'}</p>
-                  <p>Комментарий: {request.comment || '—'}</p>
-                  <p>Дата: {formatDateTime(request.createdAt)}</p>
-                  {request.reviewedAt ? <p>Reviewed: {formatDateTime(request.reviewedAt)}</p> : null}
-                  {request.rejectionReason ? <p>Причина отказа: {request.rejectionReason}</p> : null}
+                  <div className="mt-3 grid gap-1 text-sm text-muted">
+                    <p>Номер перевода / чека: {request.providerRef || request.referenceNumber || '—'}</p>
+                    <p>Комментарий: {request.comment || '—'}</p>
+                    <p>Дата: {formatDateTime(request.createdAt)}</p>
+                    {request.reviewedAt ? <p>Проверено: {formatDateTime(request.reviewedAt)}</p> : null}
+                    {request.rejectionReason ? <p>Причина отказа: {request.rejectionReason}</p> : null}
                 </div>
               </div>
             ))}
@@ -205,7 +205,7 @@ export default function DriverBalancePage() {
       <PageCard
         eyebrow="История"
         title="Транзакции"
-        description="Списания и пополнения по wallet."
+        description="Списания и пополнения по кошельку."
       >
         {isDriverWalletLoading ? (
           <div className="rounded-2xl bg-surface-soft p-4 text-sm text-muted">
@@ -237,9 +237,14 @@ export default function DriverBalancePage() {
                         )}
                       </span>
                       <div>
-                        <p className="text-sm font-semibold text-ink">{transaction.type}</p>
+                        <p className="text-sm font-semibold text-ink">
+                          {formatWalletTransactionTypeLabel(transaction.type)}
+                        </p>
                         <p className="mt-1 text-sm text-muted">
-                          {transaction.description || transaction.comment || 'Без описания'}
+                          {formatWalletTransactionDescription(
+                            transaction.description || transaction.comment || null,
+                            transaction,
+                          )}
                         </p>
                       </div>
                     </div>
@@ -256,16 +261,16 @@ export default function DriverBalancePage() {
 
                   <div className="mt-3 grid gap-1 text-xs text-muted sm:grid-cols-3">
                     <span>
-                      Before: {transaction.balanceBefore === undefined ? '—' : formatKzt(transaction.balanceBefore)}
+                      До: {transaction.balanceBefore === undefined ? '—' : formatKzt(transaction.balanceBefore)}
                     </span>
                     <span>
-                      After: {transaction.balanceAfter === undefined ? '—' : formatKzt(transaction.balanceAfter)}
+                      После: {transaction.balanceAfter === undefined ? '—' : formatKzt(transaction.balanceAfter)}
                     </span>
                     <span>{formatDateTime(transaction.createdAt)}</span>
                   </div>
 
                   <div className="mt-2 flex items-center justify-between text-xs text-muted">
-                    <span>Status: {transaction.status}</span>
+                    <span>Статус: {formatWalletTransactionStatusLabel(transaction.status)}</span>
                   </div>
                 </article>
               )
@@ -275,9 +280,9 @@ export default function DriverBalancePage() {
       </PageCard>
 
       <div className="rounded-[28px] border border-dashed border-border bg-white p-4 text-sm text-muted">
-        <p className="font-semibold text-ink">Wallet notes</p>
+        <p className="font-semibold text-ink">Примечания по кошельку</p>
         <p className="mt-2">
-          Баланс меняется после подтверждения заявки backoffice, а не сразу после создания top-up request.
+          Баланс меняется после подтверждения заявки в бэк-офисе, а не сразу после создания заявки на пополнение.
         </p>
       </div>
 

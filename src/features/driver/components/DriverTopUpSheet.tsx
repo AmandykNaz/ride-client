@@ -7,8 +7,8 @@ import { OverlaySheet } from '../../../shared/ui/OverlaySheet'
 const methods = [
   { id: 'KASPI', label: 'Kaspi' },
   { id: 'HALYK', label: 'Halyk' },
-  { id: 'CASH', label: 'Cash' },
-  { id: 'OTHER', label: 'Other' },
+  { id: 'CASH', label: 'Наличные' },
+  { id: 'OTHER', label: 'Другое' },
 ] as const
 
 export function DriverTopUpSheet() {
@@ -93,12 +93,12 @@ export function DriverTopUpSheet() {
         </label>
 
         <label className="block">
-          <span className="mb-1 block text-sm font-medium text-ink">Provider reference</span>
+          <span className="mb-1 block text-sm font-medium text-ink">Номер перевода / чека</span>
           <input
             value={topUpForm.providerRef}
             onChange={(event) => actions.updateTopUpForm({ providerRef: event.target.value })}
             className="w-full rounded-2xl border border-border bg-surface-soft px-4 py-3 text-sm outline-none transition focus:border-accent"
-            placeholder="Номер перевода, чек, reference"
+            placeholder="Например, номер перевода или чек"
           />
         </label>
 
@@ -114,13 +114,14 @@ export function DriverTopUpSheet() {
         </label>
 
         <label className="block">
-          <span className="mb-1 block text-sm font-medium text-ink">Proof file path</span>
+          <span className="mb-1 block text-sm font-medium text-ink">Путь к файлу чека</span>
           <input
             value={topUpForm.proofFilePath}
             onChange={(event) => actions.updateTopUpForm({ proofFilePath: event.target.value })}
             className="w-full rounded-2xl border border-border bg-surface-soft px-4 py-3 text-sm outline-none transition focus:border-accent"
-            placeholder="Путь к файлу или ссылка на чек"
+            placeholder="Необязательно"
           />
+          <span className="mt-1 block text-xs text-muted">Поле необязательное, если у вас только номер перевода.</span>
         </label>
 
         {driverWalletError ? (

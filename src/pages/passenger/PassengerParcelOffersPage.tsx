@@ -16,10 +16,10 @@ export default function PassengerParcelOffersPage() {
       <PageCard
         eyebrow="Пассажир"
         title="Посылки скоро"
-        description="Parcel flow пока не готов к боевому запуску."
+        description="Сценарий посылок пока не готов к боевому запуску."
       >
         <div className="rounded-2xl bg-surface-soft p-4 text-sm text-ink">
-          Этот экран доступен только как dev-only preview, пока backend для посылок не готов.
+          Этот экран доступен только в режиме разработки, пока бэкенд для посылок не готов.
         </div>
         <button
           type="button"
@@ -55,7 +55,7 @@ export default function PassengerParcelOffersPage() {
       <PageCard
         eyebrow="Посылка"
         title="Поиск водителя"
-        description="Отдельный поток для доставки посылки, визуально отличающийся от поездки."
+        description="Отдельный сценарий для доставки посылки, визуально отличающийся от поездки."
       >
         <div className="rounded-2xl border border-accent/20 bg-accent/8 p-4">
           <div className="flex items-center gap-2 text-sm font-semibold text-accent">

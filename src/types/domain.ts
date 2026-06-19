@@ -138,6 +138,50 @@ export type DriverVehicleBodyTypeApi =
   | 'TRUCK'
   | 'OTHER'
 
+export type RideVehicleBrandOption = {
+  id: number
+  name: string
+  slug: string
+  country?: string | null
+  isActive: boolean
+  sortOrder: number
+  createdAt: string
+  updatedAt: string
+}
+
+export type RideVehicleModelOption = {
+  id: number
+  brandId: number
+  name: string
+  slug: string
+  defaultBodyTypeCode?: DriverVehicleBodyTypeApi | null
+  isActive: boolean
+  sortOrder: number
+  createdAt: string
+  updatedAt: string
+}
+
+export type RideVehicleColorOption = {
+  id: number
+  name: string
+  slug: string
+  hex?: string | null
+  isActive: boolean
+  sortOrder: number
+  createdAt: string
+  updatedAt: string
+}
+
+export type RideVehicleBodyTypeOption = {
+  id: number
+  code: DriverVehicleBodyTypeApi
+  nameRu: string
+  isActive: boolean
+  sortOrder: number
+  createdAt: string
+  updatedAt: string
+}
+
 export const DRIVER_VEHICLE_BODY_TYPE_API_MAP: Record<DriverVehicleBodyType, DriverVehicleBodyTypeApi> = {
   sedan: 'SEDAN',
   suv: 'SUV',
@@ -149,15 +193,22 @@ export const DRIVER_VEHICLE_BODY_TYPE_API_MAP: Record<DriverVehicleBodyType, Dri
 }
 
 export type DriverVehicle = {
+  brandId?: number
+  modelId?: number
+  colorId?: number
   brand: string
+  brandName?: string
   model: string
+  modelName?: string
   year: string
   plate: string
   plateNumber?: string
   color: string
+  colorName?: string
   seats: string
   seatsCount?: number
   bodyType: DriverVehicleBodyType
+  bodyTypeCode?: DriverVehicleBodyTypeApi
 }
 
 export type DriverProfile = {
@@ -165,6 +216,7 @@ export type DriverProfile = {
   fullName: string
   phone: string
   city: string
+  cityName?: string
   rating: number
   tripsCount: number
   verificationStatus: DriverVerificationStatus
@@ -172,6 +224,7 @@ export type DriverProfile = {
   minBalance?: number
   isOnline: boolean
   vehicle?: DriverVehicle
+  documents?: DriverApplicationDocument[] | null
 }
 
 export type DriverApplicationDocumentType =
@@ -203,10 +256,13 @@ export type DriverApplicationDraft = {
   city: string
   cityId?: string
   frequentRoutes: string
+  vehicleBrandId?: number
   vehicleBrand: string
+  vehicleModelId?: number
   vehicleModel: string
   vehicleYear: string
   vehiclePlate: string
+  vehicleColorId?: number
   vehicleColor: string
   vehicleSeats: string
   vehicleBodyType: DriverVehicleBodyType

@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { AlertCircle, KeyRound, LogIn, MailQuestion, ShieldCheck } from 'lucide-react'
 
 import { useAppActions, useAppState } from '../../../providers/AppStateProvider'
-import { BackendAuthError } from '../../../shared/api/backend'
+import { BackendApiError, BackendAuthError } from '../../../shared/api/backend'
 import { OverlaySheet } from '../../../shared/ui/OverlaySheet'
 import {
   loginRide,
@@ -99,6 +99,10 @@ export function PhoneVerifySheet() {
   const [pendingFlow, setPendingFlow] = useState<RideFlow>(initialFlow)
 
   const normalizedPhone = normalizeRidePhone(phone)
+
+  const isInvalidLoginError = (error: unknown) =>
+    error instanceof BackendAuthError ||
+    (error instanceof BackendApiError && (error.status === 401 || error.status === 404))
 
   const finishAuthenticatedSession = async (phoneValue: string, flow: RideFlow) => {
     const authState = await actions.refreshAuthenticatedSession(phoneValue, flow)
@@ -200,8 +204,8 @@ export function PhoneVerifySheet() {
 
       await finishAuthenticatedSession(normalizedPhone, 'login')
     } catch (loginError) {
-      if (loginError instanceof BackendAuthError) {
-        actions.logout()
+      if (isInvalidLoginError(loginError)) {
+        setError('Неверный телефон или пароль.')
         return
       }
 

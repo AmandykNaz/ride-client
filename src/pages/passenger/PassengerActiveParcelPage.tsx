@@ -1,3 +1,5 @@
+import { useState } from 'react'
+
 import { Phone, ShieldAlert, XCircle } from 'lucide-react'
 
 import { formatKzt, formatRideOrderStatusLabel, formatRoute } from '../../lib/format'
@@ -8,16 +10,17 @@ export default function PassengerActiveParcelPage() {
   const { activeParcelOrder } = useAppState()
   const actions = useAppActions()
   const isDevParcelFlow = import.meta.env.DEV
+  const [notice, setNotice] = useState('')
 
   if (!isDevParcelFlow) {
     return (
       <PageCard
         eyebrow="Посылка"
         title="Посылки скоро"
-        description="Parcel flow пока не готов к боевому запуску."
+        description="Сценарий посылок пока не готов к боевому запуску."
       >
         <div className="rounded-2xl bg-surface-soft p-4 text-sm text-ink">
-          Сейчас это coming soon сценарий, а не live flow.
+          Сейчас это экран-заглушка, а не боевой сценарий.
         </div>
         <button
           type="button"
@@ -35,10 +38,10 @@ export default function PassengerActiveParcelPage() {
       <PageCard
         eyebrow="Посылка"
         title="Посылки скоро"
-        description="Parcel flow пока не готов к боевому запуску."
+        description="Сценарий посылок пока не готов к боевому запуску."
       >
         <div className="rounded-2xl bg-surface-soft p-4 text-sm text-ink">
-          Сейчас это dev-only или coming soon сценарий. Боевой backend для parcel flow ещё не подключён.
+          Сейчас это режим только для разработки или экран-заглушка. Боевой бэкенд для сценария посылок ещё не подключён.
         </div>
         <button
           type="button"
@@ -56,7 +59,7 @@ export default function PassengerActiveParcelPage() {
       <PageCard
         eyebrow="Посылка"
         title={formatRideOrderStatusLabel(activeParcelOrder.status)}
-        description="Parcel flow доступен только как dev-only preview до готовности backend."
+        description="Сценарий посылок доступен только в режиме разработки до готовности бэкенда."
       >
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="rounded-2xl bg-surface-soft p-4">
@@ -125,7 +128,7 @@ export default function PassengerActiveParcelPage() {
       <div className="grid grid-cols-3 gap-2">
         <button
           type="button"
-          onClick={() => window.alert('Демо-звонок водителю')}
+          onClick={() => setNotice('В режиме разработки звонок водителю пока не подключён.')}
           className="flex items-center justify-center gap-2 rounded-2xl border border-border bg-white px-3 py-3 text-sm font-semibold text-ink"
         >
           <Phone className="h-4 w-4 text-accent" />
@@ -141,13 +144,19 @@ export default function PassengerActiveParcelPage() {
         </button>
         <button
           type="button"
-          onClick={() => window.alert('Жалоба отправлена в демо-режиме')}
+          onClick={() => setNotice('Жалобы в этом сценарии доступны только как заглушка.')}
           className="flex items-center justify-center gap-2 rounded-2xl border border-border bg-white px-3 py-3 text-sm font-semibold text-ink"
         >
           <ShieldAlert className="h-4 w-4 text-accent" />
           Пожаловаться
         </button>
       </div>
+
+      {notice ? (
+        <div className="rounded-2xl bg-surface-soft px-4 py-3 text-sm text-ink">
+          {notice}
+        </div>
+      ) : null}
 
       <div className="rounded-[28px] border border-dashed border-border bg-slate-50 p-4 text-sm text-muted">
         Завершение посылок пока не является боевым flow.

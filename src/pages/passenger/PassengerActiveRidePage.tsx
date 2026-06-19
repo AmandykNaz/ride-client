@@ -63,7 +63,7 @@ export default function PassengerActiveRidePage() {
       <PageCard
         eyebrow="В пути"
         title={formatRideOrderStatusLabel(activeRide.status)}
-        description="Пассажирский экран без кнопки завершения. Статус меняет водитель через backend."
+        description="Пассажирский экран без кнопки завершения. Статус меняет водитель через бэкенд."
       >
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="rounded-2xl bg-surface-soft p-4">

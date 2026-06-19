@@ -43,6 +43,10 @@ function resolveRideAccessToken(response: RideAuthSessionResponse) {
   return response.accessToken || response.token || ''
 }
 
+function resolveRideSessionCustomer(response: RideAuthSessionResponse) {
+  return response.customer || response.user || response.passenger || null
+}
+
 export function normalizeRidePhone(phone: string) {
   const digits = phone.replace(/\D/g, '')
 
@@ -88,9 +92,10 @@ export async function verifyRideOtp(phone: string, code: string) {
     },
   )
   const accessToken = resolveRideAccessToken(response)
+  const customer = resolveRideSessionCustomer(response)
 
-  if (!accessToken) {
-    throw new Error('Backend did not return an access token')
+  if (!accessToken || !customer) {
+    throw new Error('Backend did not return a valid session')
   }
 
   setRideAccessToken(accessToken)
@@ -98,6 +103,7 @@ export async function verifyRideOtp(phone: string, code: string) {
   return {
     ...response,
     accessToken,
+    customer,
   }
 }
 
@@ -114,9 +120,10 @@ export async function loginRide(phone: string, password: string) {
     },
   )
   const accessToken = resolveRideAccessToken(response)
+  const customer = resolveRideSessionCustomer(response)
 
-  if (!accessToken) {
-    throw new Error('Backend did not return an access token')
+  if (!accessToken || !customer) {
+    throw new Error('Backend did not return a valid session')
   }
 
   setRideAccessToken(accessToken)
@@ -124,6 +131,7 @@ export async function loginRide(phone: string, password: string) {
   return {
     ...response,
     accessToken,
+    customer,
   }
 }
 
@@ -135,9 +143,10 @@ export async function setRidePassword(password: string) {
     },
   )
   const accessToken = resolveRideAccessToken(response)
+  const customer = resolveRideSessionCustomer(response)
 
-  if (!accessToken) {
-    throw new Error('Backend did not return an access token')
+  if (!accessToken || !customer) {
+    throw new Error('Backend did not return a valid session')
   }
 
   setRideAccessToken(accessToken)
@@ -145,6 +154,7 @@ export async function setRidePassword(password: string) {
   return {
     ...response,
     accessToken,
+    customer,
   }
 }
 
@@ -176,9 +186,10 @@ export async function resetRidePassword(phone: string, code: string, password: s
     },
   )
   const accessToken = resolveRideAccessToken(response)
+  const customer = resolveRideSessionCustomer(response)
 
-  if (!accessToken) {
-    throw new Error('Backend did not return an access token')
+  if (!accessToken || !customer) {
+    throw new Error('Backend did not return a valid session')
   }
 
   setRideAccessToken(accessToken)
@@ -186,6 +197,7 @@ export async function resetRidePassword(phone: string, code: string, password: s
   return {
     ...response,
     accessToken,
+    customer,
   }
 }
 

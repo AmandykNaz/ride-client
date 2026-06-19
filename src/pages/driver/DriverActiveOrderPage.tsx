@@ -156,7 +156,9 @@ export default function DriverActiveOrderPage() {
             <p className="mt-2 text-sm font-semibold text-ink">{formatKzt(driverActiveOrder.price)}</p>
           </div>
           <div className="rounded-2xl bg-surface-soft p-4">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">Комиссия preview</p>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">
+              Комиссия (предварительно)
+            </p>
             <p className="mt-2 text-sm font-semibold text-ink">{formatKzt(commission)}</p>
           </div>
         </div>
@@ -167,7 +169,7 @@ export default function DriverActiveOrderPage() {
             <div>
               <p className="text-sm font-semibold text-ink">До и после комиссии</p>
               <p className="mt-1 text-sm text-muted">
-                Получите {formatKzt(driverActiveOrder.price)} до списания комиссии и {formatKzt(afterCommission)} после preview.
+                Получите {formatKzt(driverActiveOrder.price)} до списания комиссии и {formatKzt(afterCommission)} после предварительного расчёта.
               </p>
             </div>
           </div>
@@ -209,7 +211,7 @@ export default function DriverActiveOrderPage() {
         {isCompleted ? (
           <div className="space-y-3 rounded-2xl bg-emerald-50 p-4 text-sm text-emerald-800">
             <p className="font-semibold">Заказ завершён</p>
-            <p>Состояние и списания приходят из backend после смены статуса.</p>
+            <p>Состояние и списания приходят из бэкенда после смены статуса.</p>
             <div className="grid gap-2 rounded-2xl bg-white/70 p-3 text-emerald-900">
               <div className="flex items-center justify-between gap-3">
                 <span>Цена заказа</span>
@@ -232,7 +234,7 @@ export default function DriverActiveOrderPage() {
                 </>
               ) : (
                 <div className="rounded-2xl bg-white/70 px-3 py-2 text-emerald-900">
-                  Баланс обновится после ответа backend.
+                  Баланс обновится после ответа бэкенда.
                 </div>
               )}
             </div>

@@ -5,11 +5,11 @@ import { useAppActions, useAppState } from '../../../providers/AppStateProvider'
 import { OverlaySheet } from '../../../shared/ui/OverlaySheet'
 
 const complaintCategories = [
-  { id: 'safety', label: 'Safety' },
-  { id: 'behavior', label: 'Behavior' },
-  { id: 'service', label: 'Service' },
-  { id: 'payment', label: 'Payment' },
-  { id: 'other', label: 'Other' },
+  { id: 'safety', label: 'Безопасность' },
+  { id: 'behavior', label: 'Поведение' },
+  { id: 'service', label: 'Сервис' },
+  { id: 'payment', label: 'Оплата' },
+  { id: 'other', label: 'Другое' },
 ] as const
 
 export function RideComplaintSheet() {
@@ -66,7 +66,7 @@ export function RideComplaintSheet() {
           </p>
           {currentRoute ? <p className="mt-1 text-sm text-muted">{currentRoute}</p> : null}
           {currentOrderId ? (
-            <p className="mt-2 text-xs text-muted">Order ID: {currentOrderId}</p>
+            <p className="mt-2 text-xs text-muted">ID заказа: {currentOrderId}</p>
           ) : null}
         </div>
 

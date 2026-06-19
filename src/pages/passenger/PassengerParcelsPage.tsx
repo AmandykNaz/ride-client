@@ -59,7 +59,7 @@ export default function PassengerParcelsPage() {
 
   const handleSearch = () => {
     if (!isDevParcelFlow) {
-      setError('Parcel flow скоро появится.')
+      setError('Сценарий посылок скоро появится.')
       return
     }
 
@@ -101,7 +101,11 @@ export default function PassengerParcelsPage() {
       <PageCard
         eyebrow="Пассажир"
         title="Посылки"
-        description={isDevParcelFlow ? 'Внутренний preview parcel flow.' : 'Parcel flow пока в разработке.'}
+        description={
+          isDevParcelFlow
+            ? 'Внутренний режим посылок только для разработки.'
+            : 'Сценарий посылок пока в разработке.'
+        }
       >
         <div className="rounded-2xl bg-surface-soft p-4">
           <div className="flex items-center gap-2 text-sm font-semibold text-ink">
@@ -110,8 +114,8 @@ export default function PassengerParcelsPage() {
           </div>
           <p className="mt-2 text-sm text-muted">
             {isDevParcelFlow
-              ? 'Фото можно прикрепить позже, это внутренний preview без загрузки файла.'
-              : 'Боевой parcel flow ещё не подключён.'}
+              ? 'Фото можно прикрепить позже, это внутренний режим только для разработки без загрузки файла.'
+              : 'Боевой сценарий посылок ещё не подключён.'}
           </p>
         </div>
       </PageCard>
@@ -119,40 +123,40 @@ export default function PassengerParcelsPage() {
       {!isDevParcelFlow ? (
         <div className="rounded-[30px] border border-border bg-white p-4 shadow-sm">
           <div className="space-y-3 rounded-[28px] border border-dashed border-border bg-slate-50 p-4 text-sm text-muted">
-            <p className="font-semibold text-ink">Parcel flow coming soon</p>
+            <p className="font-semibold text-ink">Сценарий посылок скоро появится</p>
             <p>
-              Сейчас мы не создаём реальные заявки на посылки из этого клиента. Когда backend будет
+              Сейчас мы не создаём реальные заявки на посылки из этого клиента. Когда бэкенд будет
               готов, здесь откроется полноценная форма отправки.
             </p>
           </div>
         </div>
       ) : (
         <div className="rounded-[30px] border border-border bg-white p-4 shadow-sm">
-        <div className="grid gap-3">
-          <div className="grid gap-3 sm:grid-cols-2">
-            <label className="block">
-              <span className="mb-1 block text-sm font-medium text-ink">Имя отправителя</span>
-              <input
-                value={parcelDraft.senderName}
-                onChange={(event) =>
-                  actions.updateParcelDraft({ senderName: event.target.value })
-                }
-                className="w-full rounded-2xl border border-border bg-surface-soft px-4 py-3 text-sm outline-none transition focus:border-accent"
-                placeholder="Алия"
-              />
-            </label>
-            <label className="block">
-              <span className="mb-1 block text-sm font-medium text-ink">Телефон отправителя</span>
-              <input
-                value={parcelDraft.senderPhone}
-                onChange={(event) =>
-                  actions.updateParcelDraft({ senderPhone: event.target.value })
-                }
-                className="w-full rounded-2xl border border-border bg-surface-soft px-4 py-3 text-sm outline-none transition focus:border-accent"
-                placeholder="+7 700 000 00 00"
-              />
-            </label>
-          </div>
+          <div className="grid gap-3">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="block">
+                <span className="mb-1 block text-sm font-medium text-ink">Имя отправителя</span>
+                <input
+                  value={parcelDraft.senderName}
+                  onChange={(event) =>
+                    actions.updateParcelDraft({ senderName: event.target.value })
+                  }
+                  className="w-full rounded-2xl border border-border bg-surface-soft px-4 py-3 text-sm outline-none transition focus:border-accent"
+                  placeholder="Алия"
+                />
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-sm font-medium text-ink">Телефон отправителя</span>
+                <input
+                  value={parcelDraft.senderPhone}
+                  onChange={(event) =>
+                    actions.updateParcelDraft({ senderPhone: event.target.value })
+                  }
+                  className="w-full rounded-2xl border border-border bg-surface-soft px-4 py-3 text-sm outline-none transition focus:border-accent"
+                  placeholder="+7 700 000 00 00"
+                />
+              </label>
+            </div>
 
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="block">

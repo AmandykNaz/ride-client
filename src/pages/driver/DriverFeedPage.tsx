@@ -75,7 +75,7 @@ export default function DriverFeedPage() {
       >
         <div className="flex items-center gap-3 rounded-2xl bg-surface-soft p-4">
           <Lock className="h-5 w-5 text-accent" />
-          <p className="text-sm text-ink">Лента будет доступна после approval</p>
+          <p className="text-sm text-ink">Лента будет доступна после подтверждения заявки.</p>
         </div>
         <div className="grid gap-2 sm:grid-cols-2">
           <button
@@ -142,7 +142,7 @@ export default function DriverFeedPage() {
       <PageCard
         eyebrow="Водитель"
         title="Лента заказов"
-        description="Заявки в демо-режиме. Комиссия пока только preview."
+        description="Показываем доступные заказы и предварительный расчет комиссии."
       >
         {driverFlowError ? (
           <div className="rounded-2xl bg-red-50 px-4 py-3 text-sm text-red-700">
@@ -164,7 +164,7 @@ export default function DriverFeedPage() {
             <div className="mt-2 flex items-center gap-2">
               <CircleGauge className="h-4 w-4 text-accent" />
               <p className="text-sm font-semibold text-ink">
-                {driverProfile?.isOnline ? 'Online' : 'Offline'}
+                {driverProfile?.isOnline ? 'Онлайн' : 'Офлайн'}
               </p>
             </div>
           </div>
@@ -220,18 +220,18 @@ export default function DriverFeedPage() {
           isDriverActionLoading && 'cursor-not-allowed opacity-60',
           )}
         >
-          {driverProfile?.isOnline ? 'Сейчас онлайн' : 'Сейчас оффлайн'}
+          {driverProfile?.isOnline ? 'Сейчас онлайн' : 'Сейчас офлайн'}
         </button>
       </PageCard>
 
       {driverActiveOrder ? (
-        <PageCard
+          <PageCard
           eyebrow="Водитель"
           title="Активный заказ"
           description="Управляйте заказом из отдельного экрана."
         >
           <div className="rounded-2xl bg-surface-soft p-4 text-sm text-ink">
-            Активный заказ уже открыт. Перейдите в кабинет или карточку заказа.
+            У вас есть активный заказ. Откройте его из этого экрана.
           </div>
           <button
             type="button"
