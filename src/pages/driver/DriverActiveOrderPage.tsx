@@ -12,6 +12,7 @@ import {
 import { formatKzt, formatParcelSizeLabel, formatRideOrderStatusLabel, formatRoute } from '../../lib/format'
 import { useAppActions, useAppState } from '../../providers/AppStateProvider'
 import { PageCard } from '../../shared/ui/PageCard'
+import { DriverBlockedStateCard } from './components/DriverBlockedStateCard'
 
 function formatDriverStatus(status: string) {
   return formatRideOrderStatusLabel(status)
@@ -63,15 +64,23 @@ export default function DriverActiveOrderPage() {
   }, [activeOrderId])
 
   if (driverVerificationStatus !== 'APPROVED') {
+    const blockedReason =
+      driverWallet.blockedReason?.trim() ||
+      'Профиль водителя заблокирован модератором.'
+
     return (
       <PageCard
         eyebrow="Водитель"
-        title="Активный заказ"
-        description="Доступен после проверки водителя."
+        title={driverVerificationStatus === 'BLOCKED' ? 'Профиль водителя заблокирован' : 'Активный заказ'}
+        description={driverVerificationStatus === 'BLOCKED' ? 'Доступ к заказам ограничен.' : 'Доступен после проверки водителя.'}
       >
-        <div className="rounded-2xl bg-surface-soft p-4 text-sm text-ink">
-          Сначала завершите водительскую проверку, чтобы работать с заказами.
-        </div>
+        {driverVerificationStatus === 'BLOCKED' ? (
+          <DriverBlockedStateCard reason={blockedReason} />
+        ) : (
+          <div className="rounded-2xl bg-surface-soft p-4 text-sm text-ink">
+            Сначала завершите водительскую проверку, чтобы работать с заказами.
+          </div>
+        )}
       </PageCard>
     )
   }

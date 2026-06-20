@@ -9,6 +9,7 @@ import { DriverCounterOfferSheet } from '../../features/driver/components/Driver
 import { DriverFeedOrderCard } from '../../features/driver/components/DriverFeedOrderCard'
 import type { DriverCounterOffer, DriverFeedOrder } from '../../types/domain'
 import { getDriverAccessState, getDriverWalletShortfall } from '../../features/driver/driver-status'
+import { DriverBlockedStateCard } from './components/DriverBlockedStateCard'
 
 type FeedFilter = 'all' | 'ride' | 'parcel' | 'full'
 
@@ -42,6 +43,10 @@ export default function DriverFeedPage() {
   const [feedFilter, setFeedFilter] = useState<FeedFilter>('all')
   const accessState = getDriverAccessState(driverVerificationStatus, driverWallet)
   const walletShortfall = getDriverWalletShortfall(driverWallet)
+  const blockedReason =
+    driverProfile?.blockedReason?.trim() ||
+    driverWallet?.blockedReason?.trim() ||
+    'Профиль водителя заблокирован модератором.'
 
   const lowBalance = accessState === 'APPROVED_LOW_BALANCE'
   const visibleOrders = useMemo(
@@ -70,33 +75,39 @@ export default function DriverFeedPage() {
     return (
       <PageCard
         eyebrow="Водитель"
-        title="Лента заказов"
-        description="Доступно после проверки водителя."
+        title={accessState === 'BLOCKED' ? 'Профиль водителя заблокирован' : 'Лента заказов'}
+        description={accessState === 'BLOCKED' ? 'Доступ к заказам и онлайн-режиму ограничен.' : 'Доступно после проверки водителя.'}
       >
-        <div className="flex items-center gap-3 rounded-2xl bg-surface-soft p-4">
-          <Lock className="h-5 w-5 text-accent" />
-          <p className="text-sm text-ink">Лента будет доступна после подтверждения заявки.</p>
-        </div>
-        <div className="grid gap-2 sm:grid-cols-2">
-          <button
-            type="button"
-            onClick={
-              accessState === 'NOT_STARTED'
-                ? actions.startDriverRegistration
-                : () => actions.setScreen('driverRegistration')
-            }
-            className="rounded-2xl bg-accent px-4 py-3 text-sm font-semibold text-white"
-          >
-            {accessState === 'DRAFT' ? 'Продолжить регистрацию' : 'Перейти к регистрации'}
-          </button>
-          <button
-            type="button"
-            onClick={() => actions.setScreen('driverDashboard')}
-            className="rounded-2xl border border-border bg-white px-4 py-3 text-sm font-semibold text-ink"
-          >
-            Посмотреть статус заявки
-          </button>
-        </div>
+        {accessState === 'BLOCKED' ? (
+          <DriverBlockedStateCard reason={blockedReason} />
+        ) : (
+          <>
+            <div className="flex items-center gap-3 rounded-2xl bg-surface-soft p-4">
+              <Lock className="h-5 w-5 text-accent" />
+              <p className="text-sm text-ink">Лента будет доступна после подтверждения заявки.</p>
+            </div>
+            <div className="grid gap-2 sm:grid-cols-2">
+              <button
+                type="button"
+                onClick={
+                  accessState === 'NOT_STARTED'
+                    ? actions.startDriverRegistration
+                    : () => actions.setScreen('driverRegistration')
+                }
+                className="rounded-2xl bg-accent px-4 py-3 text-sm font-semibold text-white"
+              >
+                {accessState === 'DRAFT' ? 'Продолжить регистрацию' : 'Перейти к регистрации'}
+              </button>
+              <button
+                type="button"
+                onClick={() => actions.setScreen('driverDashboard')}
+                className="rounded-2xl border border-border bg-white px-4 py-3 text-sm font-semibold text-ink"
+              >
+                Посмотреть статус заявки
+              </button>
+            </div>
+          </>
+        )}
       </PageCard>
     )
   }

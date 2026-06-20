@@ -12,6 +12,7 @@ import {
 import { useAppActions, useAppState } from '../../providers/AppStateProvider'
 import { PageCard } from '../../shared/ui/PageCard'
 import { DriverTopUpSheet } from '../../features/driver/components/DriverTopUpSheet'
+import { DriverBlockedStateCard } from './components/DriverBlockedStateCard'
 
 function formatDateTime(createdAt: string) {
   return new Intl.DateTimeFormat('ru-KZ', {
@@ -35,32 +36,42 @@ export default function DriverBalancePage() {
   const actions = useAppActions()
 
   if (driverVerificationStatus !== 'APPROVED') {
+    const blockedReason =
+      driverWallet.blockedReason?.trim() ||
+      'Профиль водителя заблокирован модератором.'
+
     return (
       <PageCard
         eyebrow="Водитель"
-        title="Баланс"
-        description="Доступно после проверки водителя."
+        title={driverVerificationStatus === 'BLOCKED' ? 'Профиль водителя заблокирован' : 'Баланс'}
+        description={driverVerificationStatus === 'BLOCKED' ? 'Доступ к кошельку ограничен.' : 'Доступно после проверки водителя.'}
       >
-        <div className="flex items-center gap-3 rounded-2xl bg-surface-soft p-4">
-          <Lock className="h-5 w-5 text-accent" />
-          <p className="text-sm text-ink">Баланс будет доступен после подтверждения заявки.</p>
-        </div>
-        <div className="grid gap-2 sm:grid-cols-2">
-          <button
-            type="button"
-            onClick={() => actions.setScreen('driverRegistration')}
-            className="rounded-2xl bg-accent px-4 py-3 text-sm font-semibold text-white"
-          >
-            Перейти к регистрации
-          </button>
-          <button
-            type="button"
-            onClick={() => actions.setScreen('driverDashboard')}
-            className="rounded-2xl border border-border bg-white px-4 py-3 text-sm font-semibold text-ink"
-          >
-            Посмотреть статус заявки
-          </button>
-        </div>
+        {driverVerificationStatus === 'BLOCKED' ? (
+          <DriverBlockedStateCard reason={blockedReason} />
+        ) : (
+          <>
+            <div className="flex items-center gap-3 rounded-2xl bg-surface-soft p-4">
+              <Lock className="h-5 w-5 text-accent" />
+              <p className="text-sm text-ink">Баланс будет доступен после подтверждения заявки.</p>
+            </div>
+            <div className="grid gap-2 sm:grid-cols-2">
+              <button
+                type="button"
+                onClick={() => actions.setScreen('driverRegistration')}
+                className="rounded-2xl bg-accent px-4 py-3 text-sm font-semibold text-white"
+              >
+                Перейти к регистрации
+              </button>
+              <button
+                type="button"
+                onClick={() => actions.setScreen('driverDashboard')}
+                className="rounded-2xl border border-border bg-white px-4 py-3 text-sm font-semibold text-ink"
+              >
+                Посмотреть статус заявки
+              </button>
+            </div>
+          </>
+        )}
       </PageCard>
     )
   }

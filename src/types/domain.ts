@@ -223,6 +223,8 @@ export type DriverProfile = {
   balance?: number
   minBalance?: number
   isOnline: boolean
+  blockedAt?: string
+  blockedReason?: string
   vehicle?: DriverVehicle
   documents?: DriverApplicationDocument[] | null
 }
@@ -244,6 +246,16 @@ export type DriverApplicationDocument = {
   fileName?: string
   mimeType?: string
   sizeBytes?: number
+}
+
+export type DriverApplicationHistoryItem = {
+  action: string
+  actorLabel?: string | null
+  statusFrom?: string | null
+  statusTo?: string | null
+  reason?: string | null
+  message?: string | null
+  createdAt: string
 }
 
 export type DriverApplicationStep = 1 | 2 | 3 | 4 | 5
@@ -269,6 +281,10 @@ export type DriverApplicationDraft = {
   documents: DriverApplicationDocument[]
   submittedAt?: string
   moderatorComment?: string
+  changesRequestedReason?: string
+  rejectionReason?: string
+  blockedReason?: string
+  history?: DriverApplicationHistoryItem[]
 }
 
 export type DriverFeedOrderCategory = 'ride' | 'parcel'

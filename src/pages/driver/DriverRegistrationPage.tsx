@@ -131,6 +131,7 @@ function normalizeVehicleBodyTypeCode(value?: string | null) {
 export default function DriverRegistrationPage() {
   const {
     driverApplicationDraft,
+    driverProfile,
     driverRegistrationStep,
     driverVerificationStatus,
     driverFlowError,
@@ -359,6 +360,8 @@ export default function DriverRegistrationPage() {
 
     return pieces.join(' ')
   }, [driverApplicationDraft.vehicleBrand, driverApplicationDraft.vehicleModel, driverApplicationDraft.vehicleYear, selectedVehicleBrand?.name, selectedVehicleModel?.name])
+
+  const reviewPhone = driverProfile?.phone || driverApplicationDraft.phone
 
   const step = driverRegistrationStep
 
@@ -823,7 +826,7 @@ export default function DriverRegistrationPage() {
 
         <div className="rounded-2xl bg-surface-soft p-4 text-sm text-ink">
           <p className="font-semibold">{driverApplicationDraft.fullName || 'ФИО'}</p>
-          <p className="mt-1 text-muted">{driverApplicationDraft.phone || 'Телефон'}</p>
+          <p className="mt-1 text-muted">{reviewPhone || 'Телефон'}</p>
           <p className="mt-1 text-muted">{selectedRideCity?.name || driverApplicationDraft.city || 'Город'}</p>
         </div>
 

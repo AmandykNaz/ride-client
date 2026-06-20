@@ -5,9 +5,12 @@ import { useAppActions, useAppState } from '../../providers/AppStateProvider'
 import { PageCard } from '../../shared/ui/PageCard'
 import {
   getDriverAccessState,
+  getDriverApplicationReason,
   getDriverVerificationStatusLabel,
   getDriverWalletShortfall,
 } from '../../features/driver/driver-status'
+import { DriverApplicationHistoryCard } from './components/DriverApplicationHistoryCard'
+import { DriverBlockedStateCard } from './components/DriverBlockedStateCard'
 
 const documentDefinitions = [
   ['DRIVER_LICENSE_FRONT', 'ВУ лицевая'],
@@ -31,6 +34,11 @@ export default function DriverProfilePage() {
   const accessState = getDriverAccessState(driverVerificationStatus, driverWallet)
   const verificationStatusLabel = getDriverVerificationStatusLabel(driverVerificationStatus)
   const walletShortfall = getDriverWalletShortfall(driverWallet)
+  const applicationReason = getDriverApplicationReason(driverApplicationDraft, driverVerificationStatus)
+  const blockedReason =
+    driverProfile?.blockedReason?.trim() ||
+    driverWallet?.blockedReason?.trim() ||
+    'Профиль водителя заблокирован модератором.'
   const resolvedCity =
     driverProfile?.city?.trim() ||
     driverProfile?.cityName?.trim() ||
@@ -140,6 +148,7 @@ export default function DriverProfilePage() {
           <p className="text-sm font-semibold text-ink">Статус заявки</p>
           <p className="mt-1 text-sm text-muted">{verificationStatusLabel}</p>
         </div>
+        <DriverApplicationHistoryCard history={driverApplicationDraft.history ?? []} limit={5} />
         <button
           type="button"
           onClick={actions.returnToPassengerMode}
@@ -163,9 +172,10 @@ export default function DriverProfilePage() {
           <CircleAlert className="mt-0.5 h-5 w-5 shrink-0" />
           <div>
             <p className="text-sm font-semibold">Причина</p>
-            <p className="mt-1 text-sm">{driverApplicationDraft.moderatorComment || 'Не указана'}</p>
+            <p className="mt-1 text-sm">{applicationReason || 'Не указана'}</p>
           </div>
         </div>
+        <DriverApplicationHistoryCard history={driverApplicationDraft.history ?? []} limit={5} />
         <button
           type="button"
           onClick={actions.editDriverApplicationAfterChanges}
@@ -182,34 +192,10 @@ export default function DriverProfilePage() {
     return (
       <PageCard
         eyebrow="Водитель"
-        title="Заявка заблокирована"
-        description="Водительский профиль ограничен."
+        title="Профиль водителя заблокирован"
+        description="Доступ к водительскому профилю ограничен модератором."
       >
-        <div className="flex items-start gap-3 rounded-2xl bg-red-50 p-4 text-red-700">
-          <CircleAlert className="mt-0.5 h-5 w-5 shrink-0" />
-          <div>
-            <p className="text-sm font-semibold">Причина</p>
-            <p className="mt-1 text-sm">
-              {driverApplicationDraft.moderatorComment || verificationStatusLabel || 'Заявка заблокирована модератором'}
-            </p>
-          </div>
-        </div>
-        <div className="grid gap-2 sm:grid-cols-2">
-          <button
-            type="button"
-            onClick={() => actions.setScreen('support')}
-            className="rounded-2xl bg-accent px-4 py-3 text-sm font-semibold text-white"
-          >
-            Связаться с поддержкой
-          </button>
-          <button
-            type="button"
-            onClick={actions.returnToPassengerMode}
-            className="rounded-2xl border border-border bg-white px-4 py-3 text-sm font-semibold text-ink"
-          >
-            Вернуться в пассажирский режим
-          </button>
-        </div>
+        <DriverBlockedStateCard reason={blockedReason} />
         {logoutButton}
       </PageCard>
     )

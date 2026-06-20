@@ -1,6 +1,7 @@
 import type {
   DriverActiveOrder,
   DriverApplicationDraft,
+  DriverApplicationHistoryItem,
   DriverCounterOffer,
   DriverFeedOrder,
   DriverProfile,
@@ -49,6 +50,12 @@ export type RideDriverApplicationDocument = {
   raw?: unknown
 }
 
+export type RideDriverApplicationHistoryItem = DriverApplicationHistoryItem & {
+  actorType?: string
+  metadata?: Record<string, unknown> | null
+  id?: string
+}
+
 export type RideDriverApplication = {
   id?: string
   status?: string
@@ -72,6 +79,8 @@ export type RideDriverApplication = {
   documents?: RideDriverApplicationDocument[]
   submittedAt?: string
   moderatorComment?: string
+  changesRequestedReason?: string
+  history?: RideDriverApplicationHistoryItem[]
   rejectionReason?: string
   blockedReason?: string
   raw?: unknown
@@ -126,6 +135,8 @@ export type RideDriverProfile = {
   minBalance?: number
   isOnline?: boolean
   verificationStatus?: string
+  blockedAt?: string
+  blockedReason?: string
   vehicle?: RideDriverVehicle | null
   documents?: RideDriverApplicationDocument[] | null
   raw?: unknown
@@ -240,7 +251,6 @@ export type RideDriverOrder = {
 
 export type DriverApplicationPayload = {
   fullName?: string
-  phone?: string
   cityId?: string
   frequentRoutes?: string
   vehicleBrand?: string
@@ -289,8 +299,10 @@ export type DriverMeViewModel = {
     submittedAt?: string
     moderatorComment?: string
     status?: DriverVerificationStatus | string
+    history?: DriverApplicationHistoryItem[]
   }
   currentApplication: DriverApplicationDraft | null
+  applicationHistory?: DriverApplicationHistoryItem[]
   applicationId?: string
   vehicle?: RideDriverVehicle | null
   vehicles?: RideDriverVehicle[]

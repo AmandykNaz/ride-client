@@ -892,6 +892,7 @@ function syncDriverProfileWithWallet(
     balance: wallet.balance,
     minBalance: wallet.minBalance,
     isOnline: profile.isOnline && canDriverGoOnline(wallet),
+    blockedReason: profile.blockedReason?.trim() || wallet.blockedReason?.trim() || profile.blockedReason,
   }
 }
 
@@ -1207,19 +1208,21 @@ function appReducer(state: AppState, action: AppAction): AppState {
       return { ...state, passengerRideOrders: action.orders }
     case 'setActiveRideEvents':
       return { ...state, activeRideEvents: action.events }
-    case 'setDriverSnapshot':
+    case 'setDriverSnapshot': {
+      const isApprovedDriver = action.driverVerificationStatus === 'APPROVED'
       return {
         ...state,
         driverVerificationStatus: action.driverVerificationStatus,
         driverProfile: action.driverProfile,
         driverApplicationDraft: action.driverApplicationDraft,
-        driverFeedOrders: action.driverFeedOrders,
-        driverOrders: action.driverOrders,
-        driverCounterOffers: action.driverCounterOffers,
-        driverActiveOrder: action.driverActiveOrder,
+        driverFeedOrders: isApprovedDriver ? action.driverFeedOrders : [],
+        driverOrders: isApprovedDriver ? action.driverOrders : [],
+        driverCounterOffers: isApprovedDriver ? action.driverCounterOffers : [],
+        driverActiveOrder: isApprovedDriver ? action.driverActiveOrder : null,
         currentScreen: action.currentScreen ?? state.currentScreen,
         driverFlowError: null,
       }
+    }
     case 'setDriverWalletSnapshot':
       return {
         ...state,
@@ -1436,6 +1439,9 @@ function appReducer(state: AppState, action: AppAction): AppState {
           moderatorComment:
             action.comment ??
             'Проверьте фото документов и заполните госномер без сокращений.',
+          changesRequestedReason:
+            action.comment ??
+            'Проверьте фото документов и заполните госномер без сокращений.',
         },
         currentScreen: 'driverDashboard',
         isMenuOpen: false,
@@ -1449,6 +1455,8 @@ function appReducer(state: AppState, action: AppAction): AppState {
         driverApplicationDraft: {
           ...state.driverApplicationDraft,
           moderatorComment:
+            action.comment ?? 'Временная блокировка за нарушение правил модерации.',
+          blockedReason:
             action.comment ?? 'Временная блокировка за нарушение правил модерации.',
         },
         currentScreen: 'driverDashboard',
@@ -1477,6 +1485,7 @@ function appReducer(state: AppState, action: AppAction): AppState {
         } as DriverApplicationDraft,
       }
     case 'toggleDriverOnlineStatus':
+      if (state.driverVerificationStatus !== 'APPROVED') return state
       return {
         ...state,
         driverProfile: state.driverProfile
@@ -1491,6 +1500,7 @@ function appReducer(state: AppState, action: AppAction): AppState {
           : state.driverProfile,
       }
     case 'setDriverOnline':
+      if (state.driverVerificationStatus !== 'APPROVED') return state
       return {
         ...state,
         driverProfile: state.driverProfile
@@ -3005,8 +3015,9 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         driverProfile: me.profile
           ? {
               ...me.profile,
-              verificationStatus,
+              verificationStatus: me.profile.verificationStatus ?? verificationStatus,
               isOnline: me.isOnline,
+              blockedReason: me.profile.blockedReason?.trim() || me.wallet?.blockedReason?.trim() || me.profile.blockedReason,
             }
           : state.driverProfile,
         driverApplicationDraft: currentApplication ? { ...state.driverApplicationDraft, ...currentApplication } : state.driverApplicationDraft,
@@ -3019,6 +3030,24 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
             ? 'driverDashboard'
             : screenOverride ?? state.currentScreen,
       })
+
+      if (me.wallet) {
+        dispatch({
+          type: 'setDriverWallet',
+          driverWallet: syncDriverWalletAccessState({
+            balance: me.wallet.balance ?? 0,
+            minBalance: me.wallet.minimumBalance ?? 0,
+            currency: me.wallet.currency ?? 'KZT',
+            canGoOnline: !me.wallet.isBlocked,
+            missingAmount: 0,
+            isBlocked: me.wallet.isBlocked ?? false,
+            blockedReason: me.wallet.blockedReason ?? '',
+            transactions: state.driverWallet.transactions,
+            topUpRequests: state.driverWallet.topUpRequests,
+            chargedOrderIds: state.driverWallet.chargedOrderIds,
+          }),
+        })
+      }
 
       if (verificationStatus === 'APPROVED') {
         await Promise.all([
@@ -3057,6 +3086,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     state.driverFeedOrders,
     state.driverOrders,
     state.driverProfile,
+    state.driverWallet,
     state.driverVerificationStatus,
     refreshDriverTopUpRequests,
     refreshDriverWallet,
@@ -3247,6 +3277,13 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
   const toggleDriverOnlineStatusAction = async () => {
     if (!state.driverProfile) return
+    if (state.driverVerificationStatus !== 'APPROVED') {
+      dispatch({
+        type: 'setDriverFlowError',
+        error: 'Профиль водителя заблокирован или недоступен.',
+      })
+      return
+    }
 
     const nextOnline = !state.driverProfile.isOnline
     if (nextOnline && !canDriverGoOnline(state.driverWallet)) {
@@ -3295,6 +3332,13 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
   const setDriverOnlineAction = async (online: boolean) => {
     if (!state.driverProfile) return
+    if (state.driverVerificationStatus !== 'APPROVED') {
+      dispatch({
+        type: 'setDriverFlowError',
+        error: 'Профиль водителя заблокирован или недоступен.',
+      })
+      return
+    }
     if (state.driverProfile.isOnline === online) return
     if (online && !canDriverGoOnline(state.driverWallet)) {
       dispatch({
@@ -3681,6 +3725,28 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
     loadedDriverTokenRef.current = token
     void refreshDriverSnapshot()
+  }, [state.role, refreshDriverSnapshot])
+
+  useEffect(() => {
+    if (state.role !== 'driver') return
+
+    const refetchDriverSnapshot = () => {
+      void refreshDriverSnapshot()
+    }
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        void refreshDriverSnapshot()
+      }
+    }
+
+    window.addEventListener('focus', refetchDriverSnapshot)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+
+    return () => {
+      window.removeEventListener('focus', refetchDriverSnapshot)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
   }, [state.role, refreshDriverSnapshot])
 
   useEffect(() => {

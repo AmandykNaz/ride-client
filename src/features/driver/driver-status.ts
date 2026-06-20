@@ -1,4 +1,4 @@
-import type { DriverVerificationStatus, DriverWallet } from '../../types/domain'
+import type { DriverApplicationDraft, DriverVerificationStatus, DriverWallet } from '../../types/domain'
 
 export type DriverAccessState =
   | 'NOT_STARTED'
@@ -48,4 +48,28 @@ export function getDriverAccessState(
   if (verificationStatus === 'SUSPENDED') return 'SUSPENDED'
 
   return canDriverGoOnline(wallet) ? 'APPROVED_READY' : 'APPROVED_LOW_BALANCE'
+}
+
+export function getDriverApplicationReason(
+  application: Pick<
+    DriverApplicationDraft,
+    'blockedReason' | 'changesRequestedReason' | 'rejectionReason' | 'moderatorComment'
+  > | null | undefined,
+  status: string | null | undefined,
+) {
+  const normalized = String(status ?? '').trim().toUpperCase()
+
+  if (normalized === 'BLOCKED') {
+    return application?.blockedReason?.trim() || application?.moderatorComment?.trim() || null
+  }
+
+  if (normalized === 'NEEDS_CHANGES') {
+    return application?.changesRequestedReason?.trim() || application?.moderatorComment?.trim() || null
+  }
+
+  if (normalized === 'REJECTED') {
+    return application?.rejectionReason?.trim() || application?.moderatorComment?.trim() || null
+  }
+
+  return application?.moderatorComment?.trim() || null
 }

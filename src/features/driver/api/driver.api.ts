@@ -306,6 +306,7 @@ function mapApplication(raw: unknown): RideDriverApplication | null {
   const documents = firstArray(record.documents, record.files, data?.documents)
   const history = firstArray(record.history, record.applicationHistory, record.application_history, data?.history, data?.applicationHistory, data?.application_history)
   const vehicleRecord = isRecord(vehicle) ? (vehicle as BackendRecord) : undefined
+  const status = asString(record.status ?? record.applicationStatus ?? data?.status).trim().toUpperCase()
   const vehicleBrandId = asOptionalNumber(vehicleRecord?.brandId ?? vehicleRecord?.brand_id)
   const vehicleModelId = asOptionalNumber(vehicleRecord?.modelId ?? vehicleRecord?.model_id)
   const vehicleColorId = asOptionalNumber(vehicleRecord?.colorId ?? vehicleRecord?.color_id)
@@ -359,13 +360,23 @@ function mapApplication(raw: unknown): RideDriverApplication | null {
     vehicleBodyType,
     documents: mapApplicationDocumentsToDraft(documents),
     submittedAt: asString(record.submittedAt ?? record.submitted_at),
-    moderatorComment: asString(
-      record.moderatorComment ??
-        record.moderator_comment ??
-        record.changesRequestedReason ??
-        record.rejectionReason ??
-        record.blockedReason,
-    ),
+    changesRequestedReason: asString(record.changesRequestedReason ?? record.changes_requested_reason),
+    rejectionReason: asString(record.rejectionReason ?? record.rejection_reason),
+    blockedReason: asString(record.blockedReason ?? record.blocked_reason),
+    moderatorComment:
+      status === 'BLOCKED'
+        ? asString(record.blockedReason ?? record.blocked_reason ?? record.moderatorComment ?? record.moderator_comment)
+        : status === 'NEEDS_CHANGES'
+          ? asString(record.changesRequestedReason ?? record.changes_requested_reason ?? record.moderatorComment ?? record.moderator_comment)
+          : status === 'REJECTED'
+            ? asString(record.rejectionReason ?? record.rejection_reason ?? record.moderatorComment ?? record.moderator_comment)
+            : asString(
+                record.moderatorComment ??
+                  record.moderator_comment ??
+                  record.changesRequestedReason ??
+                  record.rejectionReason ??
+                  record.blockedReason,
+              ),
     history: mapApplicationHistory(history),
     raw,
   }
@@ -460,6 +471,8 @@ function mapProfile(raw: unknown): DriverProfile | null {
     balance: asOptionalNumber(driverProfile?.balance ?? record.balance ?? record.walletBalance ?? record.wallet_balance),
     minBalance: asOptionalNumber(driverProfile?.minBalance ?? record.minBalance ?? record.min_balance),
     isOnline: asBoolean(driverProfile?.isOnline ?? record.isOnline ?? record.online),
+    blockedAt: asString(driverProfile?.blockedAt ?? record.blockedAt ?? record.blocked_at) || undefined,
+    blockedReason: asString(driverProfile?.blockedReason ?? record.blockedReason ?? record.blocked_reason),
     verificationStatus: mapVerificationStatus(
       driverProfile?.verificationStatus ??
         record.verificationStatus ??
@@ -707,6 +720,18 @@ function mapDriverApplicationDraft(application: RideDriverApplication | null): D
   const vehicleSnapshot = isRecord(application?.vehicleSnapshot)
     ? (application?.vehicleSnapshot as BackendRecord)
     : undefined
+  const status = asString(application?.status).trim().toUpperCase()
+  const changesRequestedReason = application?.changesRequestedReason
+  const rejectionReason = application?.rejectionReason
+  const blockedReason = application?.blockedReason
+  const moderatorComment =
+    status === 'BLOCKED'
+      ? blockedReason ?? application?.moderatorComment
+      : status === 'NEEDS_CHANGES'
+        ? changesRequestedReason ?? application?.moderatorComment
+        : status === 'REJECTED'
+          ? rejectionReason ?? application?.moderatorComment
+          : application?.moderatorComment
 
   return {
     step: 1,
@@ -731,7 +756,10 @@ function mapDriverApplicationDraft(application: RideDriverApplication | null): D
     vehicleBodyType: mapVehicleBodyType(application?.vehicleBodyType),
     documents: mapApplicationDocumentsToDraft(documentSource),
     submittedAt: application?.submittedAt,
-    moderatorComment: application?.moderatorComment,
+    moderatorComment,
+    changesRequestedReason: changesRequestedReason ?? undefined,
+    rejectionReason: rejectionReason ?? undefined,
+    blockedReason: blockedReason ?? undefined,
   }
 }
 
@@ -775,7 +803,6 @@ function buildApplicationPayload(
 
   return {
     fullName: application.fullName,
-    phone: application.phone,
     cityId,
     vehicle,
     ...(documents ? { documents } : {}),
@@ -809,8 +836,8 @@ export function mapDriverMeToViewModel(raw: unknown): DriverMeViewModel {
   const verificationStatus = mapVerificationStatus(
     record.verificationStatus ??
       record.verification_status ??
-      application?.status ??
-      profile?.verificationStatus,
+      profile?.verificationStatus ??
+      application?.status,
   )
   const isOnline = asBoolean(record.isOnline ?? record.is_online ?? profile?.isOnline)
   const vehiclesRaw = Array.isArray(record.vehicles)
@@ -828,8 +855,10 @@ export function mapDriverMeToViewModel(raw: unknown): DriverMeViewModel {
     profile: profile
       ? ({
           ...profile,
-          verificationStatus,
+          verificationStatus: profile.verificationStatus ?? verificationStatus,
           isOnline,
+          blockedAt: profile.blockedAt ?? undefined,
+          blockedReason: profile.blockedReason ?? undefined,
           documents: profile.documents ?? applicationDocuments,
         } satisfies DriverProfile)
       : null,
