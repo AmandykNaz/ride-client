@@ -50,15 +50,29 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-function getErrorMessage(value: unknown, fallback: string) {
+function getErrorMessage(value: unknown, fallback: string): string {
   if (typeof value === 'string' && value.trim()) {
     return value
   }
 
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const message: string = getErrorMessage(item, '')
+      if (message) return message
+    }
+  }
+
   if (isPlainObject(value)) {
-    const nestedMessage = value.message ?? value.error ?? value.detail
+    const nestedMessage: unknown = value.message ?? value.error ?? value.detail ?? value.messages
     if (typeof nestedMessage === 'string' && nestedMessage.trim()) {
       return nestedMessage
+    }
+
+    if (Array.isArray(nestedMessage)) {
+      for (const item of nestedMessage) {
+        const message: string = getErrorMessage(item, '')
+        if (message) return message
+      }
     }
   }
 

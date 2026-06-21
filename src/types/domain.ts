@@ -62,6 +62,7 @@ export type WalletTransaction = {
 }
 
 export type TopUpRequestStatus =
+  | 'PENDING_UPLOAD'
   | 'PENDING_REVIEW'
   | 'APPROVED'
   | 'REJECTED'

@@ -42,7 +42,7 @@ import {
   getDriverTopUpRequests,
   getDriverWallet,
   getDriverWalletTransactions,
-  uploadDriverTopUpReceipt,
+  uploadTopUpReceipt as uploadTopUpReceiptApi,
 } from '../features/driver/api/driver-wallet.api'
 import {
   createRideOrderComplaint as createRideOrderComplaintApi,
@@ -158,7 +158,6 @@ type AppState = {
     method: TopUpRequestMethod
     providerRef: string
     comment: string
-    proofFilePath: string
     receiptFile: File | null
   }
   rideComplaintForm: {
@@ -238,9 +237,8 @@ type AppContextValue = {
       method: TopUpRequestMethod
       providerRef?: string
       comment?: string
-      proofFilePath?: string
-      receiptFile?: File | null
-    }) => Promise<void>
+    }) => Promise<TopUpRequest>
+    uploadTopUpReceipt: (topUpRequestId: number, file: File) => Promise<TopUpRequest>
     createOrderReview: (orderId: string, payload: CreateRideReviewPayload) => Promise<void>
     createOrderComplaint: (orderId: string, payload: CreateRideComplaintPayload) => Promise<void>
     withdrawDriverOffer: (offerId: string) => Promise<void>
@@ -250,7 +248,12 @@ type AppContextValue = {
     openRideComplaintSheet: (orderId?: string) => void
     closeRideComplaintSheet: () => void
     updateRideComplaintForm: (patch: Partial<AppState['rideComplaintForm']>) => void
-    submitTopUpRequest: () => Promise<void>
+    submitTopUpRequest: () => Promise<{
+      request: TopUpRequest
+      requestId: number
+      receiptUploaded: boolean
+      receiptUploadError?: string
+    }>
     demoApproveTopUpRequest: (requestId: string) => void
     demoRejectTopUpRequest: (requestId: string) => void
     chargeCommissionForCompletedOrder: (orderId?: string) => void
@@ -961,8 +964,7 @@ function createTopUpRequestFromForm(
     method: form.method,
     providerRef: form.providerRef.trim(),
     comment: form.comment.trim(),
-    proofFilePath: form.proofFilePath.trim() || undefined,
-    status: 'PENDING_REVIEW',
+    status: 'PENDING_UPLOAD',
     createdAt: new Date().toISOString(),
   }
 }
@@ -1548,7 +1550,6 @@ function appReducer(state: AppState, action: AppAction): AppState {
           method: 'KASPI_TRANSFER',
           providerRef: '',
           comment: '',
-          proofFilePath: '',
           receiptFile: null,
         },
       }
@@ -1578,7 +1579,6 @@ function appReducer(state: AppState, action: AppAction): AppState {
           method: 'KASPI_TRANSFER',
           providerRef: '',
           comment: '',
-          proofFilePath: '',
           receiptFile: null,
         },
       }
@@ -2242,7 +2242,6 @@ function createInitialState(): AppState {
     method: 'KASPI_TRANSFER',
     providerRef: '',
     comment: '',
-    proofFilePath: '',
     receiptFile: null,
   },
   rideComplaintForm: {
@@ -2361,7 +2360,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       if (error instanceof BackendAuthError) {
         clearRideAccessToken()
         dispatch({ type: 'resetPassengerSession' })
-        return
+        throw error
       }
 
       dispatch({
@@ -2425,7 +2424,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       if (error instanceof BackendAuthError) {
         clearRideAccessToken()
         dispatch({ type: 'resetPassengerSession' })
-        return
+        throw error
       }
 
       dispatch({
@@ -3430,10 +3429,10 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     method: TopUpRequestMethod
     providerRef?: string
     comment?: string
-    proofFilePath?: string
-    receiptFile?: File | null
-  }) => {
-    if (state.driverVerificationStatus !== 'APPROVED') return
+  }): Promise<TopUpRequest> => {
+    if (state.driverVerificationStatus !== 'APPROVED') {
+      throw new Error('Профиль водителя недоступен.')
+    }
 
     dispatch({ type: 'setDriverTopUpSubmitting', loading: true })
     dispatch({ type: 'setDriverWalletError', error: null })
@@ -3442,35 +3441,63 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       const created = await createDriverTopUpRequestApi(payload)
       const request = mapTopUpRequestResponseToState(created)
 
-      let finalRequest = request
-      if (payload.receiptFile) {
-        const uploaded = await uploadDriverTopUpReceipt({
-          topUpRequestId: request.id,
-          file: payload.receiptFile,
-        })
-        finalRequest = mapTopUpRequestResponseToState(uploaded)
-      }
-
       dispatch({
         type: 'setDriverTopUpRequests',
-        driverTopUpRequests: [finalRequest, ...state.driverTopUpRequests.filter((item) => item.id !== finalRequest.id)],
+        driverTopUpRequests: [request, ...state.driverTopUpRequests.filter((item) => item.id !== request.id)],
       })
 
       await Promise.all([
         refreshDriverWallet(true),
         refreshDriverTopUpRequests(true),
       ])
+
+      return request
     } catch (error) {
       if (error instanceof BackendAuthError) {
         clearRideAccessToken()
         dispatch({ type: 'resetPassengerSession' })
-        return
+        throw error
       }
 
       dispatch({
         type: 'setDriverWalletError',
         error: error instanceof Error ? error.message : 'Не удалось создать заявку на пополнение.',
       })
+      throw error
+    } finally {
+      dispatch({ type: 'setDriverTopUpSubmitting', loading: false })
+    }
+  }
+
+  const uploadTopUpReceiptAction = async (topUpRequestId: number, file: File): Promise<TopUpRequest> => {
+    if (state.driverVerificationStatus !== 'APPROVED') {
+      throw new Error('Профиль водителя недоступен.')
+    }
+
+    dispatch({ type: 'setDriverTopUpSubmitting', loading: true })
+    dispatch({ type: 'setDriverWalletError', error: null })
+
+    try {
+      const uploaded = await uploadTopUpReceiptApi(topUpRequestId, file)
+      const request = mapTopUpRequestResponseToState(uploaded)
+
+      dispatch({
+        type: 'setDriverTopUpRequests',
+        driverTopUpRequests: [request, ...state.driverTopUpRequests.filter((item) => item.id !== request.id)],
+      })
+
+      await Promise.all([
+        refreshDriverWallet(true),
+        refreshDriverTopUpRequests(true),
+      ])
+
+      return request
+    } catch (error) {
+      if (error instanceof BackendAuthError) {
+        clearRideAccessToken()
+        dispatch({ type: 'resetPassengerSession' })
+        throw error
+      }
       throw error
     } finally {
       dispatch({ type: 'setDriverTopUpSubmitting', loading: false })
@@ -3898,16 +3925,45 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       closeRideComplaintSheet: () => dispatch({ type: 'closeRideComplaintSheet' }),
       updateRideComplaintForm: (patch) =>
         dispatch({ type: 'updateRideComplaintForm', patch }),
-      submitTopUpRequest: () =>
-        createDriverTopUpRequestAction({
+      submitTopUpRequest: async () => {
+        const request = await createDriverTopUpRequestAction({
           amount: Number(state.topUpForm.amount),
           method: state.topUpForm.method,
           providerRef: state.topUpForm.providerRef.trim() || undefined,
           comment: state.topUpForm.comment.trim() || undefined,
-          proofFilePath: state.topUpForm.proofFilePath.trim() || undefined,
-          receiptFile: state.topUpForm.receiptFile,
-        }),
+        })
+
+        const requestId = Number(request.id)
+        if (!Number.isFinite(requestId) || requestId <= 0) {
+          throw new Error('Заявка создана, но не удалось определить её номер для загрузки чека.')
+        }
+
+        if (!state.topUpForm.receiptFile) {
+          return {
+            request,
+            requestId,
+            receiptUploaded: false,
+          }
+        }
+
+        try {
+          await uploadTopUpReceiptAction(requestId, state.topUpForm.receiptFile)
+          return {
+            request,
+            requestId,
+            receiptUploaded: true,
+          }
+        } catch (error) {
+          return {
+            request,
+            requestId,
+            receiptUploaded: false,
+            receiptUploadError: error instanceof Error ? error.message : 'Не удалось загрузить чек.',
+          }
+        }
+      },
       createDriverTopUpRequest: (payload) => createDriverTopUpRequestAction(payload),
+      uploadTopUpReceipt: (topUpRequestId, file) => uploadTopUpReceiptAction(topUpRequestId, file),
       createOrderReview: (orderId, payload) => createOrderReviewAction(orderId, payload),
       createOrderComplaint: (orderId, payload) => createOrderComplaintAction(orderId, payload),
       demoApproveTopUpRequest: (requestId) =>

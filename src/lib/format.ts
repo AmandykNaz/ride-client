@@ -194,6 +194,8 @@ export function formatTopUpMethodLabel(method?: TopUpRequestMethod | string | nu
 
 export function formatTopUpStatusLabel(status?: TopUpRequestStatus | string | null) {
   switch (status) {
+    case 'PENDING_UPLOAD':
+      return 'Ожидает чек'
     case 'PENDING_REVIEW':
       return 'На проверке'
     case 'APPROVED':
@@ -204,6 +206,21 @@ export function formatTopUpStatusLabel(status?: TopUpRequestStatus | string | nu
       return 'Отменено'
     default:
       return 'Статус неизвестен'
+  }
+}
+
+export function getTopUpStatusTone(status?: TopUpRequestStatus | string | null) {
+  switch (status) {
+    case 'APPROVED':
+      return 'success'
+    case 'REJECTED':
+      return 'danger'
+    case 'CANCELLED':
+      return 'neutral'
+    case 'PENDING_UPLOAD':
+    case 'PENDING_REVIEW':
+    default:
+      return 'warning'
   }
 }
 

@@ -69,7 +69,6 @@ export type CreateDriverTopUpRequestPayload = {
   method: DriverTopUpRequestMethod
   providerRef?: string
   comment?: string
-  proofFilePath?: string
 }
 
 export type UploadDriverTopUpReceiptPayload = {

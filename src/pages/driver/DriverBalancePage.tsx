@@ -6,6 +6,7 @@ import {
   formatWalletTransactionDescription,
   formatTopUpMethodLabel,
   formatTopUpStatusLabel,
+  getTopUpStatusTone,
   formatWalletTransactionStatusLabel,
   formatWalletTransactionTypeLabel,
 } from '../../lib/format'
@@ -208,15 +209,20 @@ export default function DriverBalancePage() {
                     </p>
                     <p className="text-base font-semibold text-ink">{formatKzt(request.amount)}</p>
                     <p className="mt-1 text-sm text-muted">{formatTopUpMethodLabel(request.method)}</p>
+                    {request.status === 'PENDING_UPLOAD' ? (
+                      <p className="mt-2 text-sm font-medium text-amber-800">
+                        Заявка создана. Загрузите чек, чтобы отправить её на проверку.
+                      </p>
+                    ) : null}
                   </div>
                   <span
                     className={cn(
                       'rounded-full px-3 py-1 text-xs font-semibold',
-                      request.status === 'APPROVED'
+                      getTopUpStatusTone(request.status) === 'success'
                         ? 'bg-emerald-100 text-emerald-800'
-                        : request.status === 'REJECTED'
+                        : getTopUpStatusTone(request.status) === 'danger'
                           ? 'bg-red-100 text-red-800'
-                          : request.status === 'CANCELLED'
+                          : getTopUpStatusTone(request.status) === 'neutral'
                             ? 'bg-slate-100 text-slate-700'
                             : 'bg-amber-100 text-amber-800',
                     )}
@@ -227,11 +233,22 @@ export default function DriverBalancePage() {
                 <div className="mt-3 grid gap-1 text-sm text-muted">
                   <p>Номер перевода / чека: {request.providerRef || request.referenceNumber || '—'}</p>
                   <p>Комментарий: {request.comment || '—'}</p>
-                  <p>Чек: {request.receiptFileName || (request.receiptFilePath ? 'Прикреплён' : 'Не загружен')}</p>
+                  <p>Чек: {request.status === 'PENDING_UPLOAD' && !request.receiptFilePath ? 'не загружен' : request.receiptFileName || (request.receiptFilePath ? 'Прикреплён' : 'Не загружен')}</p>
                   <p>Дата: {formatDateTime(request.createdAt)}</p>
                   {request.reviewedAt ? <p>Проверено: {formatDateTime(request.reviewedAt)}</p> : null}
                   {request.rejectionReason ? <p>Причина отказа: {request.rejectionReason}</p> : null}
                 </div>
+                {request.status === 'PENDING_UPLOAD' ? (
+                  <div className="mt-3">
+                    <button
+                      type="button"
+                      onClick={actions.openTopUpForm}
+                      className="rounded-2xl bg-amber-500 px-4 py-2 text-sm font-semibold text-white shadow-sm shadow-amber-500/20"
+                    >
+                      Загрузить чек
+                    </button>
+                  </div>
+                ) : null}
               </div>
             ))}
           </div>

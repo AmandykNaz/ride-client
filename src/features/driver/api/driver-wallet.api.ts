@@ -6,7 +6,6 @@ import type {
   DriverWallet,
   DriverWalletTransaction,
   DriverWalletTransactionsResponse,
-  UploadDriverTopUpReceiptPayload,
 } from './driver-wallet.types'
 
 type BackendRecord = Record<string, unknown>
@@ -17,6 +16,12 @@ function isRecord(value: unknown): value is BackendRecord {
 
 function asString(value: unknown, fallback = '') {
   return typeof value === 'string' && value.trim() ? value : fallback
+}
+
+function asIdString(value: unknown, fallback = '') {
+  if (typeof value === 'string' && value.trim()) return value.trim()
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value)
+  return fallback
 }
 
 function asNumber(value: unknown, fallback = 0) {
@@ -134,12 +139,13 @@ function mapWalletTransaction(raw: unknown): DriverWalletTransaction {
 
 function mapTopUpRequest(raw: unknown): DriverTopUpRequest {
   const record = isRecord(raw) ? raw : {}
+  const id = asIdString(record.id ?? record.requestId ?? record.request_id)
 
   return {
-    id: asString(record.id, crypto.randomUUID?.() ?? `topup-${Date.now()}`),
+    id: id || crypto.randomUUID?.() || `topup-${Date.now()}`,
     amount: asNumber(record.amount),
     method: normalizeWalletMethod(record.method ?? record.paymentMethod ?? record.payment_method),
-    status: asString(record.status, 'PENDING_REVIEW'),
+    status: asString(record.status, 'PENDING_UPLOAD'),
     publicCode: asString(record.publicCode ?? record.public_code),
     providerRef: asString(record.providerRef ?? record.provider_ref),
     referenceNumber: asString(record.referenceNumber ?? record.reference_number),
@@ -237,12 +243,12 @@ export async function createDriverTopUpRequest(
   return mapTopUpRequest(record)
 }
 
-export async function uploadDriverTopUpReceipt(payload: UploadDriverTopUpReceiptPayload): Promise<DriverTopUpRequest> {
+export async function uploadTopUpReceipt(topUpRequestId: number, file: File): Promise<DriverTopUpRequest> {
   const formData = new FormData()
-  formData.set('file', payload.file)
+  formData.append('file', file)
 
   const response = await backendPost<unknown>(
-    `/ride/driver/wallet/top-up-requests/${String(payload.topUpRequestId)}/receipt`,
+    `/ride/driver/wallet/${String(topUpRequestId)}/receipt`,
     formData,
   )
   const record = isRecord(response) ? firstRecord(response.data, response.request, response.item) ?? response : response
