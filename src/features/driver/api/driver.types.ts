@@ -8,6 +8,11 @@ import type {
   DriverVehicleBodyType,
   DriverVehicleBodyTypeApi,
   DriverVerificationStatus,
+  RideDriverRecheck,
+  RideDriverRecheckFile,
+  RideDriverRecheckFileType,
+  RideDriverRecheckStatus,
+  RideDriverRecheckType,
   RideOrderStatus,
 } from '../../../types/domain'
 
@@ -48,6 +53,14 @@ export type RideDriverApplicationDocument = {
   mimeType?: string
   sizeBytes?: number
   raw?: unknown
+}
+
+export type {
+  RideDriverRecheck,
+  RideDriverRecheckFile,
+  RideDriverRecheckFileType,
+  RideDriverRecheckStatus,
+  RideDriverRecheckType,
 }
 
 export type RideDriverApplicationHistoryItem = DriverApplicationHistoryItem & {
@@ -315,6 +328,7 @@ export type DriverMeViewModel = {
     blockedReason?: string | null
   } | null
   documents?: RideDriverApplicationDocument[] | null
+  activeRecheck?: RideDriverRecheck | null
   verificationStatus: DriverVerificationStatus
   isOnline: boolean
   raw: unknown

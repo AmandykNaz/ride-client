@@ -13,6 +13,7 @@ import { useAppActions, useAppState } from '../../providers/AppStateProvider'
 import { PageCard } from '../../shared/ui/PageCard'
 import { DriverTopUpSheet } from '../../features/driver/components/DriverTopUpSheet'
 import { DriverBlockedStateCard } from './components/DriverBlockedStateCard'
+import { DriverRecheckCard } from './components/DriverRecheckCard'
 
 function formatDateTime(createdAt: string) {
   return new Intl.DateTimeFormat('ru-KZ', {
@@ -29,12 +30,12 @@ export default function DriverBalancePage() {
     driverWallet,
     driverWalletTransactions,
     driverTopUpRequests,
+    activeRecheck,
     isDriverWalletLoading,
     isDriverTopUpSubmitting,
     driverWalletError,
   } = useAppState()
   const actions = useAppActions()
-
   if (driverVerificationStatus !== 'APPROVED') {
     const blockedReason =
       driverWallet.blockedReason?.trim() ||
@@ -85,6 +86,15 @@ export default function DriverBalancePage() {
 
   return (
     <div className="space-y-4">
+      {activeRecheck ? (
+        <DriverRecheckCard
+          recheck={activeRecheck}
+          compact
+          onRefresh={() => actions.refreshDriverSnapshot()}
+          onOpenDetails={() => actions.setScreen('driverProfile')}
+        />
+      ) : null}
+
       <PageCard
         eyebrow="Водитель"
         title="Кошелёк"

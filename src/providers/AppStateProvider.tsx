@@ -26,6 +26,7 @@ import {
   counterOfferRideRequest,
   createDriverApplication,
   getActiveDriverOrder,
+  getActiveDriverRecheck,
   getDriverFeed,
   getDriverMe,
   getDriverOffers,
@@ -85,6 +86,7 @@ import type {
   DriverProfile,
   DriverVehicle,
   DriverVerificationStatus,
+  RideDriverRecheck,
   PassengerHistoryItem,
   PassengerProfile,
   PassengerStatus,
@@ -119,6 +121,7 @@ type AppState = {
   parcelDraft: ParcelDraft
   driverApplicationDraft: DriverApplicationDraft
   driverRegistrationStep: DriverApplicationStep
+  activeRecheck: RideDriverRecheck | null
   driverWallet: DriverWallet
   driverWalletTransactions: WalletTransaction[]
   driverTopUpRequests: TopUpRequest[]
@@ -348,6 +351,7 @@ type AppAction =
       type: 'setDriverSnapshot'
       driverVerificationStatus: DriverVerificationStatus
       driverProfile: DriverProfile | null
+      activeRecheck: RideDriverRecheck | null
       driverApplicationDraft: DriverApplicationDraft
       driverFeedOrders: DriverFeedOrder[]
       driverOrders: DriverActiveOrder[]
@@ -1214,6 +1218,7 @@ function appReducer(state: AppState, action: AppAction): AppState {
         ...state,
         driverVerificationStatus: action.driverVerificationStatus,
         driverProfile: action.driverProfile,
+        activeRecheck: action.activeRecheck,
         driverApplicationDraft: action.driverApplicationDraft,
         driverFeedOrders: isApprovedDriver ? action.driverFeedOrders : [],
         driverOrders: isApprovedDriver ? action.driverOrders : [],
@@ -2188,6 +2193,7 @@ function createInitialState(): AppState {
   parcelDraft: defaultParcelDraft(),
   driverApplicationDraft: defaultDriverApplicationDraft(),
   driverRegistrationStep: 1,
+  activeRecheck: null,
   driverWallet: defaultDriverWallet(),
   driverWalletTransactions: [],
   driverTopUpRequests: [],
@@ -3003,6 +3009,10 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       const me = await getDriverMe()
       const currentApplication = me.currentApplication ?? me.application ?? null
       driverApplicationIdRef.current = me.applicationId ?? currentApplication?.id ?? null
+      let activeRecheck = me.activeRecheck ?? null
+      if (activeRecheck && !activeRecheck.id) {
+        activeRecheck = await getActiveDriverRecheck().catch(() => null)
+      }
 
       const verificationStatus =
         me.verificationStatus === 'NOT_STARTED' && state.driverVerificationStatus === 'DRAFT'
@@ -3021,6 +3031,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
             }
           : state.driverProfile,
         driverApplicationDraft: currentApplication ? { ...state.driverApplicationDraft, ...currentApplication } : state.driverApplicationDraft,
+        activeRecheck,
         driverFeedOrders: state.driverFeedOrders,
         driverOrders: state.driverOrders,
         driverCounterOffers: state.driverCounterOffers,
@@ -3122,6 +3133,10 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     if (driverMe) {
       const currentApplication = driverMe.currentApplication ?? driverMe.application ?? null
       driverApplicationIdRef.current = driverMe.applicationId ?? currentApplication?.id ?? null
+      let activeRecheck = driverMe.activeRecheck ?? null
+      if (activeRecheck && !activeRecheck.id) {
+        activeRecheck = await getActiveDriverRecheck().catch(() => null)
+      }
 
       const verificationStatus =
         driverMe.verificationStatus === 'NOT_STARTED' && state.driverVerificationStatus === 'DRAFT'
@@ -3141,6 +3156,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         driverVerificationStatus: verificationStatus,
         driverProfile,
         driverApplicationDraft: currentApplication ? { ...state.driverApplicationDraft, ...currentApplication } : state.driverApplicationDraft,
+        activeRecheck,
         driverFeedOrders: state.driverFeedOrders,
         driverOrders: state.driverOrders,
         driverCounterOffers: state.driverCounterOffers,
@@ -3245,6 +3261,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         driverVerificationStatus: submitted.verificationStatus,
         driverProfile: submitted.profile ?? state.driverProfile,
         driverApplicationDraft: submitted.application ? { ...state.driverApplicationDraft, ...submitted.application } : state.driverApplicationDraft,
+        activeRecheck: state.activeRecheck,
         driverFeedOrders: state.driverFeedOrders,
         driverOrders: state.driverOrders,
         driverCounterOffers: state.driverCounterOffers,
@@ -3304,6 +3321,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         driverVerificationStatus: result.verificationStatus,
         driverProfile: result.profile ?? state.driverProfile,
         driverApplicationDraft: result.application ?? state.driverApplicationDraft,
+        activeRecheck: state.activeRecheck,
         driverFeedOrders: state.driverFeedOrders,
         driverOrders: state.driverOrders,
         driverCounterOffers: state.driverCounterOffers,
@@ -3358,6 +3376,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         driverVerificationStatus: result.verificationStatus,
         driverProfile: result.profile ?? state.driverProfile,
         driverApplicationDraft: result.application ?? state.driverApplicationDraft,
+        activeRecheck: state.activeRecheck,
         driverFeedOrders: state.driverFeedOrders,
         driverOrders: state.driverOrders,
         driverCounterOffers: state.driverCounterOffers,

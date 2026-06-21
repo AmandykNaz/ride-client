@@ -19,6 +19,7 @@ import {
 } from '../../features/driver/driver-status'
 import { DriverApplicationHistoryCard } from './components/DriverApplicationHistoryCard'
 import { DriverBlockedStateCard } from './components/DriverBlockedStateCard'
+import { DriverRecheckCard } from './components/DriverRecheckCard'
 
 function StatusRow({
   icon: Icon,
@@ -48,6 +49,7 @@ export default function DriverDashboardPage() {
   const {
     driverVerificationStatus,
     driverProfile,
+    activeRecheck,
     driverApplicationDraft,
     driverRegistrationStep,
     driverActiveOrder,
@@ -66,7 +68,6 @@ export default function DriverDashboardPage() {
     driverProfile?.blockedReason?.trim() ||
     driverWallet?.blockedReason?.trim() ||
     'Профиль водителя заблокирован модератором.'
-
   if (accessState === 'NOT_STARTED') {
     return (
       <div className="space-y-4">
@@ -240,7 +241,17 @@ export default function DriverDashboardPage() {
   }
 
   return (
-    <PageCard
+    <div className="space-y-4">
+      {activeRecheck ? (
+        <DriverRecheckCard
+          recheck={activeRecheck}
+          compact
+          onRefresh={() => actions.refreshDriverSnapshot()}
+          onOpenDetails={() => actions.setScreen('driverProfile')}
+        />
+      ) : null}
+
+      <PageCard
       eyebrow="Водитель"
       title={accessState === 'APPROVED_LOW_BALANCE' ? 'Профиль одобрен' : 'Кабинет водителя'}
       description={
@@ -491,6 +502,7 @@ export default function DriverDashboardPage() {
           Профиль
         </button>
       </div>
-    </PageCard>
+      </PageCard>
+    </div>
   )
 }

@@ -11,6 +11,7 @@ import {
 } from '../../features/driver/driver-status'
 import { DriverApplicationHistoryCard } from './components/DriverApplicationHistoryCard'
 import { DriverBlockedStateCard } from './components/DriverBlockedStateCard'
+import { DriverRecheckCard } from './components/DriverRecheckCard'
 
 const documentDefinitions = [
   ['DRIVER_LICENSE_FRONT', 'ВУ лицевая'],
@@ -27,6 +28,7 @@ export default function DriverProfilePage() {
     passengerStatus,
     driverVerificationStatus,
     driverProfile,
+    activeRecheck,
     driverApplicationDraft,
     driverWallet,
   } = useAppState()
@@ -238,100 +240,109 @@ export default function DriverProfilePage() {
 
   if (accessState === 'APPROVED_READY' || accessState === 'APPROVED_LOW_BALANCE') {
     return (
-      <PageCard
-        eyebrow="Водитель"
-        title="Профиль водителя"
-        description={
-          accessState === 'APPROVED_LOW_BALANCE'
-            ? `Профиль одобрен, но для выхода на линию нужно пополнить баланс минимум до ${formatKzt(driverWallet.minBalance)}.`
-            : 'Полные данные подтверждённого водителя.'
-        }
-      >
-        {accessState === 'APPROVED_LOW_BALANCE' ? (
-          <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-            <p className="font-semibold">Профиль одобрен</p>
-            <p className="mt-1">
-              Пополните баланс минимум до {formatKzt(driverWallet.minBalance)}.
-            </p>
-            <p className="mt-1">Не хватает {formatKzt(walletShortfall)}.</p>
-          </div>
+      <div className="space-y-4">
+        {activeRecheck ? (
+          <DriverRecheckCard
+            recheck={activeRecheck}
+            onRefresh={() => actions.refreshDriverSnapshot()}
+          />
         ) : null}
 
-        <div className="rounded-2xl bg-surface-soft p-4">
-          <div className="flex items-center gap-3">
-            <BadgeCheck className="h-5 w-5 text-accent" />
-            <div>
-              <p className="text-sm font-semibold text-ink">
-                {driverProfile?.fullName || driverApplicationDraft.fullName}
+        <PageCard
+          eyebrow="Водитель"
+          title="Профиль водителя"
+          description={
+            accessState === 'APPROVED_LOW_BALANCE'
+              ? `Профиль одобрен, но для выхода на линию нужно пополнить баланс минимум до ${formatKzt(driverWallet.minBalance)}.`
+              : 'Полные данные подтверждённого водителя.'
+          }
+        >
+          {accessState === 'APPROVED_LOW_BALANCE' ? (
+            <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+              <p className="font-semibold">Профиль одобрен</p>
+              <p className="mt-1">
+                Пополните баланс минимум до {formatKzt(driverWallet.minBalance)}.
               </p>
-              <p className="text-sm text-muted">
-                {driverProfile?.phone || driverApplicationDraft.phone}
-              </p>
+              <p className="mt-1">Не хватает {formatKzt(walletShortfall)}.</p>
+            </div>
+          ) : null}
+
+          <div className="rounded-2xl bg-surface-soft p-4">
+            <div className="flex items-center gap-3">
+              <BadgeCheck className="h-5 w-5 text-accent" />
+              <div>
+                <p className="text-sm font-semibold text-ink">
+                  {driverProfile?.fullName || driverApplicationDraft.fullName}
+                </p>
+                <p className="text-sm text-muted">
+                  {driverProfile?.phone || driverApplicationDraft.phone}
+                </p>
+              </div>
             </div>
           </div>
-        </div>
 
-        <div className="grid gap-3 sm:grid-cols-2">
-          <div className="rounded-2xl bg-surface-soft p-4">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">Город</p>
-            <p className="mt-2 text-sm font-semibold text-ink">
-              {resolvedCity}
-            </p>
-          </div>
-          <div className="rounded-2xl bg-surface-soft p-4">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">Авто</p>
-            <p className="mt-2 text-sm font-semibold text-ink">
-              {driverProfile?.vehicle?.brand || driverApplicationDraft.vehicleBrand}{' '}
-              {driverProfile?.vehicle?.model || driverApplicationDraft.vehicleModel}
-            </p>
-            <p className="mt-1 text-sm text-muted">
-              {formatKzPlateNumber(driverProfile?.vehicle?.plate || driverApplicationDraft.vehiclePlate)}
-            </p>
-          </div>
-          <div className="rounded-2xl bg-surface-soft p-4">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">Рейтинг</p>
-            <p className="mt-2 text-sm font-semibold text-ink">
-              {driverProfile?.rating ?? 5}
-            </p>
-          </div>
-          <div className="rounded-2xl bg-surface-soft p-4">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">Поездки</p>
-            <p className="mt-2 text-sm font-semibold text-ink">
-              {driverProfile?.tripsCount ?? 0}
-            </p>
-          </div>
-          <div className="rounded-2xl bg-surface-soft p-4">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">Баланс</p>
-            <p className="mt-2 text-sm font-semibold text-ink">
-              {formatKzt(driverWallet.balance)}
-            </p>
-            {accessState === 'APPROVED_LOW_BALANCE' ? (
-              <p className="mt-1 text-xs text-amber-800">
-                Пополните до {formatKzt(driverWallet.minBalance)}
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="rounded-2xl bg-surface-soft p-4">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">Город</p>
+              <p className="mt-2 text-sm font-semibold text-ink">
+                {resolvedCity}
               </p>
-            ) : null}
+            </div>
+            <div className="rounded-2xl bg-surface-soft p-4">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">Авто</p>
+              <p className="mt-2 text-sm font-semibold text-ink">
+                {driverProfile?.vehicle?.brand || driverApplicationDraft.vehicleBrand}{' '}
+                {driverProfile?.vehicle?.model || driverApplicationDraft.vehicleModel}
+              </p>
+              <p className="mt-1 text-sm text-muted">
+                {formatKzPlateNumber(driverProfile?.vehicle?.plate || driverApplicationDraft.vehiclePlate)}
+              </p>
+            </div>
+            <div className="rounded-2xl bg-surface-soft p-4">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">Рейтинг</p>
+              <p className="mt-2 text-sm font-semibold text-ink">
+                {driverProfile?.rating ?? 5}
+              </p>
+            </div>
+            <div className="rounded-2xl bg-surface-soft p-4">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">Поездки</p>
+              <p className="mt-2 text-sm font-semibold text-ink">
+                {driverProfile?.tripsCount ?? 0}
+              </p>
+            </div>
+            <div className="rounded-2xl bg-surface-soft p-4">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">Баланс</p>
+              <p className="mt-2 text-sm font-semibold text-ink">
+                {formatKzt(driverWallet.balance)}
+              </p>
+              {accessState === 'APPROVED_LOW_BALANCE' ? (
+                <p className="mt-1 text-xs text-amber-800">
+                  Пополните до {formatKzt(driverWallet.minBalance)}
+                </p>
+              ) : null}
+            </div>
+            <div className="rounded-2xl bg-surface-soft p-4">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">Документы</p>
+              <p className="mt-2 text-sm font-semibold text-ink">{documentStatusText}</p>
+              {documentRows.length > 0 ? (
+                <div className="mt-3 space-y-2 text-xs text-muted">
+                  {documentRows.map(([label, status, filePath]) => (
+                    <div key={label} className="flex items-center justify-between rounded-2xl bg-white px-3 py-2">
+                      <span>{label}</span>
+                      <span>{status}{filePath ? ` · ${filePath}` : ''}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : isApprovedProfile ? (
+                <p className="mt-3 text-xs text-muted">Документы проверены администратором.</p>
+              ) : (
+                <p className="mt-3 text-xs text-muted">Загруженные документы не найдены.</p>
+              )}
+            </div>
           </div>
-          <div className="rounded-2xl bg-surface-soft p-4">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">Документы</p>
-            <p className="mt-2 text-sm font-semibold text-ink">{documentStatusText}</p>
-            {documentRows.length > 0 ? (
-              <div className="mt-3 space-y-2 text-xs text-muted">
-                {documentRows.map(([label, status, filePath]) => (
-                  <div key={label} className="flex items-center justify-between rounded-2xl bg-white px-3 py-2">
-                    <span>{label}</span>
-                    <span>{status}{filePath ? ` · ${filePath}` : ''}</span>
-                  </div>
-                ))}
-              </div>
-            ) : isApprovedProfile ? (
-              <p className="mt-3 text-xs text-muted">Документы проверены администратором.</p>
-            ) : (
-              <p className="mt-3 text-xs text-muted">Загруженные документы не найдены.</p>
-            )}
-          </div>
-        </div>
-        {logoutButton}
-      </PageCard>
+          {logoutButton}
+        </PageCard>
+      </div>
     )
   }
 

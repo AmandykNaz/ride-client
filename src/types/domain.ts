@@ -248,6 +248,56 @@ export type DriverApplicationDocument = {
   sizeBytes?: number
 }
 
+export type RideDriverRecheckType =
+  | 'VEHICLE_PHOTOS'
+  | 'SELFIE'
+  | 'DOCUMENTS'
+  | 'VEHICLE_AND_SELFIE'
+
+export type RideDriverRecheckStatus =
+  | 'PENDING_UPLOAD'
+  | 'PENDING_REVIEW'
+  | 'APPROVED'
+  | 'REJECTED'
+  | 'CANCELLED'
+  | 'EXPIRED'
+
+export type RideDriverRecheckFileType =
+  | 'SELFIE'
+  | 'CAR_FRONT_PHOTO'
+  | 'CAR_BACK_PHOTO'
+  | 'INTERIOR_PHOTO'
+  | 'TRUNK_PHOTO'
+  | 'DRIVER_LICENSE_FRONT'
+  | 'DRIVER_LICENSE_BACK'
+  | 'VEHICLE_REGISTRATION'
+
+export type RideDriverRecheckFile = {
+  id?: number
+  type: RideDriverRecheckFileType
+  filePath?: string
+  fileName?: string
+  mimeType?: string
+  sizeBytes?: number
+  uploadedAt?: string
+  raw?: unknown
+}
+
+export type RideDriverRecheck = {
+  id: number
+  driverProfileId?: number | null
+  applicationId?: number | null
+  status: RideDriverRecheckStatus
+  type: RideDriverRecheckType
+  reason?: string | null
+  dueAt?: string | null
+  submittedAt?: string | null
+  reviewedAt?: string | null
+  reviewReason?: string | null
+  files: RideDriverRecheckFile[]
+  raw?: unknown
+}
+
 export type DriverApplicationHistoryItem = {
   action: string
   actorLabel?: string | null

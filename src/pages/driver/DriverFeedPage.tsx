@@ -10,6 +10,7 @@ import { DriverFeedOrderCard } from '../../features/driver/components/DriverFeed
 import type { DriverCounterOffer, DriverFeedOrder } from '../../types/domain'
 import { getDriverAccessState, getDriverWalletShortfall } from '../../features/driver/driver-status'
 import { DriverBlockedStateCard } from './components/DriverBlockedStateCard'
+import { DriverRecheckCard } from './components/DriverRecheckCard'
 
 type FeedFilter = 'all' | 'ride' | 'parcel' | 'full'
 
@@ -34,6 +35,7 @@ export default function DriverFeedPage() {
     driverCounterOffers,
     driverProfile,
     driverWallet,
+    activeRecheck,
     driverActiveOrder,
     isDriverFeedLoading,
     isDriverActionLoading,
@@ -47,7 +49,6 @@ export default function DriverFeedPage() {
     driverProfile?.blockedReason?.trim() ||
     driverWallet?.blockedReason?.trim() ||
     'Профиль водителя заблокирован модератором.'
-
   const lowBalance = accessState === 'APPROVED_LOW_BALANCE'
   const visibleOrders = useMemo(
     () =>
@@ -114,42 +115,62 @@ export default function DriverFeedPage() {
 
   if (lowBalance) {
     return (
-      <PageCard
-        eyebrow="Водитель"
-        title="Профиль одобрен"
-        description={`Пополните баланс минимум до ${formatKzt(driverWallet.minBalance)}, чтобы выйти на линию.`}
-      >
-        <div className="flex items-center gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-900">
-          <Sparkles className="h-5 w-5" />
-          <div className="min-w-0">
-            <p className="text-sm font-semibold">Профиль одобрен</p>
-            <p className="text-sm">
-              Не хватает {formatKzt(walletShortfall)} до минимального баланса.
-            </p>
+      <div className="space-y-4">
+        {activeRecheck ? (
+          <DriverRecheckCard
+            recheck={activeRecheck}
+            compact
+            onRefresh={() => actions.refreshDriverSnapshot()}
+            onOpenDetails={() => actions.setScreen('driverProfile')}
+          />
+        ) : null}
+
+        <PageCard
+          eyebrow="Водитель"
+          title="Профиль одобрен"
+          description={`Пополните баланс минимум до ${formatKzt(driverWallet.minBalance)}, чтобы выйти на линию.`}
+        >
+          <div className="flex items-center gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-900">
+            <Sparkles className="h-5 w-5" />
+            <div className="min-w-0">
+              <p className="text-sm font-semibold">Профиль одобрен</p>
+              <p className="text-sm">
+                Не хватает {formatKzt(walletShortfall)} до минимального баланса.
+              </p>
+            </div>
           </div>
-        </div>
-        <div className="grid gap-2 sm:grid-cols-2">
-          <button
-            type="button"
-            onClick={() => actions.setScreen('driverBalance')}
-            className="rounded-2xl bg-accent px-4 py-3 text-sm font-semibold text-white"
-          >
-            Перейти в баланс
-          </button>
-          <button
-            type="button"
-            onClick={() => actions.setScreen('driverDashboard')}
-            className="rounded-2xl border border-border bg-white px-4 py-3 text-sm font-semibold text-ink"
-          >
-            В кабинет
-          </button>
-        </div>
-      </PageCard>
+          <div className="grid gap-2 sm:grid-cols-2">
+            <button
+              type="button"
+              onClick={() => actions.setScreen('driverBalance')}
+              className="rounded-2xl bg-accent px-4 py-3 text-sm font-semibold text-white"
+            >
+              Перейти в баланс
+            </button>
+            <button
+              type="button"
+              onClick={() => actions.setScreen('driverDashboard')}
+              className="rounded-2xl border border-border bg-white px-4 py-3 text-sm font-semibold text-ink"
+            >
+              В кабинет
+            </button>
+          </div>
+        </PageCard>
+      </div>
     )
   }
 
   return (
     <div className="space-y-4">
+      {activeRecheck ? (
+        <DriverRecheckCard
+          recheck={activeRecheck}
+          compact
+          onRefresh={() => actions.refreshDriverSnapshot()}
+          onOpenDetails={() => actions.setScreen('driverProfile')}
+        />
+      ) : null}
+
       <PageCard
         eyebrow="Водитель"
         title="Лента заказов"

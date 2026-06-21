@@ -13,6 +13,11 @@ import type {
   DriverVehicleBodyTypeApi,
   DriverVerificationStatus,
   ParcelSize,
+  RideDriverRecheck,
+  RideDriverRecheckFile,
+  RideDriverRecheckFileType,
+  RideDriverRecheckStatus,
+  RideDriverRecheckType,
   RideOrderStatus,
 } from '../../../types/domain'
 import { DRIVER_VEHICLE_BODY_TYPE_API_MAP } from '../../../types/domain'
@@ -54,6 +59,21 @@ function asBoolean(value: unknown, fallback = false) {
 
 function asOptionalNumber(value: unknown) {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined
+}
+
+function asOptionalNumericId(value: unknown) {
+  if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
+    return Math.trunc(value)
+  }
+
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Number(value.trim())
+    if (Number.isFinite(parsed) && parsed > 0) {
+      return Math.trunc(parsed)
+    }
+  }
+
+  return undefined
 }
 
 function firstRecord(...values: unknown[]) {
@@ -175,6 +195,86 @@ function mapApplicationHistory(raw: unknown): DriverApplicationHistoryItem[] {
     .filter((item) => Boolean(item.action && item.createdAt))
 }
 
+function mapDriverRecheckFile(raw: unknown): RideDriverRecheckFile | null {
+  const record = isRecord(raw) ? raw : {}
+  const type = normalizeRecheckFileType(
+    record.type ?? record.fileType ?? record.file_type ?? record.documentType ?? record.document_type,
+  )
+  const id = asOptionalNumericId(record.id ?? record.fileId ?? record.file_id)
+
+  if (!type) return null
+
+  return {
+    id,
+    type,
+    filePath: asString(record.filePath ?? record.file_path ?? record.path, '') || undefined,
+    fileName: asString(record.fileName ?? record.file_name ?? record.filename ?? record.name, '') || undefined,
+    mimeType: asString(record.mimeType ?? record.mime_type, '') || undefined,
+    sizeBytes: asOptionalNumber(record.sizeBytes ?? record.size_bytes),
+    uploadedAt: asString(record.uploadedAt ?? record.uploaded_at ?? record.createdAt ?? record.created_at, '') || undefined,
+    raw,
+  }
+}
+
+function mapDriverRecheck(raw: unknown): RideDriverRecheck | null {
+  const record = isRecord(raw) ? raw : {}
+  const data = isRecord(record.data) ? record.data : undefined
+  const fileSource =
+    firstArray(
+      record.files,
+      record.documents,
+      record.items,
+      data?.files,
+      data?.documents,
+      data?.items,
+    ) ?? []
+
+  const files = fileSource.map(mapDriverRecheckFile).filter((file): file is RideDriverRecheckFile => Boolean(file))
+  const status = normalizeRecheckStatus(record.status ?? record.recheckStatus ?? record.recheck_status ?? data?.status)
+  const type = normalizeRecheckType(record.type ?? record.recheckType ?? record.recheck_type ?? data?.type)
+  const id = asOptionalNumericId(
+    record.id ?? record.recheckId ?? record.recheck_id ?? data?.id ?? data?.recheckId ?? data?.recheck_id,
+  )
+
+  if (!id || id <= 0) {
+    return null
+  }
+
+  return {
+    id,
+    driverProfileId: asOptionalNumericId(record.driverProfileId ?? record.driver_profile_id ?? data?.driverProfileId ?? data?.driver_profile_id) ?? null,
+    applicationId: asOptionalNumericId(record.applicationId ?? record.application_id ?? data?.applicationId ?? data?.application_id) ?? null,
+    status,
+    type,
+    reason:
+      asString(
+        record.reason ??
+          record.comment ??
+          record.message ??
+          record.moderatorComment ??
+          record.moderator_comment ??
+          data?.reason,
+      ) || null,
+    dueAt:
+      asString(record.dueAt ?? record.due_at ?? record.deadline ?? data?.dueAt ?? data?.due_at) || null,
+    submittedAt:
+      asString(record.submittedAt ?? record.submitted_at ?? data?.submittedAt ?? data?.submitted_at) || null,
+    reviewedAt:
+      asString(record.reviewedAt ?? record.reviewed_at ?? data?.reviewedAt ?? data?.reviewed_at) || null,
+    reviewReason:
+      asString(
+        record.reviewReason ??
+          record.review_reason ??
+          record.reviewComment ??
+          record.review_comment ??
+          data?.reviewReason ??
+          data?.review_reason,
+      ) || null,
+    files,
+    raw,
+  }
+}
+
 function extractList(value: unknown) {
   if (Array.isArray(value)) return value
 
@@ -232,6 +332,49 @@ function mapVerificationStatus(value: unknown): DriverVerificationStatus {
   if (status === 'SUSPENDED') return 'SUSPENDED'
 
   return 'NOT_STARTED'
+}
+
+function normalizeRecheckType(value: unknown): RideDriverRecheckType {
+  const status = asString(value).trim().toUpperCase()
+
+  if (status === 'SELFIE') return 'SELFIE'
+  if (status === 'VEHICLE_PHOTOS') return 'VEHICLE_PHOTOS'
+  if (status === 'DOCUMENTS') return 'DOCUMENTS'
+  if (status === 'VEHICLE_AND_SELFIE') return 'VEHICLE_AND_SELFIE'
+
+  return 'DOCUMENTS'
+}
+
+function normalizeRecheckStatus(value: unknown): RideDriverRecheckStatus {
+  const status = asString(value).trim().toUpperCase()
+
+  if (status === 'PENDING_UPLOAD') return 'PENDING_UPLOAD'
+  if (status === 'PENDING_REVIEW') return 'PENDING_REVIEW'
+  if (status === 'APPROVED') return 'APPROVED'
+  if (status === 'REJECTED') return 'REJECTED'
+  if (status === 'CANCELLED' || status === 'CANCELED') return 'CANCELLED'
+  if (status === 'EXPIRED') return 'EXPIRED'
+
+  return 'PENDING_UPLOAD'
+}
+
+function normalizeRecheckFileType(value: unknown): RideDriverRecheckFileType | null {
+  const type = asString(value).trim().toUpperCase()
+
+  if (
+    type === 'SELFIE' ||
+    type === 'CAR_FRONT_PHOTO' ||
+    type === 'CAR_BACK_PHOTO' ||
+    type === 'INTERIOR_PHOTO' ||
+    type === 'TRUNK_PHOTO' ||
+    type === 'DRIVER_LICENSE_FRONT' ||
+    type === 'DRIVER_LICENSE_BACK' ||
+    type === 'VEHICLE_REGISTRATION'
+  ) {
+    return type
+  }
+
+  return null
 }
 
 function mapVehicleBodyType(value: unknown): DriverVehicleBodyType {
@@ -833,6 +976,16 @@ export function mapDriverMeToViewModel(raw: unknown): DriverMeViewModel {
     application?.history,
   )
   const profile = mapProfile(record)
+  const activeRecheck = mapDriverRecheck(
+    firstRecord(
+      record.activeRecheck,
+      record.active_recheck,
+      record.recheck,
+      data?.activeRecheck,
+      data?.active_recheck,
+      data?.recheck,
+    ),
+  )
   const verificationStatus = mapVerificationStatus(
     record.verificationStatus ??
       record.verification_status ??
@@ -887,6 +1040,7 @@ export function mapDriverMeToViewModel(raw: unknown): DriverMeViewModel {
         }
       : undefined,
     documents: profile?.documents ?? applicationDocuments ?? undefined,
+    activeRecheck,
     verificationStatus,
     isOnline,
     raw,
@@ -907,6 +1061,10 @@ export function mapDriverOrderToViewModel(raw: unknown): DriverOrderViewModel {
 
 export async function getDriverMe() {
   return mapDriverMeToViewModel(await backendGet('/ride/driver/me'))
+}
+
+export async function getActiveDriverRecheck() {
+  return mapDriverRecheck(await backendGet('/ride/driver/rechecks/active'))
 }
 
 export async function getRideCities() {
@@ -939,6 +1097,27 @@ export async function uploadDriverDocument(type: RideDriverApplicationDocument['
   formData.set('file', file)
 
   return backendPost<DriverApplicationDocument>('/ride/driver/documents/upload', formData)
+}
+
+export async function uploadDriverRecheckFile(
+  recheckId: number | string,
+  fileType: RideDriverRecheckFile['type'],
+  file: File,
+) {
+  const formData = new FormData()
+  formData.set('type', String(fileType ?? '').trim())
+  formData.set('file', file)
+
+  return backendPost(
+    `/ride/driver/rechecks/${String(recheckId)}/files`,
+    formData,
+  )
+}
+
+export async function submitDriverRecheck(recheckId: number | string) {
+  return mapDriverRecheck(
+    await backendPost(`/ride/driver/rechecks/${String(recheckId)}/submit`),
+  )
 }
 
 export async function createDriverApplication(payload: DriverApplicationDraft) {
