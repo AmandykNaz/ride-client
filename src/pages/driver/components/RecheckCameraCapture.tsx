@@ -306,8 +306,8 @@ export function RecheckCameraCapture({
                 disabled={isStarting}
                 className="inline-flex items-center justify-center gap-2 rounded-2xl border border-border bg-white px-4 py-3 text-sm font-semibold text-ink disabled:cursor-not-allowed disabled:opacity-60"
               >
-                <Camera className="h-4 w-4" />
-                Сменить камеру
+                <RefreshCcw className="h-4 w-4" />
+                Переключить камеру
               </button>
             ) : null}
           </div>
