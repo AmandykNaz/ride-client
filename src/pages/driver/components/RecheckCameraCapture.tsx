@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Camera, CameraOff, Check, RefreshCcw, X } from 'lucide-react'
 
 type RecheckCameraCaptureProps = {
@@ -27,6 +27,9 @@ export function RecheckCameraCapture({
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const requestIdRef = useRef(0)
+  const [availableCameras, setAvailableCameras] = useState<MediaDeviceInfo[]>([])
+  const [activeDeviceId, setActiveDeviceId] = useState<string | null>(null)
   const [isStarting, setIsStarting] = useState(false)
   const [cameraError, setCameraError] = useState<string | null>(null)
   const [capturedPreview, setCapturedPreview] = useState<string | null>(null)
@@ -39,55 +42,90 @@ export function RecheckCameraCapture({
     [captureMode],
   )
 
-  const stopStream = () => {
+  const stopStream = useCallback(() => {
     streamRef.current?.getTracks().forEach((track) => track.stop())
     streamRef.current = null
-  }
+  }, [])
 
-  useEffect(() => {
-    if (!open) return
+  const resetCapture = useCallback(() => {
+    setCapturedPreview(null)
+    setCapturedFile(null)
+  }, [])
 
-    let alive = true
+  const startCamera = useCallback(
+    async (deviceId?: string | null) => {
+      const requestId = ++requestIdRef.current
+      stopStream()
+      resetCapture()
+      setCameraError(null)
 
-    const startCamera = async () => {
       if (!navigator.mediaDevices?.getUserMedia) {
         setCameraError('Камера недоступна. Можно выбрать файл вручную.')
         return
       }
 
       setIsStarting(true)
-      setCameraError(null)
 
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: facingMode, audio: false })
-        if (!alive) {
+        const constraints: MediaStreamConstraints = deviceId
+          ? { video: { deviceId: { exact: deviceId } }, audio: false }
+          : { video: facingMode, audio: false }
+        const stream = await navigator.mediaDevices.getUserMedia(constraints)
+        if (requestId !== requestIdRef.current) {
           stream.getTracks().forEach((track) => track.stop())
           return
         }
 
         streamRef.current = stream
+
         if (videoRef.current) {
           videoRef.current.srcObject = stream
           await videoRef.current.play().catch(() => undefined)
         }
+
+        const devices = await navigator.mediaDevices.enumerateDevices()
+        if (requestId !== requestIdRef.current) {
+          return
+        }
+        const cameras = devices.filter((device) => device.kind === 'videoinput')
+        setAvailableCameras(cameras)
+
+        const currentDeviceId =
+          stream.getVideoTracks()[0]?.getSettings().deviceId ?? deviceId ?? cameras[0]?.deviceId ?? null
+        setActiveDeviceId(currentDeviceId)
       } catch (error) {
+        if (requestId !== requestIdRef.current) {
+          return
+        }
+        setAvailableCameras([])
+        setActiveDeviceId(null)
         setCameraError(
           error instanceof DOMException && error.name === 'NotAllowedError'
             ? 'Нет доступа к камере. Можно выбрать файл вручную.'
             : 'Камера недоступна. Можно выбрать файл вручную.',
         )
       } finally {
-        if (alive) setIsStarting(false)
+        if (requestId === requestIdRef.current) {
+          setIsStarting(false)
+        }
       }
-    }
+    },
+    [facingMode, resetCapture, stopStream],
+  )
 
-    void startCamera()
+  useEffect(() => {
+    if (!open) return
+
+    const timer = window.setTimeout(() => {
+      void startCamera()
+    }, 0)
 
     return () => {
-      alive = false
+      requestIdRef.current += 1
+      window.clearTimeout(timer)
       stopStream()
     }
-  }, [facingMode, open])
+  }, [open, startCamera, stopStream])
 
   const captureFrame = async () => {
     const video = videoRef.current
@@ -120,14 +158,10 @@ export function RecheckCameraCapture({
       return
     }
 
+    resetCapture()
     const file = blobToFile(blob, `recheck-${captureMode}-${Date.now()}.jpg`)
     setCapturedPreview(canvas.toDataURL('image/jpeg', 0.92))
     setCapturedFile(file)
-  }
-
-  const resetCapture = () => {
-    setCapturedPreview(null)
-    setCapturedFile(null)
   }
 
   const handleUseCapturedPhoto = async () => {
@@ -144,6 +178,18 @@ export function RecheckCameraCapture({
     } finally {
       setIsSubmitting(false)
     }
+  }
+
+  const handleSwitchCamera = async () => {
+    if (availableCameras.length < 2 || isStarting) return
+
+    const currentDeviceId = activeDeviceId ?? streamRef.current?.getVideoTracks()[0]?.getSettings().deviceId ?? null
+    const currentIndex = availableCameras.findIndex((device) => device.deviceId === currentDeviceId)
+    const nextCamera = availableCameras[(currentIndex + 1) % availableCameras.length] ?? availableCameras[0]
+
+    if (!nextCamera) return
+
+    await startCamera(nextCamera.deviceId)
   }
 
   if (!open) return null
@@ -227,7 +273,7 @@ export function RecheckCameraCapture({
             </div>
           ) : null}
 
-          <div className="grid gap-2 sm:grid-cols-2">
+          <div className={capturedPreview ? 'grid gap-2 sm:grid-cols-2' : 'grid gap-2 sm:grid-cols-3'}>
             {!capturedPreview ? (
               <button
                 type="button"
@@ -250,6 +296,20 @@ export function RecheckCameraCapture({
                 Переснять
               </button>
             )}
+
+            {!capturedPreview && availableCameras.length > 1 ? (
+              <button
+                type="button"
+                onClick={() => {
+                  void handleSwitchCamera()
+                }}
+                disabled={isStarting}
+                className="inline-flex items-center justify-center gap-2 rounded-2xl border border-border bg-white px-4 py-3 text-sm font-semibold text-ink disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <Camera className="h-4 w-4" />
+                Сменить камеру
+              </button>
+            ) : null}
           </div>
 
           {capturedPreview ? (
@@ -271,28 +331,28 @@ export function RecheckCameraCapture({
           </p>
         </div>
 
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*"
-            capture={captureMode}
-            className="sr-only"
-            onChange={(event) => {
-              const file = event.currentTarget.files?.[0]
-              event.currentTarget.value = ''
-              if (!file) return
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          capture={captureMode}
+          className="sr-only"
+          onChange={(event) => {
+            const file = event.currentTarget.files?.[0]
+            event.currentTarget.value = ''
+            if (!file) return
 
-              setUploadError(null)
-              void Promise.resolve(onUsePhoto(file))
-                .then(() => {
-                  stopStream()
-                  onClose()
-                })
-                .catch((error) => {
-                  setUploadError(error instanceof Error ? error.message : 'Не удалось загрузить фото.')
-                })
-            }}
-          />
+            setUploadError(null)
+            void Promise.resolve(onUsePhoto(file))
+              .then(() => {
+                stopStream()
+                onClose()
+              })
+              .catch((error) => {
+                setUploadError(error instanceof Error ? error.message : 'Не удалось загрузить фото.')
+              })
+          }}
+        />
       </div>
     </div>
   )

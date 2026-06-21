@@ -197,17 +197,51 @@ function formatUploadedLabel(file?: RideDriverRecheckFile | null) {
   return file.fileName?.trim() || 'Фото загружено'
 }
 
+function parseDate(value?: string | null) {
+  if (!value) return null
+
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? null : date
+}
+
+function isRequirementFresh(
+  file: RideDriverRecheckFile | undefined,
+  status: RideDriverRecheckStatus,
+  reviewedAt?: string | null,
+) {
+  if (!file?.filePath?.trim()) {
+    return false
+  }
+
+  if (status !== 'REJECTED') {
+    return true
+  }
+
+  const reviewDate = parseDate(reviewedAt)
+  const uploadedAt = parseDate(file.uploadedAt)
+  if (!reviewDate || !uploadedAt) {
+    return false
+  }
+
+  return uploadedAt.getTime() > reviewDate.getTime()
+}
+
 function RecheckRequirementRow({
   requirement,
   file,
+  status,
+  reviewedAt,
   onOpenCamera,
 }: {
   requirement: RecheckRequirement
   file?: RideDriverRecheckFile
+  status: RideDriverRecheckStatus
+  reviewedAt?: string | null
   onOpenCamera: (requirement: RecheckRequirement) => void
 }) {
   const Icon = requirement.icon
-  const isUploaded = Boolean(file?.filePath?.trim())
+  const isUploaded = isRequirementFresh(file, status, reviewedAt)
+  const needsRetake = status === 'REJECTED' && !isUploaded
 
   return (
     <div className="rounded-2xl border border-border bg-surface-soft p-4">
@@ -215,18 +249,25 @@ function RecheckRequirementRow({
         <div className="min-w-0">
           <p className="text-sm font-semibold text-ink">{requirement.label}</p>
           <p className="mt-1 text-xs text-muted">
-            {isUploaded ? 'Загружено' : 'Не загружено'}
-            {isUploaded ? ` • ${formatUploadedLabel(file)}` : ''}
+            {isUploaded
+              ? `Загружено${file?.fileName?.trim() ? ` • ${formatUploadedLabel(file)}` : ''}`
+              : needsRetake
+                ? 'Нужно переснять'
+                : 'Не загружено'}
           </p>
         </div>
         <span
           className={cn(
             'inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold',
-            isUploaded ? 'bg-emerald-100 text-emerald-700' : 'bg-white text-slate-600',
+            isUploaded
+              ? 'bg-emerald-100 text-emerald-700'
+              : status === 'REJECTED'
+                ? 'bg-red-100 text-red-700'
+                : 'bg-white text-slate-600',
           )}
         >
           <CheckCircle2 className="h-3.5 w-3.5" />
-          {isUploaded ? 'Загружено' : 'Ожидается'}
+          {isUploaded ? 'Загружено' : needsRetake ? 'Пересъёмка' : 'Ожидается'}
         </span>
       </div>
 
@@ -277,19 +318,35 @@ export function DriverRecheckCard({
   compact?: boolean
   onOpenDetails?: () => void
 }) {
-  const requirements = getRequirements(recheck.type)
   const [resolvedRecheck, setResolvedRecheck] = useState<RideDriverRecheck | null>(recheck)
   const [isResolving, setIsResolving] = useState(false)
   const isDev = import.meta.env.DEV
   const [activeRequirement, setActiveRequirement] = useState<RecheckRequirement | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const currentRecheck = resolvedRecheck ?? recheck
+  const requirements = getRequirements(currentRecheck.type)
   const uploadedFiles = useMemo(
-    () => getUploadedFileMap(resolvedRecheck?.files ?? recheck.files),
-    [resolvedRecheck?.files, recheck.files],
+    () => getUploadedFileMap(currentRecheck.files),
+    [currentRecheck.files],
   )
-  const missingRequirements = requirements.filter((requirement) => !uploadedFiles[requirement.type]?.filePath?.trim())
+  const missingRequirements = requirements.filter(
+    (requirement) => !isRequirementFresh(uploadedFiles[requirement.type], currentRecheck.status, currentRecheck.reviewedAt),
+  )
   const allRequiredUploaded = missingRequirements.length === 0
-  const resolvedId = resolvedRecheck ? getRecheckId(resolvedRecheck) : 0
+  const resolvedId = currentRecheck ? getRecheckId(currentRecheck) : 0
+  const isRejected = currentRecheck.status === 'REJECTED'
+  const isPendingUpload = currentRecheck.status === 'PENDING_UPLOAD'
+  const isPendingReview = currentRecheck.status === 'PENDING_REVIEW'
+  const submitLabel = isRejected ? 'Отправить повторно' : 'Отправить на проверку'
+  const cardClassName = cn(
+    compact
+      ? isRejected
+        ? 'border-red-200 bg-red-50/80'
+        : 'border-amber-200 bg-amber-50/80'
+      : isRejected
+        ? 'border-red-200 bg-white'
+        : 'border-sky-200 bg-white',
+  )
 
   useEffect(() => {
     let alive = true
@@ -323,7 +380,7 @@ export function DriverRecheckCard({
   const uploadCapturedFile = async (file: File) => {
     if (!activeRequirement) return
 
-    const id = resolvedRecheck ? getRecheckId(resolvedRecheck) : 0
+    const id = currentRecheck ? getRecheckId(currentRecheck) : 0
     if (!id) {
       setError(
         isDev
@@ -344,7 +401,7 @@ export function DriverRecheckCard({
   }
 
   const handleSubmit = async () => {
-    const id = resolvedRecheck ? getRecheckId(resolvedRecheck) : 0
+    const id = currentRecheck ? getRecheckId(currentRecheck) : 0
     if (!id) {
       setError(
         isDev
@@ -373,15 +430,25 @@ export function DriverRecheckCard({
     <>
       <PageCard
         eyebrow="Водитель"
-        title={compact ? 'Повторная проверка' : recheck.status === 'PENDING_UPLOAD' ? 'Требуется повторная проверка' : 'Повторная проверка'}
-        description={
-          recheck.status === 'PENDING_UPLOAD'
-            ? 'Загрузите нужные файлы и отправьте их на проверку модератору.'
-            : recheck.status === 'PENDING_REVIEW'
-              ? 'Повторная проверка отправлена. Ожидайте решения модератора.'
-              : `Статус: ${RECHECK_STATUS_LABELS[recheck.status]}`
+        title={
+          compact
+            ? 'Повторная проверка'
+            : isRejected
+              ? 'Повторная проверка отклонена'
+              : isPendingUpload
+                ? 'Требуется повторная проверка'
+                : 'Повторная проверка'
         }
-        className={cn(compact ? 'border-amber-200 bg-amber-50/80' : 'border-sky-200 bg-white')}
+        description={
+          isRejected
+            ? 'Сделайте фото заново и отправьте повторно.'
+            : isPendingUpload
+              ? 'Загрузите нужные файлы и отправьте их на проверку модератору.'
+              : isPendingReview
+              ? 'Повторная проверка отправлена. Ожидайте решения модератора.'
+              : `Статус: ${RECHECK_STATUS_LABELS[currentRecheck.status]}`
+        }
+        className={cardClassName}
       >
         {isResolving ? (
           <div className="rounded-2xl bg-surface-soft p-4 text-sm text-muted">
@@ -402,43 +469,59 @@ export function DriverRecheckCard({
           </div>
           <div className="rounded-2xl bg-surface-soft p-4">
             <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">Статус</p>
-            <p className="mt-2 text-sm font-semibold text-ink">{RECHECK_STATUS_LABELS[recheck.status]}</p>
+            <p className="mt-2 text-sm font-semibold text-ink">{RECHECK_STATUS_LABELS[currentRecheck.status]}</p>
           </div>
         </div>
 
-        {recheck.reason ? (
+        {isRejected ? (
+          <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-red-900">
+            <p className="text-sm font-semibold">Повторная проверка отклонена</p>
+            <p className="mt-1 text-sm">{currentRecheck.reviewReason?.trim() || 'Причина не указана.'}</p>
+            <p className="mt-2 text-sm">Сделайте фото заново и отправьте повторно.</p>
+          </div>
+        ) : currentRecheck.reason ? (
           <div className="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-900">
             <Clock3 className="mt-0.5 h-5 w-5 shrink-0" />
             <div className="min-w-0">
               <p className="text-sm font-semibold">Причина</p>
-              <p className="mt-1 text-sm">{recheck.reason}</p>
+              <p className="mt-1 text-sm">{currentRecheck.reason}</p>
             </div>
           </div>
         ) : null}
 
-        {recheck.dueAt ? (
+        {currentRecheck.dueAt ? (
           <div className="rounded-2xl bg-surface-soft p-4">
             <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">Дедлайн</p>
-            <p className="mt-2 text-sm font-semibold text-ink">{formatDateTime(recheck.dueAt)}</p>
+            <p className="mt-2 text-sm font-semibold text-ink">{formatDateTime(currentRecheck.dueAt)}</p>
           </div>
         ) : null}
 
         {compact ? (
-          <div className="rounded-2xl border border-amber-200 bg-white p-4 text-sm text-ink">
+          <div className={cn('rounded-2xl p-4 text-sm text-ink', isRejected ? 'border border-red-200 bg-white' : 'border border-amber-200 bg-white')}>
             <p className="font-semibold">Нужно действий: {missingRequirements.length}</p>
             <p className="mt-1 text-muted">
               {allRequiredUploaded
-                ? 'Все обязательные файлы уже загружены.'
-                : `Не хватает файлов: ${missingRequirements.map((item) => item.label).join(', ')}`}
+                ? isRejected
+                  ? 'Все обязательные файлы загружены заново.'
+                  : 'Все обязательные файлы уже загружены.'
+                : isRejected
+                  ? `Нужно переснять: ${missingRequirements.map((item) => item.label).join(', ')}`
+                  : `Не хватает файлов: ${missingRequirements.map((item) => item.label).join(', ')}`}
             </p>
           </div>
         ) : null}
 
-        {recheck.status === 'PENDING_UPLOAD' && !compact ? (
+        {(isPendingUpload || isRejected) && !compact ? (
           <div className="space-y-3">
             <div className="rounded-2xl bg-surface-soft p-4">
-              <p className="text-sm font-semibold text-ink">Обязательные файлы</p>
-              <p className="mt-1 text-xs text-muted">Нажмите на нужный тип файла и сделайте фото камерой.</p>
+              <p className="text-sm font-semibold text-ink">
+                {isRejected ? 'Обязательные файлы для повторной съёмки' : 'Обязательные файлы'}
+              </p>
+              <p className="mt-1 text-xs text-muted">
+                {isRejected
+                  ? 'Переснимите все файлы и отправьте их повторно.'
+                  : 'Нажмите на нужный тип файла и сделайте фото камерой.'}
+              </p>
             </div>
 
             <div className="space-y-3">
@@ -447,6 +530,8 @@ export function DriverRecheckCard({
                   key={requirement.type}
                   requirement={requirement}
                   file={uploadedFiles[requirement.type]}
+                  status={currentRecheck.status}
+                  reviewedAt={currentRecheck.reviewedAt}
                   onOpenCamera={(nextRequirement) => {
                     setError(null)
                     setActiveRequirement(nextRequirement)
@@ -464,31 +549,32 @@ export function DriverRecheckCard({
               className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-accent px-4 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
             >
               <Send className="h-4 w-4" />
-              Отправить на проверку
+              {submitLabel}
             </button>
 
             {!allRequiredUploaded ? (
               <p className="text-xs text-muted">
-                До отправки не хватает: {missingRequirements.map((item) => item.label).join(', ')}
+                {isRejected ? 'До повторной отправки нужно переснять: ' : 'До отправки не хватает: '}
+                {missingRequirements.map((item) => item.label).join(', ')}
               </p>
             ) : null}
           </div>
         ) : null}
 
-        {recheck.status === 'PENDING_REVIEW' ? (
+        {isPendingReview ? (
           <div className="space-y-3">
             <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-900">
               <p className="text-sm font-semibold">Повторная проверка отправлена. Ожидайте решения модератора.</p>
               <p className="mt-1 text-sm">Файлы переданы модератору. Мы сообщим, когда проверка будет завершена.</p>
             </div>
-            <RecheckFilesSummary files={recheck.files} />
+            <RecheckFilesSummary files={currentRecheck.files} />
           </div>
         ) : null}
 
-        {recheck.status !== 'PENDING_UPLOAD' && recheck.status !== 'PENDING_REVIEW' ? (
+        {!isPendingUpload && !isPendingReview && !isRejected ? (
           <div className="rounded-2xl bg-surface-soft p-4 text-sm text-ink">
-            {recheck.status === 'APPROVED' ? 'Проверка завершена успешно.' : `Статус: ${RECHECK_STATUS_LABELS[recheck.status]}`}
-            {recheck.reviewReason ? <p className="mt-1 text-muted">{recheck.reviewReason}</p> : null}
+            {currentRecheck.status === 'APPROVED' ? 'Проверка завершена успешно.' : `Статус: ${RECHECK_STATUS_LABELS[currentRecheck.status]}`}
+            {currentRecheck.reviewReason ? <p className="mt-1 text-muted">{currentRecheck.reviewReason}</p> : null}
           </div>
         ) : null}
 
