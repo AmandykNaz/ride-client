@@ -6,6 +6,7 @@ import type {
   DriverWallet,
   DriverWalletTransaction,
   DriverWalletTransactionsResponse,
+  UploadDriverTopUpReceiptPayload,
 } from './driver-wallet.types'
 
 type BackendRecord = Record<string, unknown>
@@ -50,7 +51,8 @@ function unwrapWalletResponse(raw: unknown) {
 function normalizeWalletMethod(value: unknown): DriverTopUpRequest['method'] {
   const normalized = asString(value).toUpperCase()
 
-  if (normalized === 'KASPI' || normalized === 'KASPI_TRANSFER') return 'KASPI'
+  if (normalized === 'KASPI') return 'KASPI'
+  if (normalized === 'KASPI_TRANSFER' || normalized === 'KASPI_QR') return normalized
   if (normalized === 'HALYK') return 'HALYK'
   if (normalized === 'BANK_TRANSFER' || normalized === 'BANK') return 'OTHER'
   if (normalized === 'CASH') return 'CASH'
@@ -112,6 +114,17 @@ function mapWalletTransaction(raw: unknown): DriverWalletTransaction {
         : typeof record.balance_after === 'number'
           ? record.balance_after
           : undefined,
+    publicCode: asString(record.publicCode ?? record.public_code),
+    sourceType: asString(record.sourceType ?? record.source_type),
+    sourceId:
+      typeof record.sourceId === 'number'
+        ? record.sourceId
+        : typeof record.source_id === 'number'
+          ? record.source_id
+          : undefined,
+    provider: asString(record.provider ?? null),
+    externalPaymentId: asString(record.externalPaymentId ?? record.external_payment_id),
+    providerPayload: isRecord(record.providerPayload) ? record.providerPayload : (record.provider_payload as Record<string, unknown> | null | undefined) ?? null,
     description: asString(record.description ?? record.title ?? record.message),
     comment: asString(record.comment ?? record.note),
     createdAt: asString(record.createdAt ?? record.created_at, new Date().toISOString()),
@@ -127,10 +140,25 @@ function mapTopUpRequest(raw: unknown): DriverTopUpRequest {
     amount: asNumber(record.amount),
     method: normalizeWalletMethod(record.method ?? record.paymentMethod ?? record.payment_method),
     status: asString(record.status, 'PENDING_REVIEW'),
+    publicCode: asString(record.publicCode ?? record.public_code),
     providerRef: asString(record.providerRef ?? record.provider_ref),
     referenceNumber: asString(record.referenceNumber ?? record.reference_number),
     comment: asString(record.comment ?? record.message ?? record.note),
     proofFilePath: asString(record.proofFilePath ?? record.proof_file_path),
+    receiptFilePath: asString(record.receiptFilePath ?? record.receipt_file_path),
+    receiptFileName: asString(record.receiptFileName ?? record.receipt_file_name),
+    receiptMimeType: asString(record.receiptMimeType ?? record.receipt_mime_type),
+    receiptSizeBytes:
+      typeof record.receiptSizeBytes === 'number'
+        ? record.receiptSizeBytes
+        : typeof record.receipt_size_bytes === 'number'
+          ? record.receipt_size_bytes
+          : undefined,
+    provider: asString(record.provider ?? null),
+    externalPaymentId: asString(record.externalPaymentId ?? record.external_payment_id),
+    providerPayload: isRecord(record.providerPayload) ? record.providerPayload : (record.provider_payload as Record<string, unknown> | null | undefined) ?? null,
+    matchedAt: asString(record.matchedAt ?? record.matched_at),
+    confirmedAt: asString(record.confirmedAt ?? record.confirmed_at),
     createdAt: asString(record.createdAt ?? record.created_at, new Date().toISOString()),
     reviewedAt: asString(record.reviewedAt ?? record.reviewed_at),
     rejectionReason: asString(record.rejectionReason ?? record.rejectReason ?? record.rejection_reason),
@@ -204,6 +232,18 @@ export async function createDriverTopUpRequest(
   const response = await backendPost<unknown>(
     '/ride/driver/wallet/top-up-requests',
     normalizeTopUpPayload(payload),
+  )
+  const record = isRecord(response) ? firstRecord(response.data, response.request, response.item) ?? response : response
+  return mapTopUpRequest(record)
+}
+
+export async function uploadDriverTopUpReceipt(payload: UploadDriverTopUpReceiptPayload): Promise<DriverTopUpRequest> {
+  const formData = new FormData()
+  formData.set('file', payload.file)
+
+  const response = await backendPost<unknown>(
+    `/ride/driver/wallet/top-up-requests/${String(payload.topUpRequestId)}/receipt`,
+    formData,
   )
   const record = isRecord(response) ? firstRecord(response.data, response.request, response.item) ?? response : response
   return mapTopUpRequest(record)

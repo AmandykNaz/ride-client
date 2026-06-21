@@ -51,6 +51,12 @@ export type WalletTransaction = {
   createdAt: string
   balanceBefore?: number
   balanceAfter?: number
+  publicCode?: string
+  sourceType?: string
+  sourceId?: number
+  provider?: string
+  externalPaymentId?: string
+  providerPayload?: Record<string, unknown> | null
   sourceOrderId?: string
   sourceTopUpRequestId?: string
 }
@@ -63,6 +69,8 @@ export type TopUpRequestStatus =
 
 export type TopUpRequestMethod =
   | 'KASPI'
+  | 'KASPI_TRANSFER'
+  | 'KASPI_QR'
   | 'HALYK'
   | 'CASH'
   | 'OTHER'
@@ -71,10 +79,20 @@ export type TopUpRequest = {
   id: string
   amount: number
   method: TopUpRequestMethod
+  publicCode?: string
   referenceNumber?: string
   providerRef?: string
   comment?: string
   proofFilePath?: string
+  receiptFilePath?: string
+  receiptFileName?: string
+  receiptMimeType?: string
+  receiptSizeBytes?: number
+  provider?: string
+  externalPaymentId?: string
+  providerPayload?: Record<string, unknown> | null
+  matchedAt?: string
+  confirmedAt?: string
   screenshotAttached?: boolean
   status: TopUpRequestStatus
   createdAt: string

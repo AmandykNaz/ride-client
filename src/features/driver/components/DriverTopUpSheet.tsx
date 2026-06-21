@@ -1,25 +1,65 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 
 import { cn } from '../../../lib/cn'
+import { formatKzt } from '../../../lib/format'
 import { useAppActions, useAppState } from '../../../providers/AppStateProvider'
 import { OverlaySheet } from '../../../shared/ui/OverlaySheet'
 
 const methods = [
-  { id: 'KASPI', label: 'Kaspi' },
+  { id: 'KASPI_TRANSFER', label: 'Kaspi перевод' },
+  { id: 'KASPI_QR', label: 'Kaspi QR' },
   { id: 'HALYK', label: 'Halyk' },
   { id: 'CASH', label: 'Наличные' },
   { id: 'OTHER', label: 'Другое' },
 ] as const
+
+const quickAmounts = [2000, 5000, 10000]
+
+function buildInstructions(method: string) {
+  switch (method) {
+    case 'KASPI_QR':
+      return {
+        title: 'Kaspi QR',
+        text: 'Оплатите по QR-коду и сохраните чек. После оплаты прикрепите файл к заявке.',
+      }
+    case 'HALYK':
+      return {
+        title: 'Halyk',
+        text: 'Переведите сумму на реквизиты Halyk и загрузите скрин подтверждения.',
+      }
+    case 'CASH':
+      return {
+        title: 'Наличные',
+        text: 'Если оплата наличными уже принята, прикрепите фото или скрин подтверждения.',
+      }
+    case 'OTHER':
+      return {
+        title: 'Другое',
+        text: 'Используйте тот способ, который согласован с администратором, и приложите чек.',
+      }
+    case 'KASPI_TRANSFER':
+    case 'KASPI':
+    default:
+      return {
+        title: 'Kaspi перевод',
+        text: 'Переведите сумму на Kaspi и прикрепите чек или скрин после оплаты.',
+      }
+  }
+}
 
 export function DriverTopUpSheet() {
   const { isTopUpFormOpen, topUpForm, isDriverTopUpSubmitting, driverWalletError } = useAppState()
   const actions = useAppActions()
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+  const [receiptInputKey, setReceiptInputKey] = useState(0)
+
+  const instructions = useMemo(() => buildInstructions(topUpForm.method), [topUpForm.method])
 
   const handleClose = () => {
     setError('')
     setSuccess('')
+    setReceiptInputKey((value) => value + 1)
     actions.closeTopUpForm()
   }
 
@@ -31,20 +71,27 @@ export function DriverTopUpSheet() {
       return
     }
 
+    if (!topUpForm.receiptFile) {
+      setError('Прикрепите чек или скрин оплаты.')
+      return
+    }
+
     setError('')
     setSuccess('')
 
     try {
       await actions.submitTopUpRequest()
-      setSuccess('Заявка на пополнение отправлена.')
+      setSuccess('Заявка отправлена на проверку.')
+      setReceiptInputKey((value) => value + 1)
       actions.updateTopUpForm({
         amount: '',
         providerRef: '',
         comment: '',
         proofFilePath: '',
+        receiptFile: null,
       })
     } catch {
-      setError('Не удалось отправить заявку. Попробуйте еще раз.')
+      setError('Не удалось отправить заявку. Попробуйте ещё раз.')
     }
   }
 
@@ -56,6 +103,35 @@ export function DriverTopUpSheet() {
       position="bottom"
     >
       <div className="space-y-4">
+        <div className="rounded-3xl border border-border bg-surface-soft p-4">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">
+            Инструкция
+          </p>
+          <p className="mt-2 text-sm font-semibold text-ink">{instructions.title}</p>
+          <p className="mt-1 text-sm text-muted">{instructions.text}</p>
+          <p className="mt-3 text-sm text-ink">
+            Выберите метод оплаты, затем загрузите чек. После отправки заявка получит публичный код.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-3 gap-2">
+          {quickAmounts.map((amount) => (
+            <button
+              key={amount}
+              type="button"
+              onClick={() => actions.updateTopUpForm({ amount: String(amount) })}
+              className={cn(
+                'rounded-2xl px-3 py-3 text-xs font-semibold transition',
+                topUpForm.amount === String(amount)
+                  ? 'bg-accent text-white shadow-lg shadow-accent/20'
+                  : 'bg-surface-soft text-ink',
+              )}
+            >
+              {formatKzt(amount)}
+            </button>
+          ))}
+        </div>
+
         <div className="grid grid-cols-2 gap-2">
           {methods.map((method) => {
             const isActive = topUpForm.method === method.id
@@ -98,7 +174,7 @@ export function DriverTopUpSheet() {
             value={topUpForm.providerRef}
             onChange={(event) => actions.updateTopUpForm({ providerRef: event.target.value })}
             className="w-full rounded-2xl border border-border bg-surface-soft px-4 py-3 text-sm outline-none transition focus:border-accent"
-            placeholder="Например, номер перевода или чек"
+            placeholder="Необязательно"
           />
         </label>
 
@@ -109,19 +185,30 @@ export function DriverTopUpSheet() {
             onChange={(event) => actions.updateTopUpForm({ comment: event.target.value })}
             rows={3}
             className="w-full rounded-2xl border border-border bg-surface-soft px-4 py-3 text-sm outline-none transition focus:border-accent"
-            placeholder="Например, пополнение через Kaspi по номеру карты"
+            placeholder="Например, пополнение через Kaspi"
           />
         </label>
 
         <label className="block">
-          <span className="mb-1 block text-sm font-medium text-ink">Путь к файлу чека</span>
+          <span className="mb-1 block text-sm font-medium text-ink">Чек / скрин оплаты</span>
           <input
-            value={topUpForm.proofFilePath}
-            onChange={(event) => actions.updateTopUpForm({ proofFilePath: event.target.value })}
-            className="w-full rounded-2xl border border-border bg-surface-soft px-4 py-3 text-sm outline-none transition focus:border-accent"
-            placeholder="Необязательно"
+            key={receiptInputKey}
+            type="file"
+            accept="image/*,application/pdf"
+            onChange={(event) => {
+              const file = event.target.files?.[0] ?? null
+              actions.updateTopUpForm({ receiptFile: file })
+            }}
+            className="w-full rounded-2xl border border-border bg-surface-soft px-4 py-3 text-sm outline-none transition file:mr-4 file:rounded-xl file:border-0 file:bg-accent file:px-3 file:py-2 file:text-sm file:font-semibold file:text-white focus:border-accent"
           />
-          <span className="mt-1 block text-xs text-muted">Поле необязательное, если у вас только номер перевода.</span>
+          <span className="mt-1 block text-xs text-muted">
+            Обязательный файл для отправки заявки. Форматы: JPG, PNG, WEBP, PDF.
+          </span>
+          {topUpForm.receiptFile ? (
+            <span className="mt-1 block text-xs text-ink">
+              Выбран файл: {topUpForm.receiptFile.name}
+            </span>
+          ) : null}
         </label>
 
         {driverWalletError ? (
@@ -145,7 +232,7 @@ export function DriverTopUpSheet() {
         <div className="grid grid-cols-2 gap-2">
           <button
             type="button"
-            onClick={actions.closeTopUpForm}
+            onClick={handleClose}
             className="rounded-2xl border border-border bg-white px-4 py-3 text-sm font-semibold text-ink"
           >
             Отмена

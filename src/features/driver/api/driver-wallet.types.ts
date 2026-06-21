@@ -19,6 +19,12 @@ export type DriverWalletTransaction = {
   amount: number
   balanceBefore?: number
   balanceAfter?: number
+  publicCode?: string
+  sourceType?: string
+  sourceId?: number
+  provider?: string
+  externalPaymentId?: string
+  providerPayload?: Record<string, unknown> | null
   description?: string
   comment?: string
   createdAt: string
@@ -27,6 +33,8 @@ export type DriverWalletTransaction = {
 
 export type DriverTopUpRequestMethod =
   | 'KASPI'
+  | 'KASPI_TRANSFER'
+  | 'KASPI_QR'
   | 'HALYK'
   | 'CASH'
   | 'OTHER'
@@ -36,10 +44,20 @@ export type DriverTopUpRequest = {
   amount: number
   method: DriverTopUpRequestMethod | string
   status: string
+  publicCode?: string
   providerRef?: string
   referenceNumber?: string
   comment?: string
   proofFilePath?: string
+  receiptFilePath?: string
+  receiptFileName?: string
+  receiptMimeType?: string
+  receiptSizeBytes?: number
+  provider?: string
+  externalPaymentId?: string
+  providerPayload?: Record<string, unknown> | null
+  matchedAt?: string
+  confirmedAt?: string
   createdAt: string
   reviewedAt?: string
   rejectionReason?: string
@@ -52,6 +70,11 @@ export type CreateDriverTopUpRequestPayload = {
   providerRef?: string
   comment?: string
   proofFilePath?: string
+}
+
+export type UploadDriverTopUpReceiptPayload = {
+  topUpRequestId: string | number
+  file: File
 }
 
 export type DriverWalletTransactionsResponse = {

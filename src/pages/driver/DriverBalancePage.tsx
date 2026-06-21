@@ -82,7 +82,7 @@ export default function DriverBalancePage() {
     typeof driverWallet.missingAmount === 'number'
       ? driverWallet.missingAmount
       : Math.max(0, driverWallet.minBalance - driverWallet.balance)
-  const pendingTopUps = driverTopUpRequests.filter((request) => request.status === 'PENDING_REVIEW')
+  const recentTopUps = driverTopUpRequests.slice(0, 5)
 
   return (
     <div className="space-y-4">
@@ -191,31 +191,46 @@ export default function DriverBalancePage() {
       <PageCard
         eyebrow="Проверка"
         title="Заявки на пополнение"
-        description="Реальные заявки, отправленные на проверку."
+        description="Последние заявки на пополнение и их статус."
       >
-        {pendingTopUps.length === 0 ? (
+        {recentTopUps.length === 0 ? (
           <div className="rounded-2xl bg-surface-soft p-4 text-sm text-muted">
             Пока нет заявок на проверке.
           </div>
         ) : (
           <div className="space-y-3">
-            {pendingTopUps.map((request) => (
+            {recentTopUps.map((request) => (
               <div key={request.id} className="rounded-2xl bg-surface-soft p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">
+                      {request.publicCode ?? `Заявка #${request.id}`}
+                    </p>
                     <p className="text-base font-semibold text-ink">{formatKzt(request.amount)}</p>
                     <p className="mt-1 text-sm text-muted">{formatTopUpMethodLabel(request.method)}</p>
                   </div>
-                  <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-800">
+                  <span
+                    className={cn(
+                      'rounded-full px-3 py-1 text-xs font-semibold',
+                      request.status === 'APPROVED'
+                        ? 'bg-emerald-100 text-emerald-800'
+                        : request.status === 'REJECTED'
+                          ? 'bg-red-100 text-red-800'
+                          : request.status === 'CANCELLED'
+                            ? 'bg-slate-100 text-slate-700'
+                            : 'bg-amber-100 text-amber-800',
+                    )}
+                  >
                     {formatTopUpStatusLabel(request.status)}
                   </span>
                 </div>
-                  <div className="mt-3 grid gap-1 text-sm text-muted">
-                    <p>Номер перевода / чека: {request.providerRef || request.referenceNumber || '—'}</p>
-                    <p>Комментарий: {request.comment || '—'}</p>
-                    <p>Дата: {formatDateTime(request.createdAt)}</p>
-                    {request.reviewedAt ? <p>Проверено: {formatDateTime(request.reviewedAt)}</p> : null}
-                    {request.rejectionReason ? <p>Причина отказа: {request.rejectionReason}</p> : null}
+                <div className="mt-3 grid gap-1 text-sm text-muted">
+                  <p>Номер перевода / чека: {request.providerRef || request.referenceNumber || '—'}</p>
+                  <p>Комментарий: {request.comment || '—'}</p>
+                  <p>Чек: {request.receiptFileName || (request.receiptFilePath ? 'Прикреплён' : 'Не загружен')}</p>
+                  <p>Дата: {formatDateTime(request.createdAt)}</p>
+                  {request.reviewedAt ? <p>Проверено: {formatDateTime(request.reviewedAt)}</p> : null}
+                  {request.rejectionReason ? <p>Причина отказа: {request.rejectionReason}</p> : null}
                 </div>
               </div>
             ))}
@@ -258,6 +273,11 @@ export default function DriverBalancePage() {
                         )}
                       </span>
                       <div>
+                        {transaction.publicCode ? (
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">
+                            {transaction.publicCode}
+                          </p>
+                        ) : null}
                         <p className="text-sm font-semibold text-ink">
                           {formatWalletTransactionTypeLabel(transaction.type)}
                         </p>

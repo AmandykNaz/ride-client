@@ -42,6 +42,7 @@ import {
   getDriverTopUpRequests,
   getDriverWallet,
   getDriverWalletTransactions,
+  uploadDriverTopUpReceipt,
 } from '../features/driver/api/driver-wallet.api'
 import {
   createRideOrderComplaint as createRideOrderComplaintApi,
@@ -158,6 +159,7 @@ type AppState = {
     providerRef: string
     comment: string
     proofFilePath: string
+    receiptFile: File | null
   }
   rideComplaintForm: {
     category: string
@@ -237,6 +239,7 @@ type AppContextValue = {
       providerRef?: string
       comment?: string
       proofFilePath?: string
+      receiptFile?: File | null
     }) => Promise<void>
     createOrderReview: (orderId: string, payload: CreateRideReviewPayload) => Promise<void>
     createOrderComplaint: (orderId: string, payload: CreateRideComplaintPayload) => Promise<void>
@@ -852,6 +855,12 @@ function mapWalletTransactionResponseToState(
     createdAt: transaction.createdAt,
     balanceBefore: transaction.balanceBefore,
     balanceAfter: transaction.balanceAfter,
+    publicCode: transaction.publicCode,
+    sourceType: transaction.sourceType,
+    sourceId: transaction.sourceId,
+    provider: transaction.provider,
+    externalPaymentId: transaction.externalPaymentId,
+    providerPayload: transaction.providerPayload,
   }
 }
 
@@ -862,10 +871,20 @@ function mapTopUpRequestResponseToState(
     id: request.id,
     amount: request.amount,
     method: request.method as TopUpRequestMethod,
+    publicCode: request.publicCode,
     referenceNumber: request.referenceNumber,
     providerRef: request.providerRef,
     comment: request.comment,
     proofFilePath: request.proofFilePath,
+    receiptFilePath: request.receiptFilePath,
+    receiptFileName: request.receiptFileName,
+    receiptMimeType: request.receiptMimeType,
+    receiptSizeBytes: request.receiptSizeBytes,
+    provider: request.provider,
+    externalPaymentId: request.externalPaymentId,
+    providerPayload: request.providerPayload,
+    matchedAt: request.matchedAt,
+    confirmedAt: request.confirmedAt,
     status: request.status as TopUpRequest['status'],
     createdAt: request.createdAt,
     reviewedAt: request.reviewedAt,
@@ -1526,10 +1545,11 @@ function appReducer(state: AppState, action: AppAction): AppState {
         isTopUpFormOpen: false,
         topUpForm: {
           amount: '',
-          method: 'KASPI',
+          method: 'KASPI_TRANSFER',
           providerRef: '',
           comment: '',
           proofFilePath: '',
+          receiptFile: null,
         },
       }
     case 'updateTopUpForm':
@@ -1555,10 +1575,11 @@ function appReducer(state: AppState, action: AppAction): AppState {
         isTopUpFormOpen: false,
         topUpForm: {
           amount: '',
-          method: 'KASPI',
+          method: 'KASPI_TRANSFER',
           providerRef: '',
           comment: '',
           proofFilePath: '',
+          receiptFile: null,
         },
       }
     }
@@ -2218,10 +2239,11 @@ function createInitialState(): AppState {
   isRideComplaintOpen: false,
   topUpForm: {
     amount: '',
-    method: 'KASPI',
+    method: 'KASPI_TRANSFER',
     providerRef: '',
     comment: '',
     proofFilePath: '',
+    receiptFile: null,
   },
   rideComplaintForm: {
     category: 'other',
@@ -3409,6 +3431,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     providerRef?: string
     comment?: string
     proofFilePath?: string
+    receiptFile?: File | null
   }) => {
     if (state.driverVerificationStatus !== 'APPROVED') return
 
@@ -3419,9 +3442,18 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       const created = await createDriverTopUpRequestApi(payload)
       const request = mapTopUpRequestResponseToState(created)
 
+      let finalRequest = request
+      if (payload.receiptFile) {
+        const uploaded = await uploadDriverTopUpReceipt({
+          topUpRequestId: request.id,
+          file: payload.receiptFile,
+        })
+        finalRequest = mapTopUpRequestResponseToState(uploaded)
+      }
+
       dispatch({
         type: 'setDriverTopUpRequests',
-        driverTopUpRequests: [request, ...state.driverTopUpRequests.filter((item) => item.id !== request.id)],
+        driverTopUpRequests: [finalRequest, ...state.driverTopUpRequests.filter((item) => item.id !== finalRequest.id)],
       })
 
       await Promise.all([
@@ -3873,6 +3905,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
           providerRef: state.topUpForm.providerRef.trim() || undefined,
           comment: state.topUpForm.comment.trim() || undefined,
           proofFilePath: state.topUpForm.proofFilePath.trim() || undefined,
+          receiptFile: state.topUpForm.receiptFile,
         }),
       createDriverTopUpRequest: (payload) => createDriverTopUpRequestAction(payload),
       createOrderReview: (orderId, payload) => createOrderReviewAction(orderId, payload),

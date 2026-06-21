@@ -177,6 +177,8 @@ export function formatTopUpMethodLabel(method?: TopUpRequestMethod | string | nu
     case 'KASPI':
     case 'KASPI_TRANSFER':
       return 'Kaspi'
+    case 'KASPI_QR':
+      return 'Kaspi QR'
     case 'HALYK':
       return 'Halyk'
     case 'CASH':
