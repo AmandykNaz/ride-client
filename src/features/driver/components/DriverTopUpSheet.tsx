@@ -67,6 +67,11 @@ export function DriverTopUpSheet() {
   const { driverTopUpRequests, isTopUpFormOpen, topUpForm, isDriverTopUpSubmitting } = useAppState()
   const actions = useAppActions()
   const [error, setError] = useState('')
+  const [completedTopUp, setCompletedTopUp] = useState<{
+    requestId: number
+    publicCode?: string
+    statusLabel: string
+  } | null>(null)
   const [submission, setSubmission] = useState<{
     requestId: number
     publicCode?: string
@@ -83,6 +88,7 @@ export function DriverTopUpSheet() {
   const pendingUploadRequest = driverTopUpRequests.find((request) => request.status === 'PENDING_UPLOAD') ?? null
   const currentUploadRequest = activeUploadRequest ?? pendingUploadRequest
   const isUploadMode = currentUploadRequest?.status === 'PENDING_UPLOAD'
+  const isCompleted = Boolean(completedTopUp)
   const activeUploadStatusLabel = currentUploadRequest ? formatTopUpStatusLabel(currentUploadRequest.status) : ''
 
   const resetForm = () => {
@@ -106,10 +112,13 @@ export function DriverTopUpSheet() {
   const handleClose = () => {
     setError('')
     setRetryError('')
+    setCompletedTopUp(null)
     setSubmission(null)
     setIsRetryingReceipt(false)
     setActiveUploadRequest(null)
     setReceiptInputKey((value) => value + 1)
+    void actions.refreshDriverWallet()
+    void actions.refreshDriverTopUpRequests()
     actions.closeTopUpForm()
   }
 
@@ -131,6 +140,11 @@ export function DriverTopUpSheet() {
     try {
       const uploaded = await actions.uploadTopUpReceipt(requestId, topUpForm.receiptFile)
       setActiveUploadRequest(uploaded)
+      setCompletedTopUp({
+        requestId,
+        publicCode: uploaded.publicCode ?? request.publicCode,
+        statusLabel: formatTopUpStatusLabel(uploaded.status),
+      })
       setSubmission({
         requestId,
         publicCode: uploaded.publicCode ?? request.publicCode,
@@ -175,6 +189,15 @@ export function DriverTopUpSheet() {
 
     try {
       const result = await actions.submitTopUpRequest()
+      setCompletedTopUp(
+        result.receiptUploaded
+          ? {
+              requestId: result.requestId,
+              publicCode: result.request.publicCode,
+              statusLabel: 'На проверке',
+            }
+          : null,
+      )
       setSubmission({
         requestId: result.requestId,
         publicCode: result.request.publicCode,
@@ -203,6 +226,11 @@ export function DriverTopUpSheet() {
   }
 
   const handleSubmit = async () => {
+    if (isCompleted) {
+      handleClose()
+      return
+    }
+
     if (isUploadMode) {
       if (!currentUploadRequest) {
         setError('Активная заявка не найдена.')
@@ -221,6 +249,10 @@ export function DriverTopUpSheet() {
   }
 
   const handleRetryReceiptUpload = async () => {
+    if (isCompleted) {
+      return
+    }
+
     if (!submission || !topUpForm.receiptFile) {
       setRetryError('Чек для повторной загрузки не найден.')
       return
@@ -267,9 +299,20 @@ export function DriverTopUpSheet() {
       <div className="space-y-4">
         <div className="rounded-3xl border border-border bg-surface-soft p-4">
           <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">
-            {isUploadMode ? 'Активная заявка' : 'Инструкция'}
+            {isCompleted ? 'Успешно' : isUploadMode ? 'Активная заявка' : 'Инструкция'}
           </p>
-          {isUploadMode && currentUploadRequest ? (
+          {isCompleted && completedTopUp ? (
+            <>
+              <p className="mt-2 text-sm font-semibold text-ink">Чек загружен</p>
+              <p className="mt-1 text-sm text-muted">
+                Код заявки: {completedTopUp.publicCode || `AJ-TP-${String(completedTopUp.requestId).padStart(6, '0')}`}
+              </p>
+              <p className="mt-1 text-sm text-muted">Статус: {completedTopUp.statusLabel}</p>
+              <p className="mt-3 text-sm text-ink">
+                Заявка отправлена администратору. Баланс изменится после подтверждения.
+              </p>
+            </>
+          ) : isUploadMode && currentUploadRequest ? (
             <>
               <p className="mt-2 text-sm font-semibold text-ink">
                 У вас уже есть заявка {currentUploadRequest.publicCode ?? `AJ-TP-${String(currentUploadRequest.id).padStart(6, '0')}`}
@@ -294,16 +337,18 @@ export function DriverTopUpSheet() {
           )}
         </div>
 
-        {!isUploadMode ? (
+        {!isUploadMode && !isCompleted ? (
           <>
             <div className="grid grid-cols-3 gap-2">
               {quickAmounts.map((amount) => (
                 <button
                   key={amount}
                   type="button"
+                  disabled={isCompleted}
                   onClick={() => actions.updateTopUpForm({ amount: String(amount) })}
                   className={cn(
                     'rounded-2xl px-3 py-3 text-xs font-semibold transition',
+                    isCompleted && 'cursor-not-allowed opacity-60',
                     topUpForm.amount === String(amount)
                       ? 'bg-accent text-white shadow-lg shadow-accent/20'
                       : 'bg-surface-soft text-ink',
@@ -322,9 +367,11 @@ export function DriverTopUpSheet() {
                   <button
                     key={method.id}
                     type="button"
+                    disabled={isCompleted}
                     onClick={() => actions.updateTopUpForm({ method: method.id })}
                     className={cn(
                       'rounded-2xl px-3 py-3 text-xs font-semibold transition',
+                      isCompleted && 'cursor-not-allowed opacity-60',
                       isActive
                         ? 'bg-accent text-white shadow-lg shadow-accent/20'
                         : 'bg-surface-soft text-ink',
@@ -343,9 +390,13 @@ export function DriverTopUpSheet() {
                 min="0"
                 step="100"
                 inputMode="numeric"
+                disabled={isCompleted}
                 value={topUpForm.amount}
                 onChange={(event) => actions.updateTopUpForm({ amount: event.target.value })}
-                className="w-full rounded-2xl border border-border bg-surface-soft px-4 py-3 text-sm outline-none transition focus:border-accent"
+                className={cn(
+                  'w-full rounded-2xl border border-border bg-surface-soft px-4 py-3 text-sm outline-none transition focus:border-accent',
+                  isCompleted && 'cursor-not-allowed opacity-60',
+                )}
                 placeholder="Например 5000"
               />
             </label>
@@ -353,9 +404,13 @@ export function DriverTopUpSheet() {
             <label className="block">
               <span className="mb-1 block text-sm font-medium text-ink">Номер перевода / чека</span>
               <input
+                disabled={isCompleted}
                 value={topUpForm.providerRef}
                 onChange={(event) => actions.updateTopUpForm({ providerRef: event.target.value })}
-                className="w-full rounded-2xl border border-border bg-surface-soft px-4 py-3 text-sm outline-none transition focus:border-accent"
+                className={cn(
+                  'w-full rounded-2xl border border-border bg-surface-soft px-4 py-3 text-sm outline-none transition focus:border-accent',
+                  isCompleted && 'cursor-not-allowed opacity-60',
+                )}
                 placeholder="Необязательно"
               />
             </label>
@@ -363,15 +418,19 @@ export function DriverTopUpSheet() {
             <label className="block">
               <span className="mb-1 block text-sm font-medium text-ink">Комментарий</span>
               <textarea
+                disabled={isCompleted}
                 value={topUpForm.comment}
                 onChange={(event) => actions.updateTopUpForm({ comment: event.target.value })}
                 rows={3}
-                className="w-full rounded-2xl border border-border bg-surface-soft px-4 py-3 text-sm outline-none transition focus:border-accent"
+                className={cn(
+                  'w-full rounded-2xl border border-border bg-surface-soft px-4 py-3 text-sm outline-none transition focus:border-accent',
+                  isCompleted && 'cursor-not-allowed opacity-60',
+                )}
                 placeholder="Например, пополнение через Kaspi"
               />
             </label>
           </>
-        ) : (
+        ) : isUploadMode && !isCompleted ? (
           <div className="rounded-3xl border border-border bg-white p-4">
             <p className="text-sm font-semibold text-ink">Текущая заявка</p>
             <div className="mt-3 space-y-2 text-sm text-muted">
@@ -383,31 +442,37 @@ export function DriverTopUpSheet() {
               <p>Чек: не загружен</p>
             </div>
           </div>
-        )}
+        ) : null}
 
-        <label className="block">
-          <span className="mb-1 block text-sm font-medium text-ink">
-            {isUploadMode ? 'Чек для загрузки' : 'Чек / скрин оплаты'}
-          </span>
-          <input
-            key={receiptInputKey}
-            type="file"
-            accept="image/*,application/pdf"
-            onChange={(event) => {
-              const file = event.target.files?.[0] ?? null
-              actions.updateTopUpForm({ receiptFile: file })
-            }}
-            className="w-full rounded-2xl border border-border bg-surface-soft px-4 py-3 text-sm outline-none transition file:mr-4 file:rounded-xl file:border-0 file:bg-accent file:px-3 file:py-2 file:text-sm file:font-semibold file:text-white focus:border-accent"
-          />
-          <span className="mt-1 block text-xs text-muted">
-            Обязательный файл для отправки заявки. Форматы: JPG, PNG, WEBP, PDF.
-          </span>
-          {topUpForm.receiptFile ? (
-            <span className="mt-1 block text-xs text-ink">
-              Выбран файл: {topUpForm.receiptFile.name}
+        {!isCompleted ? (
+          <label className="block">
+            <span className="mb-1 block text-sm font-medium text-ink">
+              {isUploadMode ? 'Чек для загрузки' : 'Чек / скрин оплаты'}
             </span>
-          ) : null}
-        </label>
+            <input
+              key={receiptInputKey}
+              type="file"
+              accept="image/*,application/pdf"
+              disabled={isCompleted}
+              onChange={(event) => {
+                const file = event.target.files?.[0] ?? null
+                actions.updateTopUpForm({ receiptFile: file })
+              }}
+              className={cn(
+                'w-full rounded-2xl border border-border bg-surface-soft px-4 py-3 text-sm outline-none transition file:mr-4 file:rounded-xl file:border-0 file:bg-accent file:px-3 file:py-2 file:text-sm file:font-semibold file:text-white focus:border-accent',
+                isCompleted && 'cursor-not-allowed opacity-60',
+              )}
+            />
+            <span className="mt-1 block text-xs text-muted">
+              Обязательный файл для отправки заявки. Форматы: JPG, PNG, WEBP, PDF.
+            </span>
+            {topUpForm.receiptFile ? (
+              <span className="mt-1 block text-xs text-ink">
+                Выбран файл: {topUpForm.receiptFile.name}
+              </span>
+            ) : null}
+          </label>
+        ) : null}
 
         {error ? (
           <div className="rounded-2xl bg-red-50 px-4 py-3 text-sm text-red-700">
@@ -415,7 +480,7 @@ export function DriverTopUpSheet() {
             {retryError && import.meta.env.DEV ? (
               <p className="mt-2 text-xs text-red-600/80">Деталь: {retryError}</p>
             ) : null}
-            {submission && !submission.receiptUploaded ? (
+            {!isCompleted && submission && !submission.receiptUploaded ? (
               <button
                 type="button"
                 onClick={handleRetryReceiptUpload}
@@ -428,7 +493,7 @@ export function DriverTopUpSheet() {
           </div>
         ) : null}
 
-        {submission ? (
+        {submission && !isCompleted ? (
           <div className="rounded-2xl bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
             <p className="font-semibold">{submission.mode === 'upload' ? 'Чек загружен' : 'Заявка создана'}</p>
             <p>Код заявки: {submission.publicCode || `AJ-TP-${String(submission.requestId).padStart(6, '0')}`}</p>
@@ -438,30 +503,42 @@ export function DriverTopUpSheet() {
         ) : null}
 
         <div className="grid grid-cols-2 gap-2">
-          <button
-            type="button"
-            onClick={handleClose}
-            className="rounded-2xl border border-border bg-white px-4 py-3 text-sm font-semibold text-ink"
-          >
-            Отмена
-          </button>
-          <button
-            type="button"
-            onClick={handleSubmit}
-            disabled={isDriverTopUpSubmitting}
-            className={cn(
-              'rounded-2xl bg-accent px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-accent/20',
-              isDriverTopUpSubmitting && 'cursor-not-allowed opacity-60',
-            )}
-          >
-            {isDriverTopUpSubmitting
-              ? isUploadMode
-                ? 'Загружаем чек...'
-                : 'Отправляем...'
-              : isUploadMode
-                ? 'Загрузить чек'
-                : 'Отправить'}
-          </button>
+          {isCompleted ? (
+            <button
+              type="button"
+              onClick={handleClose}
+              className="col-span-2 rounded-2xl bg-accent px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-accent/20"
+            >
+              Закрыть
+            </button>
+          ) : (
+            <>
+              <button
+                type="button"
+                onClick={handleClose}
+                className="rounded-2xl border border-border bg-white px-4 py-3 text-sm font-semibold text-ink"
+              >
+                Отмена
+              </button>
+              <button
+                type="button"
+                onClick={handleSubmit}
+                disabled={isDriverTopUpSubmitting}
+                className={cn(
+                  'rounded-2xl bg-accent px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-accent/20',
+                  isDriverTopUpSubmitting && 'cursor-not-allowed opacity-60',
+                )}
+              >
+                {isDriverTopUpSubmitting
+                  ? isUploadMode
+                    ? 'Загружаем чек...'
+                    : 'Отправляем...'
+                  : isUploadMode
+                    ? 'Загрузить чек'
+                    : 'Отправить'}
+              </button>
+            </>
+          )}
         </div>
       </div>
     </OverlaySheet>
