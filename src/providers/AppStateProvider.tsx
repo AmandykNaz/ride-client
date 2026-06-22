@@ -38,11 +38,12 @@ import {
   withdrawDriverOffer as withdrawDriverOfferApi,
 } from '../features/driver/api/driver.api'
 import {
-  createDriverTopUpRequest as createDriverTopUpRequestApi,
-  getDriverTopUpRequests,
-  getDriverWallet,
-  getDriverWalletTransactions,
-  uploadTopUpReceipt as uploadTopUpReceiptApi,
+    createDriverTopUpRequest as createDriverTopUpRequestApi,
+    cancelTopUpRequest as cancelTopUpRequestApi,
+    getDriverTopUpRequests,
+    getDriverWallet,
+    getDriverWalletTransactions,
+    uploadTopUpReceipt as uploadTopUpReceiptApi,
 } from '../features/driver/api/driver-wallet.api'
 import {
   createRideOrderComplaint as createRideOrderComplaintApi,
@@ -239,6 +240,7 @@ type AppContextValue = {
       comment?: string
     }) => Promise<TopUpRequest>
     uploadTopUpReceipt: (topUpRequestId: number, file: File) => Promise<TopUpRequest>
+    cancelTopUpRequest: (topUpRequestId: number) => Promise<TopUpRequest>
     createOrderReview: (orderId: string, payload: CreateRideReviewPayload) => Promise<void>
     createOrderComplaint: (orderId: string, payload: CreateRideComplaintPayload) => Promise<void>
     withdrawDriverOffer: (offerId: string) => Promise<void>
@@ -888,8 +890,12 @@ function mapTopUpRequestResponseToState(
     providerPayload: request.providerPayload,
     matchedAt: request.matchedAt,
     confirmedAt: request.confirmedAt,
+    cancelledAt: request.cancelledAt,
+    cancelledBy: request.cancelledBy,
+    cancelReason: request.cancelReason,
     status: request.status as TopUpRequest['status'],
     createdAt: request.createdAt,
+    updatedAt: request.updatedAt,
     reviewedAt: request.reviewedAt,
     rejectionReason: request.rejectionReason,
   }
@@ -958,6 +964,7 @@ function canAccessDriverOrders(state: Pick<AppState, 'driverVerificationStatus' 
 function createTopUpRequestFromForm(
   form: AppState['topUpForm'],
 ): TopUpRequest {
+  const now = new Date().toISOString()
   return {
     id: makeId('topup'),
     amount: Number(form.amount),
@@ -965,7 +972,8 @@ function createTopUpRequestFromForm(
     providerRef: form.providerRef.trim(),
     comment: form.comment.trim(),
     status: 'PENDING_UPLOAD',
-    createdAt: new Date().toISOString(),
+    createdAt: now,
+    updatedAt: now,
   }
 }
 
@@ -3504,6 +3512,46 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  const cancelTopUpRequestAction = async (topUpRequestId: number): Promise<TopUpRequest> => {
+    if (state.driverVerificationStatus !== 'APPROVED') {
+      throw new Error('Профиль водителя недоступен.')
+    }
+
+    dispatch({ type: 'setDriverTopUpSubmitting', loading: true })
+    dispatch({ type: 'setDriverWalletError', error: null })
+
+    try {
+      const cancelled = await cancelTopUpRequestApi(topUpRequestId)
+      const request = mapTopUpRequestResponseToState(cancelled)
+
+      dispatch({
+        type: 'setDriverTopUpRequests',
+        driverTopUpRequests: [request, ...state.driverTopUpRequests.filter((item) => item.id !== request.id)],
+      })
+
+      await Promise.all([
+        refreshDriverWallet(true),
+        refreshDriverTopUpRequests(true),
+      ])
+
+      return request
+    } catch (error) {
+      if (error instanceof BackendAuthError) {
+        clearRideAccessToken()
+        dispatch({ type: 'resetPassengerSession' })
+        throw error
+      }
+
+      dispatch({
+        type: 'setDriverWalletError',
+        error: error instanceof Error ? error.message : 'Не удалось отменить заявку.',
+      })
+      throw error
+    } finally {
+      dispatch({ type: 'setDriverTopUpSubmitting', loading: false })
+    }
+  }
+
   const createOrderReviewAction = async (
     orderId: string,
     payload: CreateRideReviewPayload,
@@ -3964,6 +4012,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       },
       createDriverTopUpRequest: (payload) => createDriverTopUpRequestAction(payload),
       uploadTopUpReceipt: (topUpRequestId, file) => uploadTopUpReceiptAction(topUpRequestId, file),
+      cancelTopUpRequest: (topUpRequestId) => cancelTopUpRequestAction(topUpRequestId),
       createOrderReview: (orderId, payload) => createOrderReviewAction(orderId, payload),
       createOrderComplaint: (orderId, payload) => createOrderComplaintAction(orderId, payload),
       demoApproveTopUpRequest: (requestId) =>

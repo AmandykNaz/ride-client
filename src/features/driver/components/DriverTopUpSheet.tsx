@@ -63,6 +63,17 @@ function resolveTopUpRequestId(request: TopUpRequest | null | undefined) {
   return null
 }
 
+function formatCancellationDate(value?: string | null) {
+  if (!value) return null
+
+  return new Intl.DateTimeFormat('ru-KZ', {
+    day: '2-digit',
+    month: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(new Date(value))
+}
+
 export function DriverTopUpSheet() {
   const { driverTopUpRequests, isTopUpFormOpen, topUpForm, isDriverTopUpSubmitting } = useAppState()
   const actions = useAppActions()
@@ -71,6 +82,12 @@ export function DriverTopUpSheet() {
     requestId: number
     publicCode?: string
     statusLabel: string
+  } | null>(null)
+  const [cancelledTopUp, setCancelledTopUp] = useState<{
+    requestId: number
+    publicCode?: string
+    statusLabel: string
+    cancelledAt?: string | null
   } | null>(null)
   const [submission, setSubmission] = useState<{
     requestId: number
@@ -85,10 +102,14 @@ export function DriverTopUpSheet() {
   const [activeUploadRequest, setActiveUploadRequest] = useState<TopUpRequest | null>(null)
 
   const instructions = useMemo(() => buildInstructions(topUpForm.method), [topUpForm.method])
-  const pendingUploadRequest = driverTopUpRequests.find((request) => request.status === 'PENDING_UPLOAD') ?? null
-  const currentUploadRequest = activeUploadRequest ?? pendingUploadRequest
-  const isUploadMode = currentUploadRequest?.status === 'PENDING_UPLOAD'
+  const activeTopUpRequest =
+    driverTopUpRequests.find((request) => request.status === 'PENDING_UPLOAD' || request.status === 'PENDING_REVIEW') ?? null
+  const currentUploadRequest = activeUploadRequest ?? activeTopUpRequest
+  const isPendingUploadRequest = currentUploadRequest?.status === 'PENDING_UPLOAD'
+  const isPendingReviewRequest = currentUploadRequest?.status === 'PENDING_REVIEW'
+  const hasActiveRequest = Boolean(currentUploadRequest)
   const isCompleted = Boolean(completedTopUp)
+  const isCancelled = Boolean(cancelledTopUp)
   const activeUploadStatusLabel = currentUploadRequest ? formatTopUpStatusLabel(currentUploadRequest.status) : ''
 
   const resetForm = () => {
@@ -113,6 +134,7 @@ export function DriverTopUpSheet() {
     setError('')
     setRetryError('')
     setCompletedTopUp(null)
+    setCancelledTopUp(null)
     setSubmission(null)
     setIsRetryingReceipt(false)
     setActiveUploadRequest(null)
@@ -226,12 +248,12 @@ export function DriverTopUpSheet() {
   }
 
   const handleSubmit = async () => {
-    if (isCompleted) {
+    if (isCompleted || isCancelled) {
       handleClose()
       return
     }
 
-    if (isUploadMode) {
+    if (isPendingUploadRequest) {
       if (!currentUploadRequest) {
         setError('Активная заявка не найдена.')
         return
@@ -249,7 +271,7 @@ export function DriverTopUpSheet() {
   }
 
   const handleRetryReceiptUpload = async () => {
-    if (isCompleted) {
+    if (isCompleted || isCancelled) {
       return
     }
 
@@ -289,6 +311,40 @@ export function DriverTopUpSheet() {
     }
   }
 
+  const handleCancelCurrentRequest = async () => {
+    if (!currentUploadRequest) {
+      setError('Активная заявка не найдена.')
+      return
+    }
+
+    const requestId = resolveTopUpRequestId(currentUploadRequest)
+    if (!requestId) {
+      setError('Не удалось определить номер заявки для отмены.')
+      return
+    }
+
+    setError('')
+    setRetryError('')
+
+    try {
+      const cancelled = await actions.cancelTopUpRequest(requestId)
+      setCancelledTopUp({
+        requestId,
+        publicCode: cancelled.publicCode ?? currentUploadRequest.publicCode,
+        statusLabel: formatTopUpStatusLabel(cancelled.status),
+        cancelledAt: cancelled.cancelledAt ?? cancelled.updatedAt,
+      })
+      setCompletedTopUp(null)
+      setSubmission(null)
+      setActiveUploadRequest(null)
+      setReceiptInputKey((value) => value + 1)
+      actions.updateTopUpForm({ receiptFile: null })
+    } catch (cancelError) {
+      const message = cancelError instanceof Error ? cancelError.message : 'Не удалось отменить заявку.'
+      setError(message)
+    }
+  }
+
   return (
     <OverlaySheet
       open={isTopUpFormOpen}
@@ -299,7 +355,7 @@ export function DriverTopUpSheet() {
       <div className="space-y-4">
         <div className="rounded-3xl border border-border bg-surface-soft p-4">
           <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">
-            {isCompleted ? 'Успешно' : isUploadMode ? 'Активная заявка' : 'Инструкция'}
+            {isCompleted ? 'Успешно' : isCancelled ? 'Отменено' : hasActiveRequest ? 'Активная заявка' : 'Инструкция'}
           </p>
           {isCompleted && completedTopUp ? (
             <>
@@ -312,7 +368,19 @@ export function DriverTopUpSheet() {
                 Заявка отправлена администратору. Баланс изменится после подтверждения.
               </p>
             </>
-          ) : isUploadMode && currentUploadRequest ? (
+          ) : isCancelled && cancelledTopUp ? (
+            <>
+              <p className="mt-2 text-sm font-semibold text-ink">Заявка отменена</p>
+              <p className="mt-1 text-sm text-muted">
+                Код заявки: {cancelledTopUp.publicCode || `AJ-TP-${String(cancelledTopUp.requestId).padStart(6, '0')}`}
+              </p>
+              <p className="mt-1 text-sm text-muted">Статус: {cancelledTopUp.statusLabel}</p>
+              {cancelledTopUp.cancelledAt ? (
+                <p className="mt-1 text-sm text-muted">Отменено: {formatCancellationDate(cancelledTopUp.cancelledAt)}</p>
+              ) : null}
+              <p className="mt-3 text-sm text-ink">Новую заявку можно создать сразу после отмены.</p>
+            </>
+          ) : isPendingUploadRequest && currentUploadRequest ? (
             <>
               <p className="mt-2 text-sm font-semibold text-ink">
                 У вас уже есть заявка {currentUploadRequest.publicCode ?? `AJ-TP-${String(currentUploadRequest.id).padStart(6, '0')}`}
@@ -326,6 +394,20 @@ export function DriverTopUpSheet() {
               </p>
               <p className="mt-3 text-sm text-ink">Загрузите чек для отправки на проверку.</p>
             </>
+          ) : isPendingReviewRequest && currentUploadRequest ? (
+            <>
+              <p className="mt-2 text-sm font-semibold text-ink">
+                Заявка {currentUploadRequest.publicCode ?? `AJ-TP-${String(currentUploadRequest.id).padStart(6, '0')}`} уже на проверке
+              </p>
+              <p className="mt-1 text-sm text-muted">{formatKzt(currentUploadRequest.amount)} · {formatTopUpMethodLabel(currentUploadRequest.method)}</p>
+              <p className="mt-1 text-sm text-muted">
+                {currentUploadRequest.providerRef || currentUploadRequest.referenceNumber || 'Номер перевода / чека не указан'}
+              </p>
+              <p className="mt-1 text-sm text-muted">
+                {currentUploadRequest.comment || 'Комментарий не указан'}
+              </p>
+              <p className="mt-3 text-sm text-ink">Можно только отменить заявку и создать новую позже.</p>
+            </>
           ) : (
             <>
               <p className="mt-2 text-sm font-semibold text-ink">{instructions.title}</p>
@@ -337,7 +419,7 @@ export function DriverTopUpSheet() {
           )}
         </div>
 
-        {!isUploadMode && !isCompleted ? (
+        {!hasActiveRequest && !isCompleted && !isCancelled ? (
           <>
             <div className="grid grid-cols-3 gap-2">
               {quickAmounts.map((amount) => (
@@ -430,7 +512,7 @@ export function DriverTopUpSheet() {
               />
             </label>
           </>
-        ) : isUploadMode && !isCompleted ? (
+        ) : isPendingUploadRequest && !isCompleted && !isCancelled ? (
           <div className="rounded-3xl border border-border bg-white p-4">
             <p className="text-sm font-semibold text-ink">Текущая заявка</p>
             <div className="mt-3 space-y-2 text-sm text-muted">
@@ -441,13 +523,48 @@ export function DriverTopUpSheet() {
               <p>Статус: {activeUploadStatusLabel || '—'}</p>
               <p>Чек: не загружен</p>
             </div>
+            <div className="mt-3">
+              <button
+                type="button"
+                onClick={() => {
+                  void handleCancelCurrentRequest()
+                }}
+                disabled={isDriverTopUpSubmitting}
+                className="rounded-2xl border border-border bg-white px-4 py-2 text-sm font-semibold text-ink disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Отменить
+              </button>
+            </div>
+          </div>
+        ) : isPendingReviewRequest && !isCompleted && !isCancelled ? (
+          <div className="rounded-3xl border border-border bg-white p-4">
+            <p className="text-sm font-semibold text-ink">Заявка на проверке</p>
+            <div className="mt-3 space-y-2 text-sm text-muted">
+              <p>Сумма: {currentUploadRequest ? formatKzt(currentUploadRequest.amount) : '—'}</p>
+              <p>Метод: {currentUploadRequest ? formatTopUpMethodLabel(currentUploadRequest.method) : '—'}</p>
+              <p>Номер перевода / чека: {currentUploadRequest?.providerRef || currentUploadRequest?.referenceNumber || '—'}</p>
+              <p>Комментарий: {currentUploadRequest?.comment || '—'}</p>
+              <p>Статус: {activeUploadStatusLabel || '—'}</p>
+            </div>
+            <div className="mt-3">
+              <button
+                type="button"
+                onClick={() => {
+                  void handleCancelCurrentRequest()
+                }}
+                disabled={isDriverTopUpSubmitting}
+                className="rounded-2xl border border-border bg-white px-4 py-2 text-sm font-semibold text-ink disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Отменить заявку
+              </button>
+            </div>
           </div>
         ) : null}
 
-        {!isCompleted ? (
+        {!isCompleted && !isCancelled && (!hasActiveRequest || isPendingUploadRequest) ? (
           <label className="block">
             <span className="mb-1 block text-sm font-medium text-ink">
-              {isUploadMode ? 'Чек для загрузки' : 'Чек / скрин оплаты'}
+              {isPendingUploadRequest ? 'Чек для загрузки' : 'Чек / скрин оплаты'}
             </span>
             <input
               key={receiptInputKey}
@@ -480,7 +597,7 @@ export function DriverTopUpSheet() {
             {retryError && import.meta.env.DEV ? (
               <p className="mt-2 text-xs text-red-600/80">Деталь: {retryError}</p>
             ) : null}
-            {!isCompleted && submission && !submission.receiptUploaded ? (
+            {!isCompleted && !isCancelled && submission && !submission.receiptUploaded ? (
               <button
                 type="button"
                 onClick={handleRetryReceiptUpload}
@@ -493,7 +610,7 @@ export function DriverTopUpSheet() {
           </div>
         ) : null}
 
-        {submission && !isCompleted ? (
+        {submission && !isCompleted && !isCancelled ? (
           <div className="rounded-2xl bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
             <p className="font-semibold">{submission.mode === 'upload' ? 'Чек загружен' : 'Заявка создана'}</p>
             <p>Код заявки: {submission.publicCode || `AJ-TP-${String(submission.requestId).padStart(6, '0')}`}</p>
@@ -503,7 +620,7 @@ export function DriverTopUpSheet() {
         ) : null}
 
         <div className="grid grid-cols-2 gap-2">
-          {isCompleted ? (
+          {isCompleted || isCancelled ? (
             <button
               type="button"
               onClick={handleClose}
@@ -511,6 +628,47 @@ export function DriverTopUpSheet() {
             >
               Закрыть
             </button>
+          ) : isPendingReviewRequest ? (
+            <>
+              <button
+                type="button"
+                onClick={handleClose}
+                className="rounded-2xl border border-border bg-white px-4 py-3 text-sm font-semibold text-ink"
+              >
+                Закрыть
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  void handleCancelCurrentRequest()
+                }}
+                disabled={isDriverTopUpSubmitting}
+                className="rounded-2xl border border-border bg-white px-4 py-3 text-sm font-semibold text-ink disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Отменить заявку
+              </button>
+            </>
+          ) : isPendingUploadRequest ? (
+            <>
+              <button
+                type="button"
+                onClick={handleClose}
+                className="rounded-2xl border border-border bg-white px-4 py-3 text-sm font-semibold text-ink"
+              >
+                Отмена
+              </button>
+              <button
+                type="button"
+                onClick={handleSubmit}
+                disabled={isDriverTopUpSubmitting}
+                className={cn(
+                  'rounded-2xl bg-accent px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-accent/20',
+                  isDriverTopUpSubmitting && 'cursor-not-allowed opacity-60',
+                )}
+              >
+                {isDriverTopUpSubmitting ? 'Загружаем чек...' : 'Загрузить чек'}
+              </button>
+            </>
           ) : (
             <>
               <button
@@ -529,13 +687,7 @@ export function DriverTopUpSheet() {
                   isDriverTopUpSubmitting && 'cursor-not-allowed opacity-60',
                 )}
               >
-                {isDriverTopUpSubmitting
-                  ? isUploadMode
-                    ? 'Загружаем чек...'
-                    : 'Отправляем...'
-                  : isUploadMode
-                    ? 'Загрузить чек'
-                    : 'Отправить'}
+                {isDriverTopUpSubmitting ? 'Отправляем...' : 'Отправить'}
               </button>
             </>
           )}

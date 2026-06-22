@@ -94,9 +94,13 @@ export type TopUpRequest = {
   providerPayload?: Record<string, unknown> | null
   matchedAt?: string
   confirmedAt?: string
+  cancelledAt?: string
+  cancelledBy?: string
+  cancelReason?: string
   screenshotAttached?: boolean
   status: TopUpRequestStatus
   createdAt: string
+  updatedAt: string
   reviewedAt?: string
   rejectionReason?: string
 }

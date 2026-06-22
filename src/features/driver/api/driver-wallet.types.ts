@@ -58,7 +58,11 @@ export type DriverTopUpRequest = {
   providerPayload?: Record<string, unknown> | null
   matchedAt?: string
   confirmedAt?: string
+  cancelledAt?: string
+  cancelledBy?: string
+  cancelReason?: string
   createdAt: string
+  updatedAt: string
   reviewedAt?: string
   rejectionReason?: string
   raw?: unknown

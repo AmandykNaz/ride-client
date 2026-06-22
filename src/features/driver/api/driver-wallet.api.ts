@@ -165,7 +165,11 @@ function mapTopUpRequest(raw: unknown): DriverTopUpRequest {
     providerPayload: isRecord(record.providerPayload) ? record.providerPayload : (record.provider_payload as Record<string, unknown> | null | undefined) ?? null,
     matchedAt: asString(record.matchedAt ?? record.matched_at),
     confirmedAt: asString(record.confirmedAt ?? record.confirmed_at),
+    cancelledAt: asString(record.cancelledAt ?? record.cancelled_at),
+    cancelledBy: asString(record.cancelledBy ?? record.cancelled_by),
+    cancelReason: asString(record.cancelReason ?? record.cancel_reason),
     createdAt: asString(record.createdAt ?? record.created_at, new Date().toISOString()),
+    updatedAt: asString(record.updatedAt ?? record.updated_at, asString(record.createdAt ?? record.created_at, new Date().toISOString())),
     reviewedAt: asString(record.reviewedAt ?? record.reviewed_at),
     rejectionReason: asString(record.rejectionReason ?? record.rejectReason ?? record.rejection_reason),
     raw,
@@ -250,6 +254,15 @@ export async function uploadTopUpReceipt(topUpRequestId: number, file: File): Pr
   const response = await backendPost<unknown>(
     `/ride/driver/wallet/${String(topUpRequestId)}/receipt`,
     formData,
+  )
+  const record = isRecord(response) ? firstRecord(response.data, response.request, response.item) ?? response : response
+  return mapTopUpRequest(record)
+}
+
+export async function cancelTopUpRequest(topUpRequestId: number): Promise<DriverTopUpRequest> {
+  const response = await backendPost<unknown>(
+    `/ride/driver/wallet/top-up-requests/${String(topUpRequestId)}/cancel`,
+    {},
   )
   const record = isRecord(response) ? firstRecord(response.data, response.request, response.item) ?? response : response
   return mapTopUpRequest(record)

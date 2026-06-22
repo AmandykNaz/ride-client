@@ -25,6 +25,11 @@ function formatDateTime(createdAt: string) {
   }).format(new Date(createdAt))
 }
 
+function resolveTopUpRequestId(request: { id: string | number }) {
+  const numericId = Number(request.id)
+  return Number.isFinite(numericId) && numericId > 0 ? numericId : null
+}
+
 export default function DriverBalancePage() {
   const {
     driverVerificationStatus,
@@ -234,18 +239,56 @@ export default function DriverBalancePage() {
                   <p>Номер перевода / чека: {request.providerRef || request.referenceNumber || '—'}</p>
                   <p>Комментарий: {request.comment || '—'}</p>
                   <p>Чек: {request.status === 'PENDING_UPLOAD' && !request.receiptFilePath ? 'не загружен' : request.receiptFileName || (request.receiptFilePath ? 'Прикреплён' : 'Не загружен')}</p>
-                  <p>Дата: {formatDateTime(request.createdAt)}</p>
-                  {request.reviewedAt ? <p>Проверено: {formatDateTime(request.reviewedAt)}</p> : null}
-                  {request.rejectionReason ? <p>Причина отказа: {request.rejectionReason}</p> : null}
+                  <p>Создано: {formatDateTime(request.createdAt)}</p>
+                  {request.status === 'CANCELLED' && request.cancelledAt ? (
+                    <p>Отменено: {formatDateTime(request.cancelledAt)}</p>
+                  ) : null}
+                  {request.status === 'APPROVED' && request.confirmedAt ? (
+                    <p>Подтверждено: {formatDateTime(request.confirmedAt)}</p>
+                  ) : null}
+                  {request.status === 'REJECTED' && request.reviewedAt ? (
+                    <p>Отклонено: {formatDateTime(request.reviewedAt)}</p>
+                  ) : null}
+                  {request.status === 'REJECTED' && request.rejectionReason ? (
+                    <p>Причина отказа: {request.rejectionReason}</p>
+                  ) : null}
                 </div>
                 {request.status === 'PENDING_UPLOAD' ? (
-                  <div className="mt-3">
+                  <div className="mt-3 flex flex-wrap gap-2">
                     <button
                       type="button"
                       onClick={actions.openTopUpForm}
-                      className="rounded-2xl bg-amber-500 px-4 py-2 text-sm font-semibold text-white shadow-sm shadow-amber-500/20"
+                      disabled={isDriverTopUpSubmitting}
+                      className="rounded-2xl bg-amber-500 px-4 py-2 text-sm font-semibold text-white shadow-sm shadow-amber-500/20 disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       Загрузить чек
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const requestId = resolveTopUpRequestId(request)
+                        if (!requestId) return
+                        void actions.cancelTopUpRequest(requestId)
+                      }}
+                      disabled={isDriverTopUpSubmitting}
+                      className="rounded-2xl border border-border bg-white px-4 py-2 text-sm font-semibold text-ink disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      Отменить
+                    </button>
+                  </div>
+                ) : request.status === 'PENDING_REVIEW' ? (
+                  <div className="mt-3">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const requestId = resolveTopUpRequestId(request)
+                        if (!requestId) return
+                        void actions.cancelTopUpRequest(requestId)
+                      }}
+                      disabled={isDriverTopUpSubmitting}
+                      className="rounded-2xl border border-border bg-white px-4 py-2 text-sm font-semibold text-ink disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      Отменить заявку
                     </button>
                   </div>
                 ) : null}
