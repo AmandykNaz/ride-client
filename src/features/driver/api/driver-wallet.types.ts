@@ -17,6 +17,7 @@ export type DriverWalletTransaction = {
   type: WalletTransactionType | string
   status: WalletTransactionStatus | string
   amount: number
+  title?: string
   balanceBefore?: number
   balanceAfter?: number
   publicCode?: string
@@ -27,6 +28,11 @@ export type DriverWalletTransaction = {
   providerPayload?: Record<string, unknown> | null
   description?: string
   comment?: string
+  reason?: string
+  referenceNumber?: string
+  actorName?: string
+  actorEmail?: string
+  metadata?: Record<string, unknown> | null
   createdAt: string
   raw?: unknown
 }
@@ -56,15 +62,16 @@ export type DriverTopUpRequest = {
   provider?: string
   externalPaymentId?: string
   providerPayload?: Record<string, unknown> | null
-  matchedAt?: string
-  confirmedAt?: string
-  cancelledAt?: string
-  cancelledBy?: string
-  cancelReason?: string
+  matchedAt?: string | null
+  confirmedAt?: string | null
+  cancelledAt?: string | null
+  cancelledBy?: string | null
+  cancelReason?: string | null
+  reviewReason?: string | null
   createdAt: string
   updatedAt: string
-  reviewedAt?: string
-  rejectionReason?: string
+  reviewedAt?: string | null
+  rejectionReason?: string | null
   raw?: unknown
 }
 

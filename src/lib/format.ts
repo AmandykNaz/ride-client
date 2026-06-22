@@ -227,26 +227,58 @@ export function getTopUpStatusTone(status?: TopUpRequestStatus | string | null) 
 export function formatWalletTransactionTypeLabel(type?: WalletTransactionType | string | null) {
   switch (type) {
     case 'TOP_UP_APPROVED':
-      return 'Пополнение'
+      return 'Пополнение по заявке'
     case 'COMMISSION_CHARGED':
-      return 'Комиссия'
+      return 'Комиссия сервиса'
     case 'COMMISSION_REFUND':
-      return 'Возврат комиссии'
+    case 'REFUND':
+      return 'Возврат'
     case 'MANUAL_ADJUSTMENT':
-      return 'Ручная корректировка'
+      return 'Ручное пополнение'
     default:
       return 'Операция'
   }
 }
 
+export function formatWalletManualCreditReasonLabel(reason?: string | null) {
+  switch (String(reason ?? '').trim().toUpperCase()) {
+    case 'CASH_RECEIVED':
+      return 'Наличные получены'
+    case 'KASPI_TRANSFER_CONFIRMED':
+    case 'KASPI_CONFIRMED_MANUALLY':
+      return 'Kaspi перевод подтверждён'
+    case 'HALYK_TRANSFER_CONFIRMED':
+      return 'Halyk перевод подтверждён'
+    case 'BALANCE_CORRECTION':
+      return 'Корректировка баланса'
+    case 'BONUS':
+      return 'Бонус'
+    case 'OTHER':
+      return 'Другое'
+    case 'SUPPORT_COMPENSATION':
+      return 'Компенсация поддержки'
+    default:
+      return 'Другая причина'
+  }
+}
+
+function isTechnicalTopUpComment(text?: string | null) {
+  const normalized = text?.trim()
+  if (!normalized) return false
+
+  return /^approved top-up request #\d+$/i.test(normalized) || /^top-up request #\d+ approved$/i.test(normalized)
+}
+
 export function formatWalletTransactionStatusLabel(status?: WalletTransactionStatus | string | null) {
   switch (status) {
     case 'PENDING':
-      return 'На проверке'
+      return 'В обработке'
     case 'APPROVED':
-      return 'Подтверждено'
+      return 'Зачислено'
     case 'REJECTED':
       return 'Отклонено'
+    case 'FAILED':
+      return 'Ошибка'
     default:
       return 'Статус неизвестен'
   }
@@ -254,9 +286,33 @@ export function formatWalletTransactionStatusLabel(status?: WalletTransactionSta
 
 export function formatWalletTransactionDescription(
   description?: string | null,
-  transaction?: { type?: WalletTransactionType | string | null } | null,
+  transaction?: {
+    type?: WalletTransactionType | string | null
+    publicCode?: string | null
+    referenceNumber?: string | null
+  } | null,
 ) {
   const text = description?.trim()
+  const normalizedType = String(transaction?.type ?? '').trim().toUpperCase()
+
+  if (normalizedType === 'TOP_UP_APPROVED') {
+    const code = transaction?.publicCode?.trim() || transaction?.referenceNumber?.trim()
+    if (text && !isTechnicalTopUpComment(text)) {
+      return text
+    }
+    return code ? `Пополнение по заявке ${code}` : 'Подтверждённое пополнение по заявке'
+  }
+
+  if (normalizedType === 'MANUAL_ADJUSTMENT') {
+    if (!text) {
+      return 'Администратор пополнил баланс'
+    }
+    if (isTechnicalTopUpComment(text)) {
+      return 'Подтверждённое пополнение по заявке'
+    }
+    return text
+  }
+
   if (!text) {
     return transaction?.type ? formatWalletTransactionTypeLabel(transaction.type) : 'Операция'
   }

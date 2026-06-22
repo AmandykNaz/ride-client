@@ -15,6 +15,10 @@ import type {
   RideDriverRecheckType,
   RideOrderStatus,
 } from '../../../types/domain'
+import type {
+  DriverTopUpRequest,
+  DriverWalletTransaction,
+} from './driver-wallet.types'
 
 export type {
   RideVehicleBodyTypeOption,
@@ -171,6 +175,8 @@ export type RideDriverMe = {
     currency?: string
     isBlocked?: boolean
     blockedReason?: string | null
+    transactions?: DriverWalletTransaction[] | null
+    topUpRequests?: DriverTopUpRequest[] | null
   } | null
   documents?: RideDriverApplicationDocument[] | null
   verificationStatus?: DriverVerificationStatus | string
@@ -326,6 +332,8 @@ export type DriverMeViewModel = {
     currency?: string
     isBlocked?: boolean
     blockedReason?: string | null
+    transactions?: DriverWalletTransaction[] | null
+    topUpRequests?: DriverTopUpRequest[] | null
   } | null
   documents?: RideDriverApplicationDocument[] | null
   activeRecheck?: RideDriverRecheck | null

@@ -36,9 +36,10 @@ export type WalletTransactionType =
   | 'TOP_UP_APPROVED'
   | 'COMMISSION_CHARGED'
   | 'COMMISSION_REFUND'
+  | 'REFUND'
   | 'MANUAL_ADJUSTMENT'
 
-export type WalletTransactionStatus = 'PENDING' | 'APPROVED' | 'REJECTED'
+export type WalletTransactionStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'FAILED'
 
 export type WalletTransaction = {
   id: string
@@ -48,6 +49,11 @@ export type WalletTransaction = {
   title: string
   description?: string
   comment?: string
+  reason?: string
+  referenceNumber?: string
+  actorName?: string
+  actorEmail?: string
+  metadata?: Record<string, unknown> | null
   createdAt: string
   balanceBefore?: number
   balanceAfter?: number
@@ -92,17 +98,18 @@ export type TopUpRequest = {
   provider?: string
   externalPaymentId?: string
   providerPayload?: Record<string, unknown> | null
-  matchedAt?: string
-  confirmedAt?: string
-  cancelledAt?: string
-  cancelledBy?: string
-  cancelReason?: string
+  matchedAt?: string | null
+  confirmedAt?: string | null
+  cancelledAt?: string | null
+  cancelledBy?: string | null
+  cancelReason?: string | null
+  reviewReason?: string | null
   screenshotAttached?: boolean
   status: TopUpRequestStatus
   createdAt: string
   updatedAt: string
-  reviewedAt?: string
-  rejectionReason?: string
+  reviewedAt?: string | null
+  rejectionReason?: string | null
 }
 
 export type DriverWallet = {

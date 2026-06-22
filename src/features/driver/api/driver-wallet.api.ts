@@ -18,6 +18,14 @@ function asString(value: unknown, fallback = '') {
   return typeof value === 'string' && value.trim() ? value : fallback
 }
 
+function asNullableString(value: unknown) {
+  return typeof value === 'string' && value.trim() ? value : null
+}
+
+function asNullableRecord(value: unknown) {
+  return isRecord(value) ? value : null
+}
+
 function asIdString(value: unknown, fallback = '') {
   if (typeof value === 'string' && value.trim()) return value.trim()
   if (typeof value === 'number' && Number.isFinite(value)) return String(value)
@@ -101,12 +109,14 @@ function mapWallet(raw: unknown): DriverWallet {
 
 function mapWalletTransaction(raw: unknown): DriverWalletTransaction {
   const record = isRecord(raw) ? raw : {}
+  const metadata = asNullableRecord(record.metadata ?? record.meta)
 
   return {
     id: asString(record.id, crypto.randomUUID?.() ?? `txn-${Date.now()}`),
     type: asString(record.type ?? record.transactionType ?? record.transaction_type),
     status: asString(record.status, 'APPROVED'),
     amount: asNumber(record.amount),
+    title: asString(record.title ?? record.name ?? record.label),
     balanceBefore:
       typeof record.balanceBefore === 'number'
         ? record.balanceBefore
@@ -130,8 +140,13 @@ function mapWalletTransaction(raw: unknown): DriverWalletTransaction {
     provider: asString(record.provider ?? null),
     externalPaymentId: asString(record.externalPaymentId ?? record.external_payment_id),
     providerPayload: isRecord(record.providerPayload) ? record.providerPayload : (record.provider_payload as Record<string, unknown> | null | undefined) ?? null,
-    description: asString(record.description ?? record.title ?? record.message),
-    comment: asString(record.comment ?? record.note),
+    description: asString(record.description ?? record.title ?? record.message ?? metadata?.description),
+    comment: asString(record.comment ?? record.note ?? metadata?.comment ?? metadata?.note),
+    reason: asString(record.reason ?? metadata?.reason),
+    referenceNumber: asString(record.referenceNumber ?? record.reference_number ?? metadata?.referenceNumber ?? metadata?.reference_number),
+    actorName: asString(record.actorName ?? record.actor_name ?? metadata?.actorName ?? metadata?.actor_name),
+    actorEmail: asString(record.actorEmail ?? record.actor_email ?? metadata?.actorEmail ?? metadata?.actor_email),
+    metadata,
     createdAt: asString(record.createdAt ?? record.created_at, new Date().toISOString()),
     raw,
   }
@@ -163,15 +178,16 @@ function mapTopUpRequest(raw: unknown): DriverTopUpRequest {
     provider: asString(record.provider ?? null),
     externalPaymentId: asString(record.externalPaymentId ?? record.external_payment_id),
     providerPayload: isRecord(record.providerPayload) ? record.providerPayload : (record.provider_payload as Record<string, unknown> | null | undefined) ?? null,
-    matchedAt: asString(record.matchedAt ?? record.matched_at),
-    confirmedAt: asString(record.confirmedAt ?? record.confirmed_at),
-    cancelledAt: asString(record.cancelledAt ?? record.cancelled_at),
-    cancelledBy: asString(record.cancelledBy ?? record.cancelled_by),
-    cancelReason: asString(record.cancelReason ?? record.cancel_reason),
+    matchedAt: asNullableString(record.matchedAt ?? record.matched_at),
+    confirmedAt: asNullableString(record.confirmedAt ?? record.confirmed_at),
+    cancelledAt: asNullableString(record.cancelledAt ?? record.cancelled_at),
+    cancelledBy: asNullableString(record.cancelledBy ?? record.cancelled_by),
+    cancelReason: asNullableString(record.cancelReason ?? record.cancel_reason),
+    reviewReason: asNullableString(record.reviewReason ?? record.review_reason ?? record.rejectionReason ?? record.rejection_reason),
     createdAt: asString(record.createdAt ?? record.created_at, new Date().toISOString()),
     updatedAt: asString(record.updatedAt ?? record.updated_at, asString(record.createdAt ?? record.created_at, new Date().toISOString())),
-    reviewedAt: asString(record.reviewedAt ?? record.reviewed_at),
-    rejectionReason: asString(record.rejectionReason ?? record.rejectReason ?? record.rejection_reason),
+    reviewedAt: asNullableString(record.reviewedAt ?? record.reviewed_at),
+    rejectionReason: asNullableString(record.rejectionReason ?? record.rejectReason ?? record.rejection_reason),
     raw,
   }
 }

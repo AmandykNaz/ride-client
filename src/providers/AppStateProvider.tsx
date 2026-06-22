@@ -849,14 +849,20 @@ function mapWalletResponseToState(wallet: DriverWalletApi): DriverWallet {
 function mapWalletTransactionResponseToState(
   transaction: DriverWalletTransactionApi,
 ): WalletTransaction {
+  const metadata = transaction.metadata ?? null
   return {
     id: transaction.id,
     type: transaction.type as WalletTransaction['type'],
     amount: transaction.amount,
     status: transaction.status as WalletTransaction['status'],
-    title: transaction.description || transaction.comment || transaction.type,
+    title: transaction.title || transaction.description || transaction.comment || transaction.type,
     description: transaction.description,
     comment: transaction.comment,
+    reason: transaction.reason,
+    referenceNumber: transaction.referenceNumber,
+    actorName: transaction.actorName,
+    actorEmail: transaction.actorEmail,
+    metadata,
     createdAt: transaction.createdAt,
     balanceBefore: transaction.balanceBefore,
     balanceAfter: transaction.balanceAfter,
@@ -893,12 +899,53 @@ function mapTopUpRequestResponseToState(
     cancelledAt: request.cancelledAt,
     cancelledBy: request.cancelledBy,
     cancelReason: request.cancelReason,
+    reviewReason: request.reviewReason,
     status: request.status as TopUpRequest['status'],
     createdAt: request.createdAt,
     updatedAt: request.updatedAt,
     reviewedAt: request.reviewedAt,
     rejectionReason: request.rejectionReason,
   }
+}
+
+function mergeTopUpRequestRecords(previous: TopUpRequest, next: TopUpRequest): TopUpRequest {
+  return {
+    ...previous,
+    ...next,
+    publicCode: next.publicCode || previous.publicCode,
+    referenceNumber: next.referenceNumber || previous.referenceNumber,
+    providerRef: next.providerRef || previous.providerRef,
+    comment: next.comment || previous.comment,
+    proofFilePath: next.proofFilePath || previous.proofFilePath,
+    receiptFilePath: next.receiptFilePath || previous.receiptFilePath,
+    receiptFileName: next.receiptFileName || previous.receiptFileName,
+    receiptMimeType: next.receiptMimeType || previous.receiptMimeType,
+    provider: next.provider || previous.provider,
+    externalPaymentId: next.externalPaymentId || previous.externalPaymentId,
+    matchedAt: next.matchedAt || previous.matchedAt,
+    confirmedAt: next.confirmedAt || previous.confirmedAt,
+    cancelledAt: next.cancelledAt || previous.cancelledAt,
+    cancelledBy: next.cancelledBy || previous.cancelledBy,
+    cancelReason: next.cancelReason || previous.cancelReason,
+    reviewReason: next.reviewReason || previous.reviewReason,
+    reviewedAt: next.reviewedAt || previous.reviewedAt,
+    rejectionReason: next.rejectionReason || previous.rejectionReason,
+  }
+}
+
+function mergeTopUpRequestsById(existing: TopUpRequest[], next: TopUpRequest[]): TopUpRequest[] {
+  const byId = new Map(existing.map((request) => [request.id, request]))
+
+  return next.map((request) => {
+    const previous = byId.get(request.id)
+    if (!previous) {
+      return request
+    }
+
+    return {
+      ...mergeTopUpRequestRecords(previous, request),
+    }
+  })
 }
 
 function mapReviewResponseToState(review: RideReviewApi): RideReviewApi {
@@ -934,6 +981,11 @@ function makeWalletTransaction(params: {
   title: string
   description?: string
   comment?: string
+  reason?: string
+  referenceNumber?: string
+  actorName?: string
+  actorEmail?: string
+  metadata?: Record<string, unknown> | null
   sourceOrderId?: string
   sourceTopUpRequestId?: string
   balanceBefore?: number
@@ -1262,7 +1314,7 @@ function appReducer(state: AppState, action: AppAction): AppState {
         ...state,
         driverWallet: action.driverWallet,
         driverWalletTransactions: action.driverWalletTransactions,
-        driverTopUpRequests: action.driverTopUpRequests,
+        driverTopUpRequests: mergeTopUpRequestsById(state.driverTopUpRequests, action.driverTopUpRequests),
         driverProfile: syncDriverProfileWithWallet(state.driverProfile, action.driverWallet),
         driverFlowError: null,
         driverWalletError: null,
@@ -1285,7 +1337,7 @@ function appReducer(state: AppState, action: AppAction): AppState {
     case 'setDriverTopUpRequests':
       return {
         ...state,
-        driverTopUpRequests: action.driverTopUpRequests,
+        driverTopUpRequests: mergeTopUpRequestsById(state.driverTopUpRequests, action.driverTopUpRequests),
         driverFlowError: null,
         driverWalletError: null,
       }
@@ -1694,8 +1746,10 @@ function appReducer(state: AppState, action: AppAction): AppState {
       if (!activeOrder || activeOrder.sourceOrderId !== action.orderId) return state
 
       const commission = Math.round(activeOrder.price * 0.08)
-      const alreadyRefunded = state.driverWallet.transactions.some(
-        (item) => item.type === 'COMMISSION_REFUND' && item.sourceOrderId === action.orderId,
+  const alreadyRefunded = state.driverWallet.transactions.some(
+      (item) =>
+        (item.type === 'COMMISSION_REFUND' || item.type === 'REFUND') &&
+        item.sourceOrderId === action.orderId,
       )
 
       if (alreadyRefunded) return state
@@ -1705,7 +1759,7 @@ function appReducer(state: AppState, action: AppAction): AppState {
         balance: state.driverWallet.balance + commission,
         transactions: [
           makeWalletTransaction({
-            type: 'COMMISSION_REFUND',
+            type: 'REFUND',
             amount: commission,
             title: 'Возврат комиссии',
             description: `${activeOrder.from} → ${activeOrder.to}`,
@@ -3072,8 +3126,15 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       })
 
       if (me.wallet) {
+        const walletTransactions = Array.isArray(me.wallet.transactions)
+          ? me.wallet.transactions.map(mapWalletTransactionResponseToState)
+          : state.driverWallet.transactions
+        const topUpRequests = Array.isArray(me.wallet.topUpRequests)
+          ? me.wallet.topUpRequests.map(mapTopUpRequestResponseToState)
+          : state.driverWallet.topUpRequests
+
         dispatch({
-          type: 'setDriverWallet',
+          type: 'setDriverWalletSnapshot',
           driverWallet: syncDriverWalletAccessState({
             balance: me.wallet.balance ?? 0,
             minBalance: me.wallet.minimumBalance ?? 0,
@@ -3082,10 +3143,12 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
             missingAmount: 0,
             isBlocked: me.wallet.isBlocked ?? false,
             blockedReason: me.wallet.blockedReason ?? '',
-            transactions: state.driverWallet.transactions,
-            topUpRequests: state.driverWallet.topUpRequests,
+            transactions: walletTransactions,
+            topUpRequests,
             chargedOrderIds: state.driverWallet.chargedOrderIds,
           }),
+          driverWalletTransactions: walletTransactions,
+          driverTopUpRequests: topUpRequests,
         })
       }
 

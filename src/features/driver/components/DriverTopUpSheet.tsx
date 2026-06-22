@@ -332,7 +332,7 @@ export function DriverTopUpSheet() {
         requestId,
         publicCode: cancelled.publicCode ?? currentUploadRequest.publicCode,
         statusLabel: formatTopUpStatusLabel(cancelled.status),
-        cancelledAt: cancelled.cancelledAt ?? cancelled.updatedAt,
+        cancelledAt: cancelled.cancelledAt ?? null,
       })
       setCompletedTopUp(null)
       setSubmission(null)

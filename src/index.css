@@ -50,4 +50,16 @@
   * {
     box-sizing: border-box;
   }
+
+  .transaction-card {
+    display: block;
+    width: 100%;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .transaction-card:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 4px rgba(241, 70, 53, 0.14);
+  }
 }
