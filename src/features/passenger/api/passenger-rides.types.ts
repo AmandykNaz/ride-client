@@ -8,8 +8,6 @@ export type CreateRideRequestPayload = {
   rideType?: RideType
   originText: string
   destinationText: string
-  pickupAddress?: string
-  dropoffAddress?: string
   passengersCount?: number
   requestedPrice?: number
   comment?: string

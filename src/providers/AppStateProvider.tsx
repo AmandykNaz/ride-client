@@ -1135,8 +1135,6 @@ function buildRideRequestPayload(rideDraft: RideDraft): CreateRideRequestPayload
     rideType: toBackendRideType(rideDraft.type),
     originText: rideDraft.from,
     destinationText: rideDraft.to,
-    pickupAddress: rideDraft.from,
-    dropoffAddress: rideDraft.to,
     passengersCount: rideDraft.passengersCount,
     requestedPrice: rideDraft.price,
     comment: rideDraft.comment,
@@ -2603,9 +2601,16 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         return
       }
 
+      const message =
+        error instanceof BackendApiError
+          ? 'Не удалось создать заявку. Проверьте данные.'
+          : error instanceof Error
+            ? error.message
+            : 'Не удалось создать заявку.'
+
       dispatch({
         type: 'setRideFlowError',
-        error: error instanceof Error ? error.message : 'Не удалось создать заявку.',
+        error: message,
       })
     } finally {
       dispatch({ type: 'setRideRequestLoading', loading: false })
