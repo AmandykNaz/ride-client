@@ -49,12 +49,18 @@ export default function DriverActiveOrderPage() {
   const actions = useAppActions()
   const refreshOrderReviewsRef = useRef(actions.refreshOrderReviews)
   const refreshOrderComplaintsRef = useRef(actions.refreshOrderComplaints)
+  const refreshDriverOrdersRef = useRef(actions.refreshDriverOrders)
   const activeOrderId = driverActiveOrder?.id ?? null
 
   useEffect(() => {
     refreshOrderReviewsRef.current = actions.refreshOrderReviews
     refreshOrderComplaintsRef.current = actions.refreshOrderComplaints
-  }, [actions.refreshOrderReviews, actions.refreshOrderComplaints])
+    refreshDriverOrdersRef.current = actions.refreshDriverOrders
+  }, [actions.refreshOrderReviews, actions.refreshOrderComplaints, actions.refreshDriverOrders])
+
+  useEffect(() => {
+    void refreshDriverOrdersRef.current()
+  }, [])
 
   useEffect(() => {
     if (!activeOrderId) return
@@ -107,8 +113,9 @@ export default function DriverActiveOrderPage() {
     )
   }
 
-  const commission = driverActiveOrder.commissionPreview
-  const afterCommission = driverActiveOrder.price - commission
+  const commissionPreview = driverActiveOrder.commissionPreview ?? null
+  const commissionAmount = driverActiveOrder.commissionAmount ?? commissionPreview ?? null
+  const afterCommission = commissionPreview != null ? driverActiveOrder.price - commissionPreview : null
   const nextActionLabel = getNextActionLabel(driverActiveOrder.category, driverActiveOrder.status)
   const isCompleted = driverActiveOrder.status === 'COMPLETED'
   const isCancelled = driverActiveOrder.status === 'CANCELLED'
@@ -119,7 +126,7 @@ export default function DriverActiveOrderPage() {
     <PageCard
       eyebrow="Водитель"
       title="Активный заказ"
-      description="Управляйте статусами заказа без списания комиссии."
+      description="Комиссия списывается только после завершения заказа."
     >
       {driverFlowError ? (
         <div className="rounded-2xl bg-red-50 px-4 py-3 text-sm text-red-700">
@@ -147,7 +154,7 @@ export default function DriverActiveOrderPage() {
         <div className="rounded-2xl bg-surface-soft p-4">
           <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">Маршрут</p>
           <p className="mt-2 text-lg font-semibold tracking-[-0.02em] text-ink">
-            {formatRoute(driverActiveOrder.from, driverActiveOrder.to)}
+            {formatRoute(driverActiveOrder.originText ?? driverActiveOrder.from, driverActiveOrder.destinationText ?? driverActiveOrder.to)}
           </p>
         </div>
 
@@ -162,13 +169,15 @@ export default function DriverActiveOrderPage() {
           </div>
           <div className="rounded-2xl bg-surface-soft p-4">
             <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">Цена</p>
-            <p className="mt-2 text-sm font-semibold text-ink">{formatKzt(driverActiveOrder.price)}</p>
+            <p className="mt-2 text-sm font-semibold text-ink">{formatKzt(driverActiveOrder.agreedPrice ?? driverActiveOrder.price)}</p>
           </div>
           <div className="rounded-2xl bg-surface-soft p-4">
             <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">
-              Комиссия (предварительно)
+              Комиссия после завершения
             </p>
-            <p className="mt-2 text-sm font-semibold text-ink">{formatKzt(commission)}</p>
+            <p className="mt-2 text-sm font-semibold text-ink">
+              {commissionPreview != null ? formatKzt(commissionPreview) : 'Комиссия будет списана после завершения'}
+            </p>
           </div>
         </div>
 
@@ -178,7 +187,9 @@ export default function DriverActiveOrderPage() {
             <div>
               <p className="text-sm font-semibold text-ink">До и после комиссии</p>
               <p className="mt-1 text-sm text-muted">
-                Получите {formatKzt(driverActiveOrder.price)} до списания комиссии и {formatKzt(afterCommission)} после предварительного расчёта.
+                {commissionPreview != null
+                  ? `Получите ${formatKzt(driverActiveOrder.agreedPrice ?? driverActiveOrder.price)} до списания комиссии и ${formatKzt(afterCommission ?? 0)} после предварительного расчёта.`
+                  : 'Комиссия будет рассчитана и списана после завершения заказа.'}
               </p>
             </div>
           </div>
@@ -224,11 +235,15 @@ export default function DriverActiveOrderPage() {
             <div className="grid gap-2 rounded-2xl bg-white/70 p-3 text-emerald-900">
               <div className="flex items-center justify-between gap-3">
                 <span>Цена заказа</span>
-                <span className="font-semibold">{formatKzt(driverActiveOrder.price)}</span>
+                <span className="font-semibold">{formatKzt(driverActiveOrder.agreedPrice ?? driverActiveOrder.price)}</span>
               </div>
               <div className="flex items-center justify-between gap-3">
-                <span>Комиссия 8%</span>
-                <span className="font-semibold">-{formatKzt(commission)}</span>
+                <span>Комиссия</span>
+                <span className="font-semibold">
+                  {commissionAmount != null
+                    ? `-${formatKzt(commissionAmount)}`
+                    : 'Будет рассчитана после завершения'}
+                </span>
               </div>
               {balanceBefore != null && balanceAfter != null ? (
                 <>

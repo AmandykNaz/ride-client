@@ -290,12 +290,16 @@ export default function DriverFeedPage() {
       {visibleOrders.length === 0 ? (
         <PageCard
           eyebrow="Водитель"
-          title="Ничего не найдено"
-          description="Попробуйте другой фильтр или обновите список позже."
+          title="Нет доступных заказов"
+          description={driverProfile?.isOnline ? 'Backend пока не вернул новых заявок.' : 'Включите онлайн-режим, чтобы получать новые заявки.'}
         >
           <div className="flex items-center gap-3 rounded-2xl bg-surface-soft p-4">
             <Sparkles className="h-5 w-5 text-accent" />
-            <p className="text-sm text-ink">Сейчас нет доступных заявок по этому фильтру.</p>
+            <p className="text-sm text-ink">
+              {driverProfile?.isOnline
+                ? 'Сейчас нет доступных заявок.'
+                : 'Сейчас вы офлайн, поэтому лента не пополняется.'}
+            </p>
           </div>
         </PageCard>
       ) : null}

@@ -171,14 +171,51 @@ function readRequestedPrice(record: BackendRecord) {
   )
 }
 
+function readOptionalNumericId(value: unknown) {
+  if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
+    return Math.trunc(value)
+  }
+
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Number(value.trim())
+    if (Number.isFinite(parsed) && parsed > 0) {
+      return Math.trunc(parsed)
+    }
+  }
+
+  return undefined
+}
+
+function buildLocationText(cityName: string, address?: string | null) {
+  const trimmedCity = cityName.trim()
+  const trimmedAddress = address?.trim() || ''
+
+  if (!trimmedCity) return ''
+  if (!trimmedAddress) return trimmedCity
+
+  return `${trimmedCity}, ${trimmedAddress}`
+}
+
 export function mapRideRequestToViewModel(raw: unknown): RideRequest {
   const record = getRideRequestSource(raw)
   const createdAt = getFallbackDate(record.createdAt ?? record.created_at)
   const backendId = resolveRideRequestBackendId(isRecord(raw) ? raw : record)
   const localId = backendId ? undefined : `request-${Date.now()}`
+  const originCityName = asString(
+    record.originCityName ?? record.origin_city_name ?? record.cityName ?? record.city_name,
+  )
+  const destinationCityName = asString(
+    record.destinationCityName ?? record.destination_city_name ?? record.toCityName ?? record.to_city_name,
+  )
+  const originAddress = asString(
+    record.originAddress ?? record.origin_address,
+  )
+  const destinationAddress = asString(
+    record.destinationAddress ?? record.destination_address,
+  )
   const from = asString(
     record.from ?? record.originText ?? record.origin_text ?? record.pickupAddress ?? record.pickup_address,
-    '',
+    buildLocationText(originCityName, originAddress) || '',
   )
   const to = asString(
     record.to ??
@@ -186,7 +223,7 @@ export function mapRideRequestToViewModel(raw: unknown): RideRequest {
       record.destination_text ??
       record.dropoffAddress ??
       record.dropoff_address,
-    '',
+    buildLocationText(destinationCityName, destinationAddress) || '',
   )
 
   return {
@@ -201,15 +238,27 @@ export function mapRideRequestToViewModel(raw: unknown): RideRequest {
     passengersCount: asNumber(record.passengersCount ?? record.passengers_count, 1),
     from,
     to,
+    originCityId: readOptionalNumericId(record.originCityId ?? record.origin_city_id),
+    originCityName,
+    originRegionName: asString(record.originRegionName ?? record.origin_region_name) || undefined,
+    originAddress: originAddress || undefined,
+    destinationCityId: readOptionalNumericId(record.destinationCityId ?? record.destination_city_id),
+    destinationCityName,
+    destinationRegionName: asString(record.destinationRegionName ?? record.destination_region_name) || undefined,
+    destinationAddress: destinationAddress || undefined,
     date: getFallbackDay(record.date ?? record.createdAt ?? record.created_at),
     price: readRequestedPrice(record),
     originText: asString(
-      record.originText ?? record.origin_text ?? from,
+      record.originText ??
+        record.origin_text ??
+        buildLocationText(originCityName, originAddress) ??
+        from,
       from,
     ),
     destinationText: asString(
       record.destinationText ??
         record.destination_text ??
+        buildLocationText(destinationCityName, destinationAddress) ??
         to,
       to,
     ),
@@ -302,9 +351,17 @@ export function mapRideOfferToViewModel(raw: unknown): RideOffer {
 export function mapRideOrderToViewModel(raw: unknown): RideOrder {
   const record = isRecord(raw) ? raw : {}
   const driver = isRecord(record.driver) ? record.driver : {}
+  const originCityName = asString(
+    record.originCityName ?? record.origin_city_name ?? record.cityName ?? record.city_name,
+  )
+  const destinationCityName = asString(
+    record.destinationCityName ?? record.destination_city_name ?? record.toCityName ?? record.to_city_name,
+  )
+  const originAddress = asString(record.originAddress ?? record.origin_address)
+  const destinationAddress = asString(record.destinationAddress ?? record.destination_address)
   const from = asString(
     record.from ?? record.originText ?? record.origin_text ?? record.pickupAddress ?? record.pickup_address,
-    '',
+    buildLocationText(originCityName, originAddress) || '',
   )
   const to = asString(
     record.to ??
@@ -312,7 +369,7 @@ export function mapRideOrderToViewModel(raw: unknown): RideOrder {
       record.destination_text ??
       record.dropoffAddress ??
       record.dropoff_address,
-    '',
+    buildLocationText(destinationCityName, destinationAddress) || '',
   )
 
   return {
@@ -323,10 +380,27 @@ export function mapRideOrderToViewModel(raw: unknown): RideOrder {
     rideType: asTripType(record.rideType ?? record.ride_type ?? record.type),
     from,
     to,
+    originCityId: readOptionalNumericId(record.originCityId ?? record.origin_city_id),
+    originCityName,
+    originRegionName: asString(record.originRegionName ?? record.origin_region_name) || undefined,
+    originAddress: originAddress || undefined,
+    destinationCityId: readOptionalNumericId(record.destinationCityId ?? record.destination_city_id),
+    destinationCityName,
+    destinationRegionName: asString(record.destinationRegionName ?? record.destination_region_name) || undefined,
+    destinationAddress: destinationAddress || undefined,
     date: getFallbackDay(record.date ?? record.createdAt ?? record.created_at),
     price: asNumber(record.price ?? record.agreedPrice ?? record.agreed_price, 0),
-    originText: asString(record.originText ?? record.origin_text ?? from, from),
-    destinationText: asString(record.destinationText ?? record.destination_text ?? to, to),
+    originText: asString(
+      record.originText ?? record.origin_text ?? buildLocationText(originCityName, originAddress) ?? from,
+      from,
+    ),
+    destinationText: asString(
+      record.destinationText ??
+        record.destination_text ??
+        buildLocationText(destinationCityName, destinationAddress) ??
+        to,
+      to,
+    ),
     pickupAddress: asString(record.pickupAddress ?? record.pickup_address),
     dropoffAddress: asString(record.dropoffAddress ?? record.dropoff_address),
     agreedPrice: asNumber(record.agreedPrice ?? record.agreed_price ?? record.price, 0),

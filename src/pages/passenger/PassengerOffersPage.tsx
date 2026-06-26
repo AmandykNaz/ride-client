@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Clock3, Sparkles } from 'lucide-react'
 
-import { formatKzt, formatRideRequestStatusLabel, formatRoute } from '../../lib/format'
+import { formatKzt, formatRideRequestStatusLabel, formatRoute, formatRouteIfPresent } from '../../lib/format'
 import { cn } from '../../lib/cn'
 import { useAppActions, useAppState } from '../../providers/AppStateProvider'
 import { PageCard } from '../../shared/ui/PageCard'
@@ -10,7 +10,6 @@ export default function PassengerOffersPage() {
   const {
     activeRideRequest,
     driverOffers,
-    rideDraft,
     rideFlowError,
     isRideOffersLoading,
     isRideActionLoading,
@@ -23,6 +22,12 @@ export default function PassengerOffersPage() {
       ? (activeRideRequest.backendId ?? activeRideRequest.id).trim()
       : null
   const activeRideRequestStatus = activeRideRequest?.status ?? null
+  const activeRequestRoute = activeRideRequest
+    ? formatRouteIfPresent(
+        activeRideRequest.originText || activeRideRequest.from,
+        activeRideRequest.destinationText || activeRideRequest.to,
+      )
+    : null
 
   useEffect(() => {
     loadOffersRef.current = actions.loadActiveRequestOffers
@@ -118,12 +123,12 @@ export default function PassengerOffersPage() {
         </div>
       </PageCard>
 
-      <div className="flex items-center gap-2 rounded-2xl border border-border bg-white px-4 py-3">
-        <Sparkles className="h-5 w-5 text-accent" />
-        <p className="text-sm text-ink">
-          Маршрут: {formatRoute(rideDraft.from, rideDraft.to)}
-        </p>
-      </div>
+      {activeRequestRoute ? (
+        <div className="flex items-center gap-2 rounded-2xl border border-border bg-white px-4 py-3">
+          <Sparkles className="h-5 w-5 text-accent" />
+          <p className="text-sm text-ink">Маршрут: {activeRequestRoute}</p>
+        </div>
+      ) : null}
 
       <div className="space-y-3">
         {driverOffers.map((offer) => {

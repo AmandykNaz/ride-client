@@ -3,19 +3,74 @@ import { Minus, Plus } from 'lucide-react'
 import { useAppActions, useAppState } from '../../providers/AppStateProvider'
 import { formatKzt, formatRoute } from '../../lib/format'
 import { cn } from '../../lib/cn'
+import { isPassengerProfileComplete } from '../../features/passenger/api/passenger.api'
 
 const typeOptions = [
   { value: 'shared' as const, label: 'С попутчиками' },
   { value: 'full' as const, label: 'Весь салон' },
 ]
 
-function statusMessage(status: string) {
+function normalizePriceInput(value: string) {
+  const digits = value.replace(/\D/g, '')
+
+  if (!digits) {
+    return ''
+  }
+
+  const normalized = digits.replace(/^0+/, '')
+  return normalized || ''
+}
+
+function buildLocationLabel(cityName?: string, address?: string) {
+  const trimmedCity = cityName?.trim() || ''
+  const trimmedAddress = address?.trim() || ''
+
+  if (!trimmedCity) return 'Выберите город'
+  if (!trimmedAddress) return trimmedCity
+
+  return `${trimmedCity}, ${trimmedAddress}`
+}
+
+function LocationButton({
+  label,
+  value,
+  onClick,
+}: {
+  label: string
+  value: string
+  onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-haspopup="dialog"
+      className="block w-full rounded-2xl border border-border bg-surface-soft px-4 py-3 text-left outline-none transition hover:border-accent/30 focus:border-accent"
+    >
+      <span className="mb-1 block text-sm font-medium text-ink">{label}</span>
+      <span className={cn('block text-sm', value === 'Выберите город' ? 'text-muted' : 'text-ink')}>
+        {value}
+      </span>
+    </button>
+  )
+}
+
+function getPassengerStatusMessage(
+  status: string,
+  passengerProfile: { name?: string; city?: string } | null,
+) {
   if (status === 'LIMITED') {
     return 'Создание заявок временно ограничено.'
   }
 
   if (status === 'BLOCKED') {
     return 'Аккаунт заблокирован.'
+  }
+
+  if (status === 'PHONE_VERIFIED') {
+    return isPassengerProfileComplete(passengerProfile)
+      ? 'Телефон подтверждён.'
+      : 'Профиль не заполнен.'
   }
 
   return ''
@@ -31,7 +86,10 @@ export default function PassengerOrderPage() {
     rideFlowError,
   } = useAppState()
   const actions = useAppActions()
-  const banner = statusMessage(passengerStatus)
+  const isProfileComplete = isPassengerProfileComplete(passengerProfile)
+  const profileActionLabel = isProfileComplete ? 'Редактировать профиль' : 'Заполнить профиль'
+  const isSubmitting = isRideRequestLoading
+  const banner = getPassengerStatusMessage(passengerStatus, passengerProfile)
 
   const handleSearch = () => {
     if (passengerStatus === 'GUEST') {
@@ -40,11 +98,13 @@ export default function PassengerOrderPage() {
       return
     }
 
-    if (passengerStatus === 'PHONE_VERIFIED') {
-      actions.startRideSearch()
-      return
-    }
+    actions.startRideSearch()
   }
+
+  const currentPrice = Number(rideDraft.price)
+  const hasPrice = rideDraft.price.trim().length > 0 && Number.isFinite(currentPrice) && currentPrice > 0
+  const originLabel = buildLocationLabel(rideDraft.originCityName, rideDraft.originAddress)
+  const destinationLabel = buildLocationLabel(rideDraft.destinationCityName, rideDraft.destinationAddress)
 
   return (
     <div className="space-y-4">
@@ -80,10 +140,23 @@ export default function PassengerOrderPage() {
             'rounded-[24px] border px-4 py-3 text-sm font-medium',
             passengerStatus === 'BLOCKED'
               ? 'border-red-200 bg-red-50 text-red-700'
-              : 'border-amber-200 bg-amber-50 text-amber-900',
+              : passengerStatus === 'PHONE_VERIFIED' && !isProfileComplete
+                ? 'border-amber-200 bg-amber-50 text-amber-900'
+                : 'border-emerald-200 bg-emerald-50 text-emerald-900',
           )}
         >
-          {banner}
+          <div className="flex items-center justify-between gap-3">
+            <span>{banner}</span>
+            {passengerStatus === 'PHONE_VERIFIED' && !isProfileComplete ? (
+              <button
+                type="button"
+                onClick={() => actions.openPassengerOnboarding()}
+                className="shrink-0 rounded-full border border-amber-300 bg-white px-3 py-1 text-xs font-semibold text-amber-900"
+              >
+                Заполнить профиль
+              </button>
+            ) : null}
+          </div>
         </div>
       ) : null}
 
@@ -94,11 +167,15 @@ export default function PassengerOrderPage() {
           </p>
           <div className="mt-3 grid gap-3 sm:grid-cols-3">
             <div>
-              <p className="text-sm font-semibold text-ink">{passengerProfile.name}</p>
+              <p className="text-sm font-semibold text-ink">
+                {passengerProfile.name || 'Имя не указано'}
+              </p>
               <p className="text-sm text-muted">{passengerProfile.phone}</p>
             </div>
             <div>
-              <p className="text-sm font-semibold text-ink">{passengerProfile.city}</p>
+              <p className="text-sm font-semibold text-ink">
+                {passengerProfile.city || 'Город не указан'}
+              </p>
               <p className="text-sm text-muted">Город</p>
             </div>
             <div>
@@ -106,29 +183,28 @@ export default function PassengerOrderPage() {
               <p className="text-sm text-muted">Поездок</p>
             </div>
           </div>
+          <button
+            type="button"
+            onClick={() => actions.openPassengerOnboarding()}
+            className="inline-flex items-center gap-2 rounded-2xl border border-border bg-white px-4 py-3 text-sm font-semibold text-ink"
+          >
+            {profileActionLabel}
+          </button>
         </div>
       ) : null}
 
       <div className="rounded-[30px] border border-border bg-white p-4 shadow-sm">
         <div className="grid gap-3">
-          <label className="block">
-            <span className="mb-1 block text-sm font-medium text-ink">Откуда</span>
-            <input
-              value={rideDraft.from}
-              onChange={(event) => actions.updateRideDraft({ from: event.target.value })}
-              className="w-full rounded-2xl border border-border bg-surface-soft px-4 py-3 text-sm outline-none transition focus:border-accent"
-              placeholder="Алматы"
-            />
-          </label>
-          <label className="block">
-            <span className="mb-1 block text-sm font-medium text-ink">Куда</span>
-            <input
-              value={rideDraft.to}
-              onChange={(event) => actions.updateRideDraft({ to: event.target.value })}
-              className="w-full rounded-2xl border border-border bg-surface-soft px-4 py-3 text-sm outline-none transition focus:border-accent"
-              placeholder="Шымкент"
-            />
-          </label>
+          <LocationButton
+            label="Откуда"
+            value={originLabel}
+            onClick={() => actions.openRideLocationSheet('origin')}
+          />
+          <LocationButton
+            label="Куда"
+            value={destinationLabel}
+            onClick={() => actions.openRideLocationSheet('destination')}
+          />
           <div className="grid grid-cols-2 gap-3">
             <label className="block">
               <span className="mb-1 block text-sm font-medium text-ink">Дата</span>
@@ -190,11 +266,12 @@ export default function PassengerOrderPage() {
             <label className="block">
               <span className="mb-1 block text-sm font-medium text-ink">Цена</span>
               <input
-                type="number"
-                min={0}
+                type="text"
+                inputMode="numeric"
+                placeholder="Введите цену"
                 value={rideDraft.price}
                 onChange={(event) =>
-                  actions.updateRideDraft({ price: Number(event.target.value) || 0 })
+                  actions.updateRideDraft({ price: normalizePriceInput(event.target.value) })
                 }
                 className="w-full rounded-2xl border border-border bg-surface-soft px-4 py-3 text-sm outline-none transition focus:border-accent"
               />
@@ -216,7 +293,9 @@ export default function PassengerOrderPage() {
             <button
               type="button"
               onClick={() =>
-                actions.updateRideDraft({ price: Math.max(0, rideDraft.price - 500) })
+                actions.updateRideDraft({
+                  price: currentPrice > 500 ? String(currentPrice - 500) : '',
+                })
               }
               className="grid h-11 w-11 place-items-center rounded-2xl border border-border bg-white"
             >
@@ -227,13 +306,15 @@ export default function PassengerOrderPage() {
                 Цена заявки
               </p>
               <p className="mt-1 text-base font-semibold text-ink">
-                {formatKzt(rideDraft.price)}
+                {hasPrice ? formatKzt(currentPrice) : '—'}
               </p>
             </div>
             <button
               type="button"
               onClick={() =>
-                actions.updateRideDraft({ price: rideDraft.price + 500 })
+                actions.updateRideDraft({
+                  price: String((Number.isFinite(currentPrice) ? currentPrice : 0) + 500),
+                })
               }
               className="grid h-11 w-11 place-items-center rounded-2xl border border-border bg-white"
             >
@@ -242,7 +323,7 @@ export default function PassengerOrderPage() {
           </div>
 
           <div className="rounded-2xl bg-slate-50 px-4 py-3 text-sm text-muted">
-            Маршрут: {formatRoute(rideDraft.from, rideDraft.to)}
+            Маршрут: {formatRoute(originLabel, destinationLabel)}
           </div>
 
           <button
@@ -252,10 +333,10 @@ export default function PassengerOrderPage() {
             disabled={
               passengerStatus === 'LIMITED' ||
               passengerStatus === 'BLOCKED' ||
-              isRideRequestLoading
+              isSubmitting
             }
           >
-            {isRideRequestLoading ? 'Создаём заявку...' : 'Найти водителя'}
+            {isSubmitting ? 'Создаём заявку...' : 'Найти водителя'}
           </button>
         </div>
       </div>

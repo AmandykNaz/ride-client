@@ -3,30 +3,53 @@ import { LogOut, ShieldCheck } from 'lucide-react'
 import { formatKzt } from '../../lib/format'
 import { PageCard } from '../../shared/ui/PageCard'
 import { useAppActions, useAppState } from '../../providers/AppStateProvider'
+import { isPassengerProfileComplete } from '../../features/passenger/api/passenger.api'
+
+function getPassengerStatusLabel(
+  status: string,
+  passengerProfile: { name?: string; city?: string } | null,
+) {
+  if (status === 'PHONE_VERIFIED') {
+    return isPassengerProfileComplete(passengerProfile)
+      ? 'Телефон подтверждён'
+      : 'Профиль не заполнен'
+  }
+
+  if (status === 'GUEST') {
+    return 'Гость'
+  }
+
+  return status
+}
 
 export default function PassengerProfilePage() {
   const { passengerStatus, passengerProfile, passengerReviewSummary, passengerReviews } = useAppState()
   const actions = useAppActions()
+  const isProfileComplete = isPassengerProfileComplete(passengerProfile)
 
   return (
     <PageCard
       eyebrow="Пассажир"
       title="Профиль"
       description="Заглушка профиля пассажира. Следующим шагом здесь появятся контакты, документы и настройки безопасности."
-    >
+      >
       {passengerProfile ? (
         <div className="space-y-3 rounded-2xl bg-surface-soft p-4">
           <div className="flex items-center gap-3">
             <ShieldCheck className="h-5 w-5 text-accent" />
             <div>
-              <p className="text-sm font-semibold text-ink">{passengerProfile.name}</p>
+              <p className="text-sm font-semibold text-ink">
+                {passengerProfile.name || 'Имя не указано'}
+              </p>
               <p className="text-sm text-muted">{passengerProfile.phone}</p>
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3 text-sm">
             <div className="rounded-2xl bg-white p-3">
               <p className="text-muted">Город</p>
-              <p className="mt-1 font-semibold text-ink">{passengerProfile.city}</p>
+              <p className="mt-1 font-semibold text-ink">
+                {passengerProfile.city || 'Город не указан'}
+              </p>
             </div>
             <div className="rounded-2xl bg-white p-3">
               <p className="text-muted">Поездок</p>
@@ -38,9 +61,25 @@ export default function PassengerProfilePage() {
             </div>
             <div className="rounded-2xl bg-white p-3">
               <p className="text-muted">Статус</p>
-              <p className="mt-1 font-semibold text-ink">{passengerStatus}</p>
+              <p className="mt-1 font-semibold text-ink">
+                {getPassengerStatusLabel(passengerStatus, passengerProfile)}
+              </p>
             </div>
           </div>
+          {!isProfileComplete ? (
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+              Заполните имя и город, чтобы создать заявку.
+            </div>
+          ) : null}
+          {passengerStatus !== 'GUEST' ? (
+            <button
+              type="button"
+              onClick={() => actions.openPassengerOnboarding()}
+              className="inline-flex items-center gap-2 rounded-2xl border border-border bg-white px-4 py-3 text-sm font-semibold text-ink"
+            >
+              Заполнить профиль
+            </button>
+          ) : null}
           <div className="rounded-2xl bg-white p-3 text-sm text-muted">
             Баланс не подключен. {formatKzt(0)}
           </div>
@@ -95,19 +134,21 @@ export default function PassengerProfilePage() {
             <ShieldCheck className="h-5 w-5 text-accent" />
             <div>
               <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">
-                PassengerStatus
+                Статус
               </p>
-              <p className="mt-1 text-sm font-semibold text-ink">{passengerStatus}</p>
+              <p className="mt-1 text-sm font-semibold text-ink">
+                {getPassengerStatusLabel(passengerStatus, passengerProfile)}
+              </p>
             </div>
           </div>
           {passengerStatus !== 'GUEST' ? (
             <button
               type="button"
-              onClick={actions.logout}
+              onClick={() => actions.openPassengerOnboarding()}
               className="inline-flex items-center gap-2 rounded-2xl border border-border bg-white px-4 py-3 text-sm font-semibold text-ink"
             >
-              <LogOut className="h-4 w-4" />
-              Выйти
+              <ShieldCheck className="h-4 w-4" />
+              Заполнить профиль
             </button>
           ) : (
             <button

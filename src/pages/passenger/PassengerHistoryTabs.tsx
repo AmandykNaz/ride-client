@@ -1,9 +1,28 @@
+import { useMemo, useState } from 'react'
+import { ChevronRight, MapPinned } from 'lucide-react'
+
 import { useAppActions, useAppState } from '../../providers/AppStateProvider'
 import { cn } from '../../lib/cn'
-import { formatKzt, formatRoute } from '../../lib/format'
+import { formatKzt, formatRoute, formatRouteIfPresent, formatRideRequestStatusLabel } from '../../lib/format'
+import { OverlaySheet } from '../../shared/ui/OverlaySheet'
+
+function formatDateTime(value: string) {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+
+  return new Intl.DateTimeFormat('ru-RU', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }).format(date)
+}
+
+function isActiveRideRequestStatus(status?: string | null) {
+  return status === 'SEARCHING' || status === 'OFFERED'
+}
 
 export function PassengerHistoryTabs() {
   const {
+    activeRideRequest,
     passengerHistory,
     passengerOrdersTab,
     passengerRideRequests,
@@ -11,9 +30,20 @@ export function PassengerHistoryTabs() {
     activeRide,
   } = useAppState()
   const actions = useAppActions()
+  const [selectedRequestId, setSelectedRequestId] = useState<string | null>(null)
 
   const rideHistory = passengerHistory.filter((item) => item.category === 'ride')
   const parcelHistory = passengerHistory.filter((item) => item.category === 'parcel')
+  const selectedRequest = useMemo(
+    () => passengerRideRequests.find((request) => request.id === selectedRequestId) ?? null,
+    [passengerRideRequests, selectedRequestId],
+  )
+  const selectedRequestRoute = selectedRequest
+    ? formatRouteIfPresent(
+        selectedRequest.originText || selectedRequest.from,
+        selectedRequest.destinationText || selectedRequest.to,
+      )
+    : null
 
   return (
     <div className="space-y-4">
@@ -58,14 +88,26 @@ export function PassengerHistoryTabs() {
           </div>
           <div className="space-y-2">
             {passengerRideRequests.slice(0, 3).map((request) => (
-              <div key={request.id} className="rounded-2xl bg-surface-soft p-3">
-                <p className="text-sm font-semibold text-ink">
-                  {formatRoute(request.from, request.to)}
-                </p>
-                <p className="mt-1 text-xs text-muted">
-                  {request.status} · {request.offersCount} предложений · {request.date}
-                </p>
-              </div>
+              <button
+                key={request.id}
+                type="button"
+                onClick={() => setSelectedRequestId(request.id)}
+                className="flex w-full items-start gap-3 rounded-2xl bg-surface-soft p-3 text-left transition hover:bg-slate-100"
+              >
+                <span className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-white">
+                  <MapPinned className="h-4 w-4 text-accent" />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-semibold text-ink">
+                    {formatRoute(request.from, request.to)}
+                  </span>
+                  <span className="mt-1 block text-xs text-muted">
+                    {formatRideRequestStatusLabel(request.status)} · {request.offersCount} предложений
+                  </span>
+                  <span className="mt-1 block text-xs text-muted">{request.date}</span>
+                </span>
+                <ChevronRight className="mt-1 h-4 w-4 shrink-0 text-muted" />
+              </button>
             ))}
           </div>
         </div>
@@ -202,6 +244,99 @@ export function PassengerHistoryTabs() {
           <p className="text-sm font-semibold text-ink">Автобусы скоро</p>
         </div>
       )}
+
+      <OverlaySheet
+        open={selectedRequest != null}
+        title="Детали заявки"
+        onClose={() => setSelectedRequestId(null)}
+        position="bottom"
+      >
+        {selectedRequest ? (
+          <div className="space-y-4">
+            <div className="rounded-2xl bg-surface-soft p-4">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">
+                Маршрут
+              </p>
+              <p className="mt-2 text-base font-semibold text-ink">
+                {selectedRequestRoute ?? 'Маршрут не указан'}
+              </p>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="rounded-2xl bg-surface-soft p-4">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">
+                  Цена
+                </p>
+                <p className="mt-2 text-sm font-semibold text-ink">
+                  {formatKzt(selectedRequest.price)}
+                </p>
+              </div>
+              <div className="rounded-2xl bg-surface-soft p-4">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">
+                  Статус
+                </p>
+                <p className="mt-2 text-sm font-semibold text-ink">
+                  {formatRideRequestStatusLabel(selectedRequest.status)}
+                </p>
+              </div>
+              <div className="rounded-2xl bg-surface-soft p-4">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">
+                  Предложения
+                </p>
+                <p className="mt-2 text-sm font-semibold text-ink">
+                  {selectedRequest.offersCount} предложений
+                </p>
+              </div>
+              <div className="rounded-2xl bg-surface-soft p-4">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">
+                  Создана
+                </p>
+                <p className="mt-2 text-sm font-semibold text-ink">
+                  {formatDateTime(selectedRequest.createdAt)}
+                </p>
+              </div>
+            </div>
+
+            {selectedRequest.comment ? (
+              <div className="rounded-2xl border border-border bg-white p-4">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">
+                  Комментарий
+                </p>
+                <p className="mt-2 text-sm text-ink">{selectedRequest.comment}</p>
+              </div>
+            ) : null}
+
+            <div className="grid gap-2">
+              {isActiveRideRequestStatus(selectedRequest.status) ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedRequestId(null)
+                    actions.setScreen('passengerOffers')
+                  }}
+                  className="rounded-2xl bg-accent px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-accent/20"
+                >
+                  Открыть поиск
+                </button>
+              ) : null}
+
+              {activeRideRequest?.id === selectedRequest.id &&
+              isActiveRideRequestStatus(selectedRequest.status) ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedRequestId(null)
+                    actions.cancelActiveRide()
+                  }}
+                  className="rounded-2xl border border-border bg-white px-4 py-3 text-sm font-semibold text-ink"
+                >
+                  Отменить заявку
+                </button>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
+      </OverlaySheet>
     </div>
   )
 }

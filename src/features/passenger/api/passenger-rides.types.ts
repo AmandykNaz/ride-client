@@ -6,6 +6,8 @@ export type RideType = 'SHARED' | 'FULL'
 export type CreateRideRequestPayload = {
   serviceType: RideServiceType
   rideType?: RideType
+  originCityId: number
+  destinationCityId: number
   originText: string
   destinationText: string
   passengersCount?: number
@@ -25,6 +27,14 @@ export type RideRequest = {
   passengersCount: number
   from: string
   to: string
+  originCityId?: number
+  originCityName?: string
+  originRegionName?: string | null
+  originAddress?: string
+  destinationCityId?: number
+  destinationCityName?: string
+  destinationRegionName?: string | null
+  destinationAddress?: string
   date: string
   price: number
   originText: string
@@ -89,6 +99,14 @@ export type RideOrder = {
   rideType?: TripType | string
   from: string
   to: string
+  originCityId?: number
+  originCityName?: string
+  originRegionName?: string | null
+  originAddress?: string
+  destinationCityId?: number
+  destinationCityName?: string
+  destinationRegionName?: string | null
+  destinationAddress?: string
   date: string
   price: number
   originText: string

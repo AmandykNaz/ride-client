@@ -19,7 +19,25 @@ export function formatKzt(amount: number) {
 }
 
 export function formatRoute(from: string, to: string) {
-  return `${from} → ${to}`
+  const fromLabel = String(from ?? '').trim()
+  const toLabel = String(to ?? '').trim()
+
+  if (!fromLabel && !toLabel) return '—'
+  if (!fromLabel) return toLabel
+  if (!toLabel) return fromLabel
+
+  return `${fromLabel} → ${toLabel}`
+}
+
+export function formatRouteIfPresent(from: string, to: string) {
+  const fromLabel = String(from ?? '').trim()
+  const toLabel = String(to ?? '').trim()
+
+  if (!fromLabel && !toLabel) return null
+  if (!fromLabel) return toLabel
+  if (!toLabel) return fromLabel
+
+  return `${fromLabel} → ${toLabel}`
 }
 
 export const KZ_PLATE_REGION_CODES = [
@@ -133,19 +151,31 @@ export function formatParcelSizeLabel(size?: ParcelSize | string | null) {
 }
 
 export function formatRideRequestStatusLabel(status?: RideRequestStatus | string | null) {
-  switch (status) {
+  const normalized = typeof status === 'string' ? status.trim().toUpperCase() : status
+
+  switch (normalized) {
     case 'SEARCHING':
       return 'Поиск водителя'
     case 'OFFERED':
+    case 'HAS_OFFERS':
       return 'Есть предложения'
     case 'ACCEPTED':
-      return 'Заявка принята'
+    case 'DRIVER_ASSIGNED':
+      return 'Водитель назначен'
+    case 'DRIVER_ON_WAY':
+      return 'Водитель в пути'
+    case 'DRIVER_ARRIVED':
+      return 'Водитель прибыл'
+    case 'IN_PROGRESS':
+      return 'В поездке'
+    case 'COMPLETED':
+      return 'Завершена'
     case 'CANCELLED':
       return 'Отменена'
+    case 'CONVERTED_TO_ORDER':
+      return 'Водитель назначен'
     case 'EXPIRED':
       return 'Истекла'
-    case 'CONVERTED_TO_ORDER':
-      return 'Создан заказ'
     default:
       return 'Статус неизвестен'
   }

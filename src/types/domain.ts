@@ -415,12 +415,16 @@ export type DriverActiveOrder = {
   status: DriverActiveOrderStatus
   from: string
   to: string
+  originText?: string
+  destinationText?: string
   price: number
+  agreedPrice?: number
+  commissionAmount?: number
   clientName: string
   clientPhone: string
   requestedPrice: number
   driverOfferedPrice?: number
-  commissionPreview: number
+  commissionPreview?: number
   completedBalanceBefore?: number
   completedBalanceAfter?: number
   commissionCharged?: boolean
@@ -436,12 +440,20 @@ export type DriverActiveOrder = {
 export type RideDraft = {
   from: string
   to: string
+  originCityId?: number
+  originCityName?: string
+  originRegionName?: string | null
+  originAddress?: string
+  destinationCityId?: number
+  destinationCityName?: string
+  destinationRegionName?: string | null
+  destinationAddress?: string
   date: string
   time: string
   type: TripType
   passengersCount: number
   comment: string
-  price: number
+  price: string
 }
 
 export type ParcelSize = 'SMALL' | 'MEDIUM' | 'LARGE' | 'OVERSIZED'

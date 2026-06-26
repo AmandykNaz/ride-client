@@ -74,10 +74,12 @@ export function DriverFeedOrderCard({
             <span className="text-muted">Клиент</span>
             <span className="font-semibold">{order.clientName}</span>
           </div>
-          <div className="flex items-center justify-between gap-3">
-            <span className="text-muted">Телефон</span>
-            <span className="font-semibold">{maskPhone(order.clientPhone)}</span>
-          </div>
+          {order.clientPhone ? (
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-muted">Телефон</span>
+              <span className="font-semibold">{maskPhone(order.clientPhone)}</span>
+            </div>
+          ) : null}
         </div>
 
         {order.category === 'ride' ? (

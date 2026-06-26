@@ -193,7 +193,7 @@ export default function PassengerParcelsPage() {
               value={parcelDraft.from}
               onChange={(event) => actions.updateParcelDraft({ from: event.target.value })}
               className="w-full rounded-2xl border border-border bg-surface-soft px-4 py-3 text-sm outline-none transition focus:border-accent"
-              placeholder="Алматы, ул. Абая 10"
+              placeholder="Введите адрес отправления"
             />
           </label>
 
@@ -203,7 +203,7 @@ export default function PassengerParcelsPage() {
               value={parcelDraft.to}
               onChange={(event) => actions.updateParcelDraft({ to: event.target.value })}
               className="w-full rounded-2xl border border-border bg-surface-soft px-4 py-3 text-sm outline-none transition focus:border-accent"
-              placeholder="Шымкент, пр. Тауке хана 5"
+              placeholder="Введите адрес доставки"
             />
           </label>
 

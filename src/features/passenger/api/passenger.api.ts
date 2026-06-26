@@ -38,6 +38,12 @@ function pickPassengerProfileSource(me: RidePassengerMe) {
   return me.passengerProfile ?? me.profile ?? me.passenger ?? me.data ?? me
 }
 
+export function isPassengerProfileComplete(
+  profile: { name?: string | null; city?: string | null } | null | undefined,
+) {
+  return Boolean(profile?.name?.trim() && profile?.city?.trim())
+}
+
 export function toRidePassengerProfile(
   me: RidePassengerMe,
   fallbackPhone = '',

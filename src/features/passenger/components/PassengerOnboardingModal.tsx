@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { useAppActions, useAppState } from '../../../providers/AppStateProvider'
 import { BackendAuthError } from '../../../shared/api/backend'
 import {
+  isPassengerProfileComplete,
   toRidePassengerProfile,
   updatePassengerMe,
 } from '../api/passenger.api'
@@ -16,6 +17,7 @@ export function PassengerOnboardingModal() {
     passengerProfile,
   } = useAppState()
   const actions = useAppActions()
+  const isProfileComplete = isPassengerProfileComplete(passengerProfile)
   const [name, setName] = useState(() => passengerProfile?.name || '')
   const [city, setCity] = useState(() => passengerProfile?.city || '')
   const [error, setError] = useState('')
@@ -26,7 +28,7 @@ export function PassengerOnboardingModal() {
     const normalizedCity = city.trim()
 
     if (!normalizedName || !normalizedCity) {
-      setError('Заполните имя и город.')
+      setError('Заполните имя и город, чтобы создать заявку.')
       return
     }
 
@@ -71,17 +73,17 @@ export function PassengerOnboardingModal() {
   return (
     <OverlaySheet
       open={isPassengerOnboardingOpen}
-      title="Мини-профиль пассажира"
+      title={isProfileComplete ? 'Редактирование профиля' : 'Заполните профиль'}
       onClose={actions.closePassengerOnboarding}
       position="center"
     >
       <div className="space-y-3">
         <label className="block">
-          <span className="mb-1 block text-sm font-medium text-ink">Ваше имя</span>
+          <span className="mb-1 block text-sm font-medium text-ink">Имя</span>
           <input
             value={name}
             onChange={(event) => setName(event.target.value)}
-            placeholder="Например, Алия"
+            placeholder="Введите имя"
             className="w-full rounded-2xl border border-border bg-surface-soft px-4 py-3 text-sm outline-none transition focus:border-accent"
           />
         </label>
@@ -90,7 +92,7 @@ export function PassengerOnboardingModal() {
           <input
             value={city}
             onChange={(event) => setCity(event.target.value)}
-            placeholder="Алматы"
+            placeholder="Например, Алматы"
             className="w-full rounded-2xl border border-border bg-surface-soft px-4 py-3 text-sm outline-none transition focus:border-accent"
           />
         </label>
@@ -104,9 +106,9 @@ export function PassengerOnboardingModal() {
           type="button"
           onClick={handleContinue}
           className="w-full rounded-2xl bg-accent px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-accent/20 disabled:opacity-60"
-          disabled={isSaving}
+          disabled={isSaving || !isPassengerProfileComplete({ name, city })}
         >
-          {isSaving ? 'Сохраняем...' : 'Продолжить'}
+          {isSaving ? 'Сохраняем...' : 'Сохранить'}
         </button>
       </div>
     </OverlaySheet>

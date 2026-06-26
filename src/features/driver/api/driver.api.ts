@@ -748,19 +748,40 @@ function mapDriverOffer(raw: unknown): DriverCounterOffer {
 }
 
 function mapDriverOrder(raw: unknown): DriverActiveOrder {
-  const record = isRecord(raw) ? raw : {}
+  const envelope = isRecord(raw) ? raw : {}
+  const record = firstRecord(envelope.order, envelope.rideOrder, envelope.ride_order, envelope.data) ?? envelope
   const category = asString(record.category ?? record.type ?? record.serviceType ?? record.service_type, 'ride') as DriverActiveOrder['category']
+  const request = firstRecord(record.request, envelope.request, envelope.rideRequest, envelope.ride_request)
+  const requestRecord = (request ?? {}) as BackendRecord
   const from = getRouteValue(
     record,
     ['from', 'originText', 'origin_text', 'pickupAddress', 'pickup_address'],
-    '',
+    getRouteValue(
+      requestRecord,
+      ['originText', 'origin_text', 'pickupAddress', 'pickup_address'],
+      '',
+    ),
   )
   const to = getRouteValue(
     record,
     ['to', 'destinationText', 'destination_text', 'dropoffAddress', 'dropoff_address'],
-    '',
+    getRouteValue(
+      requestRecord,
+      ['destinationText', 'destination_text', 'dropoffAddress', 'dropoff_address'],
+      '',
+    ),
   )
-  const price = asNumber(record.price ?? record.agreedPrice ?? record.agreed_price ?? record.requestedPrice ?? record.requested_price, 0)
+  const passenger = firstRecord(record.passenger, envelope.passenger, envelope.ridePassenger, envelope.ride_passenger)
+  const passengerCustomer = firstRecord(
+    passenger?.customer,
+    passenger?.passengerProfile,
+    passenger?.profile,
+    passenger,
+  )
+  const routePrice = asNumber(
+    record.price ?? record.agreedPrice ?? record.agreed_price ?? request?.requestedPrice ?? request?.requested_price ?? record.requestedPrice ?? record.requested_price,
+    0,
+  )
   const status = mapActiveDriverStatus(record.status)
 
   return {
@@ -770,10 +791,17 @@ function mapDriverOrder(raw: unknown): DriverActiveOrder {
     status,
     from,
     to,
-    price,
+    price: routePrice,
+    agreedPrice: routePrice,
+    commissionAmount: asNumber(record.commissionAmount ?? record.commission_amount, 0) || undefined,
     clientName: asString(
       record.clientName ??
         record.client_name ??
+        passengerCustomer?.name ??
+        passengerCustomer?.fullName ??
+        passengerCustomer?.firstName ??
+        passengerCustomer?.lastName ??
+        passengerCustomer?.displayName ??
         record.passengerName ??
         record.passenger_name ??
         record.customerName ??
@@ -785,6 +813,7 @@ function mapDriverOrder(raw: unknown): DriverActiveOrder {
     clientPhone: asString(
       record.clientPhone ??
         record.client_phone ??
+        passengerCustomer?.phone ??
         record.passengerPhone ??
         record.passenger_phone ??
         record.customerPhone ??
@@ -793,9 +822,9 @@ function mapDriverOrder(raw: unknown): DriverActiveOrder {
         record.sender_phone,
       '',
     ),
-    requestedPrice: asNumber(record.requestedPrice ?? record.requested_price ?? price, price),
+    requestedPrice: asNumber(record.requestedPrice ?? record.requested_price ?? routePrice, routePrice),
     driverOfferedPrice: asNumber(record.driverOfferedPrice ?? record.driver_offered_price, 0) || undefined,
-    commissionPreview: asNumber(record.commissionPreview ?? record.commission_preview, Math.round(price * 0.08)),
+    commissionPreview: asOptionalNumber(record.commissionPreview ?? record.commission_preview),
     rideType: asString(record.rideType ?? record.ride_type) as DriverActiveOrder['rideType'],
     passengersCount: asNumber(record.passengersCount ?? record.passengers_count, 1) || undefined,
     parcelSize: normalizeParcelSize(record.parcelSize ?? record.parcel_size),
@@ -803,6 +832,8 @@ function mapDriverOrder(raw: unknown): DriverActiveOrder {
     senderName: asString(record.senderName ?? record.sender_name),
     receiverName: asString(record.receiverName ?? record.receiver_name),
     receiverPhone: asString(record.receiverPhone ?? record.receiver_phone),
+    originText: from,
+    destinationText: to,
   }
 }
 
@@ -1195,10 +1226,14 @@ export async function getDriverOrders(
   )
 }
 
-export async function getActiveDriverOrder() {
-  return mapDriverOrderToViewModel(
-    unwrapRecord(await backendGet('/ride/driver/orders/active'), ['order', 'rideOrder', 'data']),
-  )
+export async function getActiveDriverOrder(): Promise<DriverOrderViewModel | null> {
+  const response = await backendGet('/ride/driver/orders/active')
+
+  if (isRecord(response) && 'order' in response && response.order == null) {
+    return null
+  }
+
+  return mapDriverOrderToViewModel(response)
 }
 
 export async function updateDriverOrderStatus(

@@ -1,3 +1,5 @@
+import { useEffect, useRef } from 'react'
+
 import {
   BadgeCheck,
   CarFront,
@@ -60,6 +62,7 @@ export default function DriverDashboardPage() {
     isDriverActionLoading,
   } = useAppState()
   const actions = useAppActions()
+  const refreshDriverOrdersRef = useRef(actions.refreshDriverOrders)
   const accessState = getDriverAccessState(driverVerificationStatus, driverWallet)
   const verificationStatusLabel = getDriverVerificationStatusLabel(driverVerificationStatus)
   const walletShortfall = getDriverWalletShortfall(driverWallet)
@@ -68,6 +71,17 @@ export default function DriverDashboardPage() {
     driverProfile?.blockedReason?.trim() ||
     driverWallet?.blockedReason?.trim() ||
     'Профиль водителя заблокирован модератором.'
+
+  useEffect(() => {
+    refreshDriverOrdersRef.current = actions.refreshDriverOrders
+  }, [actions.refreshDriverOrders])
+
+  useEffect(() => {
+    if (driverVerificationStatus !== 'APPROVED') return
+
+    void refreshDriverOrdersRef.current()
+  }, [driverVerificationStatus])
+
   if (accessState === 'NOT_STARTED') {
     return (
       <div className="space-y-4">
@@ -443,14 +457,14 @@ export default function DriverDashboardPage() {
                 Активный заказ
               </p>
               <p className="mt-2 text-sm font-semibold text-ink">
-                {formatRoute(driverActiveOrder.from, driverActiveOrder.to)}
+                {formatRoute(driverActiveOrder.originText ?? driverActiveOrder.from, driverActiveOrder.destinationText ?? driverActiveOrder.to)}
               </p>
               <p className="mt-1 text-sm text-muted">
                 {driverActiveOrder.category === 'ride' ? 'Поездка' : 'Посылка'} · {formatRideOrderStatusLabel(driverActiveOrder.status)}
               </p>
             </div>
             <span className="rounded-full bg-accent/10 px-3 py-1 text-xs font-semibold text-accent">
-              {formatKzt(driverActiveOrder.price)}
+              {formatKzt(driverActiveOrder.agreedPrice ?? driverActiveOrder.price)}
             </span>
           </div>
 
