@@ -3,11 +3,11 @@ import { LogOut, ShieldCheck } from 'lucide-react'
 import { formatKzt } from '../../lib/format'
 import { PageCard } from '../../shared/ui/PageCard'
 import { useAppActions, useAppState } from '../../providers/AppStateProvider'
-import { isPassengerProfileComplete } from '../../features/passenger/api/passenger.api'
+import { getPassengerCityDisplay, isPassengerProfileComplete } from '../../features/passenger/api/passenger.api'
 
 function getPassengerStatusLabel(
   status: string,
-  passengerProfile: { name?: string; city?: string } | null,
+  passengerProfile: { name?: string; cityId?: number | null; cityName?: string; cityRegionName?: string | null; city?: string } | null,
 ) {
   if (status === 'PHONE_VERIFIED') {
     return isPassengerProfileComplete(passengerProfile)
@@ -26,6 +26,7 @@ export default function PassengerProfilePage() {
   const { passengerStatus, passengerProfile, passengerReviewSummary, passengerReviews } = useAppState()
   const actions = useAppActions()
   const isProfileComplete = isPassengerProfileComplete(passengerProfile)
+  const cityDisplay = getPassengerCityDisplay(passengerProfile)
 
   return (
     <PageCard
@@ -48,7 +49,7 @@ export default function PassengerProfilePage() {
             <div className="rounded-2xl bg-white p-3">
               <p className="text-muted">Город</p>
               <p className="mt-1 font-semibold text-ink">
-                {passengerProfile.city || 'Город не указан'}
+                {cityDisplay || 'Город не указан'}
               </p>
             </div>
             <div className="rounded-2xl bg-white p-3">
@@ -68,7 +69,7 @@ export default function PassengerProfilePage() {
           </div>
           {!isProfileComplete ? (
             <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-              Заполните имя и город, чтобы создать заявку.
+              Заполните имя и выберите город, чтобы создать заявку.
             </div>
           ) : null}
           {passengerStatus !== 'GUEST' ? (
@@ -77,7 +78,7 @@ export default function PassengerProfilePage() {
               onClick={() => actions.openPassengerOnboarding()}
               className="inline-flex items-center gap-2 rounded-2xl border border-border bg-white px-4 py-3 text-sm font-semibold text-ink"
             >
-              Заполнить профиль
+              {isProfileComplete ? 'Редактировать профиль' : 'Заполнить профиль'}
             </button>
           ) : null}
           <div className="rounded-2xl bg-white p-3 text-sm text-muted">
@@ -148,7 +149,7 @@ export default function PassengerProfilePage() {
               className="inline-flex items-center gap-2 rounded-2xl border border-border bg-white px-4 py-3 text-sm font-semibold text-ink"
             >
               <ShieldCheck className="h-4 w-4" />
-              Заполнить профиль
+              {isProfileComplete ? 'Редактировать профиль' : 'Заполнить профиль'}
             </button>
           ) : (
             <button

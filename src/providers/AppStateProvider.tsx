@@ -2173,6 +2173,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const loadedRideTokenRef = useRef<string | null>(null)
   const loadedDriverTokenRef = useRef<string | null>(null)
   const driverApplicationIdRef = useRef<string | null>(null)
+  const passengerOnboardingDismissedRef = useRef(false)
 
   const refreshPassengerRideSnapshot = async () => {
     const token = getRideAccessToken()
@@ -2263,7 +2264,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
     const needsPassengerOnboarding =
       state.passengerStatus === 'PHONE_VERIFIED' &&
-      !isPassengerProfileComplete(state.passengerProfile)
+      !isPassengerProfileComplete(state.passengerProfile) &&
+      !passengerOnboardingDismissedRef.current
 
     if (needsPassengerOnboarding && !state.isPassengerOnboardingOpen) {
       dispatch({ type: 'openPassengerOnboarding' })
@@ -2411,6 +2413,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     loadedRideTokenRef.current = null
     loadedDriverTokenRef.current = null
     driverApplicationIdRef.current = null
+    passengerOnboardingDismissedRef.current = false
     dispatch({ type: 'resetPassengerSession' })
   }
 
@@ -2420,7 +2423,10 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         type: 'setRideFlowError',
         error: 'Заполните имя и город, чтобы создать заявку.',
       })
-      dispatch({ type: 'openPassengerOnboarding' })
+
+      if (!passengerOnboardingDismissedRef.current) {
+        dispatch({ type: 'openPassengerOnboarding' })
+      }
       return
     }
 
@@ -3095,6 +3101,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     const token = getRideAccessToken()
     if (!token) return { passengerProfile: null, driverProfile: null }
 
+    passengerOnboardingDismissedRef.current = false
     dispatch({ type: 'resetPassengerSession' })
 
     let passengerProfile: PassengerProfile | null = null
@@ -4004,8 +4011,14 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       startLoginFlow: () => dispatch({ type: 'openAuthSheet', flow: 'login' }),
       refreshAuthenticatedSession: (phone, flow) => refreshAuthenticatedSession(phone, flow),
       closePhoneVerifySheet: () => dispatch({ type: 'closePhoneVerifySheet' }),
-      openPassengerOnboarding: () => dispatch({ type: 'openPassengerOnboarding' }),
-      closePassengerOnboarding: () => dispatch({ type: 'closePassengerOnboarding' }),
+      openPassengerOnboarding: () => {
+        passengerOnboardingDismissedRef.current = false
+        dispatch({ type: 'openPassengerOnboarding' })
+      },
+      closePassengerOnboarding: () => {
+        passengerOnboardingDismissedRef.current = true
+        dispatch({ type: 'closePassengerOnboarding' })
+      },
       openPassengerRating: () => dispatch({ type: 'openPassengerRating' }),
       closePassengerRating: () => dispatch({ type: 'closePassengerRating' }),
       setPassengerOrdersTab: (tab) =>

@@ -3,7 +3,7 @@ import { Minus, Plus } from 'lucide-react'
 import { useAppActions, useAppState } from '../../providers/AppStateProvider'
 import { formatKzt, formatRoute } from '../../lib/format'
 import { cn } from '../../lib/cn'
-import { isPassengerProfileComplete } from '../../features/passenger/api/passenger.api'
+import { getPassengerCityDisplay, isPassengerProfileComplete } from '../../features/passenger/api/passenger.api'
 
 const typeOptions = [
   { value: 'shared' as const, label: 'С попутчиками' },
@@ -57,7 +57,7 @@ function LocationButton({
 
 function getPassengerStatusMessage(
   status: string,
-  passengerProfile: { name?: string; city?: string } | null,
+  passengerProfile: { name?: string; cityId?: number | null; cityName?: string; cityRegionName?: string | null; city?: string } | null,
 ) {
   if (status === 'LIMITED') {
     return 'Создание заявок временно ограничено.'
@@ -90,6 +90,7 @@ export default function PassengerOrderPage() {
   const profileActionLabel = isProfileComplete ? 'Редактировать профиль' : 'Заполнить профиль'
   const isSubmitting = isRideRequestLoading
   const banner = getPassengerStatusMessage(passengerStatus, passengerProfile)
+  const cityDisplay = getPassengerCityDisplay(passengerProfile)
 
   const handleSearch = () => {
     if (passengerStatus === 'GUEST') {
@@ -174,7 +175,7 @@ export default function PassengerOrderPage() {
             </div>
             <div>
               <p className="text-sm font-semibold text-ink">
-                {passengerProfile.city || 'Город не указан'}
+                {cityDisplay || 'Город не указан'}
               </p>
               <p className="text-sm text-muted">Город</p>
             </div>

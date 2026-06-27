@@ -135,6 +135,9 @@ export type PassengerProfile = {
   id?: string
   name: string
   phone: string
+  cityId?: number | null
+  cityName: string
+  cityRegionName?: string | null
   city: string
   rating: number
   tripsCount: number

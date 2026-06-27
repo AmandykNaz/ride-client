@@ -13,7 +13,7 @@ import {
   setRidePassword,
   verifyRideOtp,
 } from '../../ride-auth/api/ride-auth.api'
-import { toRidePassengerProfile } from '../api/passenger.api'
+import { isPassengerProfileComplete, toRidePassengerProfile } from '../api/passenger.api'
 
 type AuthMode = 'login' | 'otp' | 'create-password' | 'reset-password'
 type RideFlow = 'ride' | 'parcel' | 'login' | 'driverRegistrationStart' | 'driverRegistrationResume'
@@ -125,7 +125,7 @@ export function PhoneVerifySheet() {
       return
     }
 
-    if (!authState.passengerProfile || !authState.passengerProfile.name || !authState.passengerProfile.city) {
+    if (!isPassengerProfileComplete(authState.passengerProfile)) {
       actions.closePhoneVerifySheet()
       actions.openPassengerOnboarding()
       return

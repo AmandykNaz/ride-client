@@ -11,7 +11,6 @@ function AppContent() {
   const {
     role,
     currentScreen,
-    passengerProfile,
     isPhoneVerifySheetOpen,
     isRideLocationSheetOpen,
     rideLocationSheetTarget,
@@ -38,9 +37,7 @@ function AppContent() {
               <PassengerRideLocationSheet key={rideLocationSheetTarget ?? 'ride-location'} />
             ) : null}
             {shouldShowPassengerOnboarding ? (
-              <PassengerOnboardingModal
-                key={`${passengerProfile?.name ?? ''}:${passengerProfile?.city ?? ''}:${passengerProfile?.phone ?? ''}`}
-              />
+              <PassengerOnboardingModal />
             ) : null}
             {isPassengerRatingOpen ? <PassengerRatingModal /> : null}
             {isRideComplaintOpen ? <RideComplaintSheet /> : null}
