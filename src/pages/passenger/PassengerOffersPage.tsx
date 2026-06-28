@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Clock3 } from 'lucide-react'
 
 import {
@@ -9,12 +9,20 @@ import {
 import { cn } from '../../lib/cn'
 import { useAppActions, useAppState } from '../../providers/AppStateProvider'
 import { PageCard } from '../../shared/ui/PageCard'
+import { OverlaySheet } from '../../shared/ui/OverlaySheet'
+
+const CANCEL_REASONS = [
+  { code: 'PRICE_CHANGE', label: 'Хочу изменить цену' },
+  { code: 'NO_LONGER_RELEVANT', label: 'Поездка больше не актуальна' },
+  { code: 'NO_OFFERS', label: 'Нет предложений от водителей' },
+  { code: 'TIME_CHANGE', label: 'Хочу изменить время отправления' },
+  { code: 'WRONG_ADDRESS', label: 'Неверный адрес' },
+] as const
 
 export default function PassengerOffersPage() {
   const {
     activeRideRequest,
     driverOffers,
-    rideDraft,
     rideFlowError,
     isRideOffersLoading,
     isRideActionLoading,
@@ -22,25 +30,40 @@ export default function PassengerOffersPage() {
   const actions = useAppActions()
   const loadOffersRef = useRef(actions.loadActiveRequestOffers)
   const offersListRef = useRef<HTMLDivElement | null>(null)
+  const cancelRedirectTimerRef = useRef<number | null>(null)
+  const [cancelStage, setCancelStage] = useState<'closed' | 'confirm' | 'reason'>('closed')
+  const [cancelReasonCode, setCancelReasonCode] = useState<(typeof CANCEL_REASONS)[number]['code'] | 'OTHER' | ''>('')
+  const [cancelReasonText, setCancelReasonText] = useState('')
+  const [cancelNotice, setCancelNotice] = useState<string | null>(null)
+  const [isCancelling, setIsCancelling] = useState(false)
+  const canSubmitCancel = cancelReasonCode === 'OTHER' ? cancelReasonText.trim().length > 0 : Boolean(cancelReasonCode)
   const activeRideRequestId = activeRideRequest?.id ?? null
   const activeRideRequestBackendId =
     activeRideRequest && /^\d+$/.test((activeRideRequest.backendId ?? activeRideRequest.id).trim())
       ? (activeRideRequest.backendId ?? activeRideRequest.id).trim()
       : null
   const activeRideRequestStatus = activeRideRequest?.status ?? null
-  const requestPrice = Number.isFinite(Number(rideDraft.price)) && Number(rideDraft.price) > 0
-    ? Number(rideDraft.price)
-    : activeRideRequest?.price ?? 0
-  const requestTypeLabel = rideDraft.type === 'full' ? 'Весь салон' : 'С попутчиками'
+  const requestPrice = activeRideRequest?.price ?? 0
+  const requestTypeLabel = activeRideRequest?.type === 'full' ? 'Весь салон' : 'С попутчиками'
+  const searchTimer = useRideSearchTimer(activeRideRequest)
 
   useEffect(() => {
     loadOffersRef.current = actions.loadActiveRequestOffers
   }, [actions.loadActiveRequestOffers])
 
   useEffect(() => {
+    return () => {
+      if (cancelRedirectTimerRef.current) {
+        window.clearTimeout(cancelRedirectTimerRef.current)
+      }
+    }
+  }, [])
+
+  useEffect(() => {
     if (
       !activeRideRequestId ||
       !activeRideRequestBackendId ||
+      searchTimer.isExpired ||
       (activeRideRequestStatus !== 'SEARCHING' && activeRideRequestStatus !== 'OFFERED')
     ) {
       if (activeRideRequestId && !activeRideRequestBackendId) {
@@ -62,28 +85,92 @@ export default function PassengerOffersPage() {
       cancelled = true
       window.clearInterval(timer)
     }
-  }, [activeRideRequestBackendId, activeRideRequestId, activeRideRequestStatus])
+  }, [activeRideRequestBackendId, activeRideRequestId, activeRideRequestStatus, searchTimer.isExpired])
+
+  const openCancelConfirmation = () => {
+    setCancelNotice(null)
+    setCancelReasonCode('')
+    setCancelReasonText('')
+    setCancelStage('confirm')
+  }
+
+  const handleProceedToReason = () => {
+    setCancelStage('reason')
+  }
+
+  const handleCancelConfirmationClose = () => {
+    if (isCancelling) return
+    setCancelStage('closed')
+    setCancelReasonCode('')
+    setCancelReasonText('')
+  }
+
+  const handleCancelSubmit = async () => {
+    if (!activeRideRequestBackendId || isCancelling) return
+
+    setIsCancelling(true)
+    try {
+      const cancelled = await actions.cancelActiveRide({
+        reasonCode: cancelReasonCode || undefined,
+        reasonText: cancelReasonText.trim() || undefined,
+      })
+      if (!cancelled) {
+        return
+      }
+      setCancelStage('closed')
+      setCancelReasonCode('')
+      setCancelReasonText('')
+      setCancelNotice('Заявка отменена')
+
+      if (cancelRedirectTimerRef.current) {
+        window.clearTimeout(cancelRedirectTimerRef.current)
+      }
+
+      cancelRedirectTimerRef.current = window.setTimeout(() => {
+        setCancelNotice(null)
+        actions.setPassengerOrdersTab('rides')
+        cancelRedirectTimerRef.current = null
+      }, 900)
+    } finally {
+      setIsCancelling(false)
+    }
+  }
+
+  const openPassengerOrders = () => {
+    actions.setPassengerOrdersTab('rides')
+  }
 
   if (!activeRideRequest) {
     return (
-      <PageCard
-        eyebrow="Пассажир"
-        title="Поиск водителя"
-        description="Здесь появятся предложения после создания заявки."
-      >
-        <button
-          type="button"
-          onClick={() => actions.setScreen('passengerOrder')}
-          className="rounded-2xl bg-accent px-4 py-3 text-sm font-semibold text-white"
+      <div className="space-y-4 pb-[calc(6rem+env(safe-area-inset-bottom))]">
+        {cancelNotice ? (
+          <div className="rounded-[24px] border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800">
+            {cancelNotice}
+          </div>
+        ) : null}
+        <PageCard
+          eyebrow="Пассажир"
+          title={cancelNotice ? 'Заявка отменена' : 'Поиск водителя'}
+          description={
+            cancelNotice
+              ? 'Вы можете продолжить поиск или открыть свои заказы.'
+              : 'Здесь появятся предложения после создания заявки.'
+          }
         >
-          Вернуться к заявке
-        </button>
-      </PageCard>
+          <button
+            type="button"
+            onClick={cancelNotice ? openPassengerOrders : () => actions.setScreen('passengerOrder')}
+            className="rounded-2xl bg-accent px-4 py-3 text-sm font-semibold text-white"
+          >
+            {cancelNotice ? 'Мои заказы' : 'Вернуться к заявке'}
+          </button>
+        </PageCard>
+      </div>
     )
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 pb-[calc(6rem+env(safe-area-inset-bottom))]">
       {rideFlowError ? (
         <div className="rounded-[24px] border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
           {rideFlowError}
@@ -92,19 +179,34 @@ export default function PassengerOffersPage() {
 
       <PageCard
         eyebrow="Заявка на поиск водителя"
-        title="Ищем водителей."
-        description="Ожидайте предложений."
+        title={
+          searchTimer.isExpired
+            ? 'Время поиска истекло'
+            : driverOffers.length > 0
+              ? 'Предложения от водителей'
+              : 'Ищем подходящих водителей'
+        }
+        description={
+          searchTimer.isExpired
+            ? 'Продлите поиск, чтобы водители снова увидели заявку'
+            : driverOffers.length > 0
+              ? 'Выберите подходящее предложение.'
+              : 'Ожидайте предложений.'
+        }
       >
         <ActiveRideRequestSummaryCard
-          key={`${activeRideRequestBackendId ?? activeRideRequest.id}:${activeRideRequest.createdAt}:${activeRideRequest.expiresAt ?? ''}`}
+          key={`${activeRideRequestBackendId ?? activeRideRequest.id}:${activeRideRequest.createdAt}:${activeRideRequest.expiresAt ?? ''}:${activeRideRequest.searchRemainingSeconds ?? ''}:${activeRideRequest.priceUpdatedAt ?? ''}`}
           request={activeRideRequest}
           requestPrice={requestPrice}
           requestTypeLabel={requestTypeLabel}
           driverOffersCount={driverOffers.length}
           isRideOffersLoading={isRideOffersLoading}
           isRideActionLoading={isRideActionLoading}
-          onCancel={() => actions.cancelActiveRide()}
-          onAdjustPrice={(nextPrice) => actions.updateRideDraft({ price: String(Math.max(0, nextPrice)) })}
+          remainingSeconds={searchTimer.remainingSeconds}
+          isExpired={searchTimer.isExpired}
+          onCancel={openCancelConfirmation}
+          onExtend={() => actions.extendPassengerRideRequest()}
+          onAdjustPrice={(nextPrice) => actions.updatePassengerRideRequestPrice(nextPrice)}
           onViewOffers={() => offersListRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
         />
       </PageCard>
@@ -194,6 +296,115 @@ export default function PassengerOffersPage() {
           )
         })}
       </div>
+
+      {cancelNotice ? (
+        <div className="fixed inset-x-3 bottom-4 z-50 mx-auto max-w-[520px] rounded-[24px] border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800 shadow-lg shadow-emerald-900/10">
+          {cancelNotice}
+        </div>
+      ) : null}
+
+      <OverlaySheet
+        open={cancelStage === 'confirm'}
+        title="Хотите отменить заявку?"
+        onClose={handleCancelConfirmationClose}
+        position="bottom"
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-ink">
+            Чтобы найти водителя быстрее, можно поднять цену или дождаться предложений.
+          </p>
+          <div className="grid gap-2">
+            <button
+              type="button"
+              onClick={handleCancelConfirmationClose}
+              disabled={isCancelling}
+              className="rounded-2xl bg-accent px-4 py-3 text-sm font-semibold text-white"
+            >
+              Продолжить поиск
+            </button>
+            <button
+              type="button"
+              onClick={handleProceedToReason}
+              disabled={isCancelling}
+              className="rounded-2xl border border-red-200 bg-white px-4 py-3 text-sm font-semibold text-red-700"
+            >
+              Отменить заявку
+            </button>
+          </div>
+        </div>
+      </OverlaySheet>
+
+      <OverlaySheet
+        open={cancelStage === 'reason'}
+        title="Почему вы отменили?"
+        onClose={handleCancelConfirmationClose}
+        position="bottom"
+      >
+        <div className="space-y-4">
+          <div className="grid gap-2">
+            {CANCEL_REASONS.map((reason) => (
+              <button
+                key={reason.code}
+                type="button"
+                onClick={() => {
+                  setCancelReasonCode(reason.code)
+                  setCancelReasonText('')
+                }}
+                className={cn(
+                  'rounded-2xl border px-4 py-3 text-left text-sm font-semibold transition',
+                  cancelReasonCode === reason.code
+                    ? 'border-accent bg-accent/8 text-accent'
+                    : 'border-border bg-white text-ink',
+                )}
+              >
+                {reason.label}
+              </button>
+            ))}
+              <button
+              type="button"
+              onClick={() => {
+                setCancelReasonCode('OTHER')
+              }}
+              className={cn(
+                'rounded-2xl border px-4 py-3 text-left text-sm font-semibold transition',
+                cancelReasonCode === 'OTHER'
+                  ? 'border-accent bg-accent/8 text-accent'
+                  : 'border-border bg-white text-ink',
+              )}
+            >
+              Укажите другую причину
+            </button>
+          </div>
+
+          {cancelReasonCode === 'OTHER' ? (
+            <textarea
+              value={cancelReasonText}
+              onChange={(event) => setCancelReasonText(event.target.value)}
+              placeholder="Опишите причину отмены"
+              className="min-h-[96px] w-full rounded-2xl border border-border bg-white px-4 py-3 text-sm text-ink outline-none focus:border-accent"
+            />
+          ) : null}
+
+          <div className="grid gap-2">
+            <button
+              type="button"
+              onClick={handleCancelSubmit}
+              disabled={isCancelling || !canSubmitCancel}
+              className="rounded-2xl bg-red-600 px-4 py-3 text-sm font-semibold text-white disabled:opacity-60"
+            >
+              {isCancelling ? 'Отменяем...' : 'Отменить заявку'}
+            </button>
+            <button
+              type="button"
+              onClick={handleCancelConfirmationClose}
+              disabled={isCancelling}
+              className="rounded-2xl border border-border bg-white px-4 py-3 text-sm font-semibold text-ink"
+            >
+              Продолжить поиск
+            </button>
+          </div>
+        </div>
+      </OverlaySheet>
     </div>
   )
 }
@@ -205,7 +416,10 @@ function ActiveRideRequestSummaryCard({
   driverOffersCount,
   isRideOffersLoading,
   isRideActionLoading,
+  remainingSeconds,
+  isExpired,
   onCancel,
+  onExtend,
   onAdjustPrice,
   onViewOffers,
 }: {
@@ -213,31 +427,37 @@ function ActiveRideRequestSummaryCard({
     id: string
     createdAt: string
     expiresAt?: string
+    searchRemainingSeconds?: number
+    priceUpdatedAt?: string
     status: string
     from: string
     to: string
     originText?: string
     destinationText?: string
     price: number
-    timingMode?: 'immediate' | 'scheduled'
+    timingMode?: 'NOW' | 'SCHEDULED' | 'immediate' | 'scheduled'
     date: string
     time: string
     scheduledDate?: string
     scheduledTime?: string
+    scheduledAt?: string | null
   }
   requestPrice: number
   requestTypeLabel: string
   driverOffersCount: number
   isRideOffersLoading: boolean
   isRideActionLoading: boolean
+  remainingSeconds: number
+  isExpired: boolean
   onCancel: () => void
+  onExtend: () => void
   onAdjustPrice: (price: number) => void
   onViewOffers: () => void
 }) {
-  const { remainingSeconds, isExpired, extendSearch } = useRideSearchTimer(request)
   const fromValue = request.originText || request.from
   const toValue = request.destinationText || request.to
-  const activeStep = driverOffersCount > 0 ? 3 : 2
+  const activeStep = request.status === 'CONVERTED_TO_ORDER' ? 4 : driverOffersCount > 0 ? 3 : 2
+  const currentPrice = Math.max(100, requestPrice || 0)
 
   return (
     <div className="space-y-4">
@@ -279,74 +499,12 @@ function ActiveRideRequestSummaryCard({
           remainingSeconds={remainingSeconds}
           isExpired={isExpired}
           isRideOffersLoading={isRideOffersLoading}
+          isRideActionLoading={isRideActionLoading}
+          requestPrice={currentPrice}
           onCancel={onCancel}
-          onExtend={extendSearch}
+          onExtend={onExtend}
+          onAdjustPrice={onAdjustPrice}
         />
-      </div>
-
-      <div className="sticky bottom-3 z-20">
-        {isExpired ? (
-          <div className="rounded-[24px] border border-amber-200 bg-amber-50 p-3 shadow-lg shadow-slate-900/5">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="text-sm font-semibold text-amber-900">Время поиска истекло</p>
-                <p className="text-xs text-amber-900/80">Можно продлить поиск или отменить заявку</p>
-              </div>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    extendSearch()
-                  }}
-                  className="rounded-2xl bg-amber-600 px-3 py-2 text-sm font-semibold text-white"
-                >
-                  Продлить поиск
-                </button>
-                <button
-                  type="button"
-                  onClick={onCancel}
-                  className="rounded-2xl border border-amber-300 bg-white px-3 py-2 text-sm font-semibold text-amber-900"
-                  disabled={isRideActionLoading}
-                >
-                  Отменить заявку
-                </button>
-              </div>
-            </div>
-          </div>
-        ) : (
-          <div className="rounded-[24px] border border-border bg-white p-3 shadow-lg shadow-slate-900/5">
-            <div className="grid grid-cols-[auto_1fr_auto] items-center gap-2">
-              <button
-                type="button"
-                onClick={() => onAdjustPrice(Math.max(0, requestPrice - 100))}
-                className="flex h-11 items-center justify-center rounded-2xl border border-border bg-surface-soft px-3 text-sm font-semibold text-ink"
-              >
-                -100
-              </button>
-              <div className="rounded-2xl bg-surface-soft px-4 py-3 text-center">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">
-                  Цена
-                </p>
-                <p className="mt-1 text-base font-semibold text-ink">{formatKzt(requestPrice)}</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => onAdjustPrice(requestPrice + 100)}
-                className="flex h-11 items-center justify-center rounded-2xl border border-border bg-surface-soft px-3 text-sm font-semibold text-ink"
-              >
-                +100
-              </button>
-            </div>
-            <button
-              type="button"
-              onClick={onCancel}
-              className="mt-3 w-full rounded-2xl border border-border bg-white px-4 py-3 text-sm font-semibold text-ink"
-              disabled={isRideActionLoading}
-            >
-              Отменить заявку
-            </button>
-          </div>
-        )}
       </div>
     </div>
   )
@@ -359,8 +517,9 @@ function CompactProgress({
   activeStep: number
   isExpired: boolean
 }) {
-  const steps = ['Заявка', 'Поиск', 'Предложения', 'Заказ']
-  const progress = isExpired ? 1 : activeStep === 2 ? 0.55 : activeStep === 3 ? 0.82 : 1
+  const progress = isExpired ? 1 : activeStep === 2 ? 0.52 : activeStep === 3 ? 0.8 : 1
+  const label =
+    activeStep === 4 ? 'Заказ создан' : activeStep === 3 ? 'Предложения' : 'Поиск водителя'
 
   return (
     <div className="space-y-2">
@@ -370,18 +529,13 @@ function CompactProgress({
           style={{ width: `${Math.max(18, progress * 100)}%` }}
         />
       </div>
-      <div className="grid grid-cols-4 gap-2 text-center text-[10px] font-semibold uppercase tracking-[0.18em] text-muted">
-        {steps.map((step, index) => (
-          <span
-            key={step}
-            className={cn(
-              index + 1 <= activeStep ? 'text-ink' : '',
-              isExpired && index === 1 ? 'text-accent' : '',
-            )}
-          >
-            {step}
-          </span>
-        ))}
+      <div className="flex items-center justify-between gap-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted">
+        <span>
+          Этап {Math.min(activeStep, 4)} из 4 · {label}
+        </span>
+        <span className={cn(isExpired ? 'text-amber-700' : 'text-accent')}>
+          {isExpired ? 'Истекло' : 'Активно'}
+        </span>
       </div>
     </div>
   )
@@ -405,14 +559,20 @@ function CompactSearchTimer({
   remainingSeconds,
   isExpired,
   isRideOffersLoading,
+  isRideActionLoading,
+  requestPrice,
   onCancel,
   onExtend,
+  onAdjustPrice,
 }: {
   remainingSeconds: number
   isExpired: boolean
   isRideOffersLoading: boolean
+  isRideActionLoading: boolean
+  requestPrice: number
   onCancel: () => void
   onExtend: () => void
+  onAdjustPrice: (price: number) => void
 }) {
   if (isExpired) {
     return (
@@ -424,6 +584,7 @@ function CompactSearchTimer({
             type="button"
             onClick={onExtend}
             className="rounded-2xl bg-amber-600 px-3 py-2 text-sm font-semibold text-white"
+            disabled={isRideActionLoading}
           >
             Продлить поиск
           </button>
@@ -431,6 +592,7 @@ function CompactSearchTimer({
             type="button"
             onClick={onCancel}
             className="rounded-2xl border border-amber-300 bg-white px-3 py-2 text-sm font-semibold text-amber-900"
+            disabled={isRideActionLoading}
           >
             Отменить заявку
           </button>
@@ -439,23 +601,66 @@ function CompactSearchTimer({
     )
   }
 
+  const nextPriceDown = Math.max(100, requestPrice - 100)
+  const nextPriceUp = requestPrice + 100
+
   return (
-    <div className="flex items-center justify-between gap-3 rounded-[22px] border border-border bg-white px-4 py-3">
-      <div className="flex items-center gap-2 text-sm font-semibold text-ink">
-        <Clock3 className="h-4 w-4 text-accent" />
-        <span>Поиск активен ещё {formatCountdown(remainingSeconds)}</span>
+    <div className="space-y-3 rounded-[22px] border border-border bg-white p-4">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2 text-sm font-semibold text-ink">
+          <Clock3 className="h-4 w-4 text-accent" />
+          <span>Поиск активен ещё {formatCountdown(remainingSeconds)}</span>
+        </div>
+        <span className="text-xs text-muted">{isRideOffersLoading ? 'Обновляем...' : 'В процессе'}</span>
       </div>
-      <span className="text-xs text-muted">{isRideOffersLoading ? 'Обновляем...' : 'В процессе'}</span>
+
+      <div className="grid grid-cols-[auto_1fr_auto] items-center gap-2">
+        <button
+          type="button"
+          onClick={() => onAdjustPrice(nextPriceDown)}
+          className="flex h-11 items-center justify-center rounded-2xl border border-border bg-surface-soft px-3 text-sm font-semibold text-ink disabled:opacity-60"
+          disabled={isRideActionLoading || requestPrice <= 100}
+        >
+          -100
+        </button>
+        <div className="rounded-2xl bg-surface-soft px-4 py-3 text-center">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">Цена</p>
+          <p className="mt-1 text-base font-semibold text-ink">{formatKzt(requestPrice)}</p>
+        </div>
+        <button
+          type="button"
+          onClick={() => onAdjustPrice(nextPriceUp)}
+          className="flex h-11 items-center justify-center rounded-2xl border border-border bg-surface-soft px-3 text-sm font-semibold text-ink disabled:opacity-60"
+          disabled={isRideActionLoading}
+        >
+          +100
+        </button>
+      </div>
+
+      <div className="flex gap-2">
+        <button
+          type="button"
+          onClick={onCancel}
+          className="flex-1 rounded-2xl border border-border bg-white px-3 py-2 text-sm font-semibold text-ink disabled:opacity-60"
+          disabled={isRideActionLoading}
+        >
+          Отменить заявку
+        </button>
+      </div>
     </div>
   )
 }
 
 function useRideSearchTimer(request: {
   createdAt: string
+  searchRemainingSeconds?: number
   expiresAt?: string
   status: string
-}) {
-  const [deadlineAt, setDeadlineAt] = useState(() => getInitialDeadline(request))
+  timingMode?: 'NOW' | 'SCHEDULED' | 'immediate' | 'scheduled'
+} | null) {
+  const deadlineAt = useMemo(() => getInitialDeadline(request), [
+    request,
+  ])
   const [now, setNow] = useState(() => Date.now())
 
   useEffect(() => {
@@ -467,21 +672,24 @@ function useRideSearchTimer(request: {
   }, [])
 
   const remainingSeconds = Math.max(0, Math.floor((deadlineAt - now) / 1000))
-  const isExpired = request.status === 'EXPIRED' || remainingSeconds <= 0
-
-  const extendSearch = () => {
-    setDeadlineAt(Date.now() + 30 * 60 * 1000)
-    setNow(Date.now())
-  }
+  const isExpired = request?.status === 'EXPIRED' || remainingSeconds <= 0
 
   return {
     remainingSeconds,
     isExpired,
-    extendSearch,
   }
 }
 
-function getInitialDeadline(request: { createdAt: string; expiresAt?: string }) {
+function getInitialDeadline(request: { createdAt: string; searchRemainingSeconds?: number; expiresAt?: string } | null) {
+  if (!request) {
+    return Date.now() + 30 * 60 * 1000
+  }
+
+  const remainingSeconds = request.searchRemainingSeconds
+  if (typeof remainingSeconds === 'number' && Number.isFinite(remainingSeconds)) {
+    return Date.now() + Math.max(0, Math.trunc(remainingSeconds)) * 1000
+  }
+
   if (request.expiresAt) {
     const expiresAt = new Date(request.expiresAt).getTime()
     if (!Number.isNaN(expiresAt)) return expiresAt

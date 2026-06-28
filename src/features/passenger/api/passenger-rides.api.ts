@@ -1,10 +1,11 @@
-import { backendGet, backendPost } from '../../../shared/api/backend'
+import { backendGet, backendPatch, backendPost } from '../../../shared/api/backend'
 import type {
   ActiveRide,
   RideOrderStatus,
   RideRequestStatus,
 } from '../../../types/domain'
 import type {
+  CancelRideRequestPayload,
   AcceptRideOfferResponse,
   CreateRideRequestPayload,
   RideOffer,
@@ -96,6 +97,13 @@ function toBackendRideType(value: unknown): RideType | undefined {
   if (tripType === 'shared') return 'SHARED'
   if (tripType === 'full') return 'FULL'
   return undefined
+}
+
+function normalizeRideRequestTimingMode(value: unknown) {
+  const normalized = asString(value, 'NOW').toUpperCase()
+
+  if (normalized === 'SCHEDULED') return 'SCHEDULED' as const
+  return 'NOW' as const
 }
 
 function warnInvalidRideRequestId(context: string, value: unknown) {
@@ -201,7 +209,8 @@ export function mapRideRequestToViewModel(raw: unknown): RideRequest {
   const createdAt = getFallbackDate(record.createdAt ?? record.created_at)
   const backendId = resolveRideRequestBackendId(isRecord(raw) ? raw : record)
   const localId = backendId ? undefined : `request-${Date.now()}`
-  const timingMode = asString(record.timingMode ?? record.timing_mode)
+  const timingMode = normalizeRideRequestTimingMode(record.timingMode ?? record.timing_mode)
+  const scheduledAt = asString(record.scheduledAt ?? record.scheduled_at)
   const scheduledDate = asString(record.scheduledDate ?? record.scheduled_date)
   const scheduledTime = asString(record.scheduledTime ?? record.scheduled_time)
   const originCityName = asString(
@@ -236,7 +245,8 @@ export function mapRideRequestToViewModel(raw: unknown): RideRequest {
     status: normalizeRideRequestStatus(record.status),
     serviceType: asString(record.serviceType ?? record.service_type, 'INTERCITY_RIDE'),
     rideType: asTripType(record.rideType ?? record.ride_type ?? record.type),
-    timingMode: timingMode === 'scheduled' ? 'scheduled' : 'immediate',
+    timingMode,
+    scheduledAt: scheduledAt || undefined,
     scheduledDate: scheduledDate || undefined,
     scheduledTime: scheduledTime || undefined,
     time: asString(
@@ -275,6 +285,13 @@ export function mapRideRequestToViewModel(raw: unknown): RideRequest {
     dropoffAddress: asString(record.dropoffAddress ?? record.dropoff_address),
     comment: asString(record.comment),
     createdAt,
+    priceUpdatedAt: asString(record.priceUpdatedAt ?? record.price_updated_at) || undefined,
+    searchRemainingSeconds:
+      typeof record.searchRemainingSeconds === 'number' && Number.isFinite(record.searchRemainingSeconds)
+        ? Math.max(0, Math.trunc(record.searchRemainingSeconds))
+        : typeof record.search_remaining_seconds === 'number' && Number.isFinite(record.search_remaining_seconds)
+          ? Math.max(0, Math.trunc(record.search_remaining_seconds))
+          : undefined,
     expiresAt: asString(record.expiresAt ?? record.expires_at),
     offersCount: asNumber(record.offersCount ?? record.offers_count, 0),
     selectedOfferId: asString(record.selectedOfferId ?? record.selected_offer_id),
@@ -296,35 +313,60 @@ export function mapRideOfferToViewModel(raw: unknown): RideOffer {
   const record = isRecord(raw) ? raw : {}
   const driver = isRecord(record.driver) ? record.driver : {}
   const vehicle = isRecord(record.vehicle) ? record.vehicle : {}
+  const driverVehicle = isRecord(driver.vehicle) ? driver.vehicle : {}
+  const vehicleSource = vehicle.id ? vehicle : driverVehicle
+  const driverName = asString(
+    record.driverName ??
+      record.driver_name ??
+      record.driverFullName ??
+      record.driver_full_name ??
+      driver.name ??
+      driver.fullName ??
+      driver.full_name ??
+      record.customerName ??
+      record.customer_name,
+    'Водитель',
+  )
 
   return {
     id: asString(record.id, `offer-${Date.now()}`),
     requestId: asString(record.requestId ?? record.request_id),
+    driverId: asString(record.driverId ?? record.driver_id ?? record.driverProfileId ?? record.driver_profile_id ?? driver.id),
     status: asString(record.status, 'pending'),
-    driverName: asString(
-      record.driverName ??
-        record.driver_name ??
-        record.driverFullName ??
-        record.driver_full_name ??
-        driver.name ??
-        driver.fullName ??
-        driver.full_name ??
-        record.customerName ??
-        record.customer_name,
-      'Водитель',
+    currency: asString(record.currency ?? record.requestCurrency ?? record.request_currency),
+    driverName,
+    rating: asNumber(
+      record.rating ??
+        record.driverRating ??
+        record.driver_rating ??
+        driver.rating ??
+        driver.ratingAvg ??
+        vehicleSource.rating,
+      5,
     ),
-    rating: asNumber(record.rating ?? record.driverRating ?? record.driver_rating ?? driver.rating ?? vehicle.rating, 5),
-    tripsCount: asNumber(record.tripsCount ?? record.trips_count ?? driver.tripsCount ?? driver.trips_count, 0),
+    tripsCount: asNumber(
+      record.tripsCount ?? record.trips_count ?? driver.tripsCount ?? driver.trips_count ?? driver.completedOrdersCount,
+      0,
+    ),
     carModel: asString(
-      record.carModel ?? record.car_model ?? vehicle.model ?? vehicle.carModel ?? driver.carModel ?? driver.car_model,
+      record.carModel ??
+        record.car_model ??
+        vehicleSource.model ??
+        vehicleSource.carModel ??
+        driver.carModel ??
+        driver.car_model,
       '',
     ),
-    carColor: asString(record.carColor ?? record.car_color ?? vehicle.color ?? driver.carColor ?? driver.car_color, ''),
+    carColor: asString(
+      record.carColor ?? record.car_color ?? vehicleSource.color ?? driver.carColor ?? driver.car_color,
+      '',
+    ),
     plate: asString(
       record.plate ??
         record.carPlate ??
         record.car_plate ??
-        vehicle.plate ??
+        vehicleSource.plate ??
+        vehicleSource.plateNumber ??
         driver.plate ??
         driver.carPlate ??
         driver.car_plate,
@@ -354,6 +396,25 @@ export function mapRideOfferToViewModel(raw: unknown): RideOffer {
     ),
     comment: asString(record.comment ?? record.message ?? record.note),
     raw,
+  }
+}
+
+export async function getPassengerRideRequestOffers(requestId: number | string): Promise<RideOfferListResponse> {
+  const normalizedId = requireNumericRideRequestId('getPassengerRideRequestOffers', requestId)
+  if (!normalizedId) {
+    return { items: [], raw: null }
+  }
+
+  try {
+    const response = await backendGet(`/ride/passenger/requests/${normalizedId}/offers`)
+    const list = isBackendEnvelope(response) && Array.isArray(response.items) ? response.items : response
+    return normalizeResponse<RideOffer>(list, mapRideOfferToViewModel)
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('Cannot GET')) {
+      throw new Error('Не удалось загрузить предложения. Попробуйте еще раз.', { cause: error })
+    }
+
+    throw error
   }
 }
 
@@ -447,7 +508,7 @@ function normalizeResponse<T>(value: unknown, mapper: (item: unknown) => T): { i
 
 export async function createRideRequest(payload: CreateRideRequestPayload) {
   return mapRideRequestToViewModel(
-    await backendPost('/ride/requests', {
+    await backendPost('/ride/passenger/requests', {
       ...payload,
       rideType: toBackendRideType(payload.rideType),
     }),
@@ -474,29 +535,64 @@ export async function getRideRequest(id: string | number) {
     throw new Error('Ride request id must be numeric.')
   }
 
-  return mapRideRequestToViewModel(await backendGet(`/ride/requests/${normalizedId}`))
+  return mapRideRequestToViewModel(await backendGet(`/ride/passenger/requests/${normalizedId}`))
 }
 
-export async function cancelRideRequest(id: string | number) {
+export async function cancelPassengerRideRequest(
+  id: string | number,
+  payload?: CancelRideRequestPayload,
+) {
   const normalizedId = requireNumericRideRequestId('cancelRideRequest', id)
   if (!normalizedId) {
     throw new Error('Ride request id must be numeric.')
   }
 
-  return mapRideRequestToViewModel(await backendPost(`/ride/requests/${normalizedId}/cancel`))
+  try {
+    return mapRideRequestToViewModel(
+      await backendPost(`/ride/passenger/requests/${normalizedId}/cancel`, payload ?? {}),
+    )
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('Cannot POST')) {
+      throw new Error('Не удалось отменить заявку. Попробуйте ещё раз.', { cause: error })
+    }
+
+    throw error
+  }
+}
+
+export async function cancelRideRequest(id: string | number, payload?: CancelRideRequestPayload) {
+  return cancelPassengerRideRequest(id, payload)
 }
 
 export async function getRideRequestOffers(requestId: number | string): Promise<RideOfferListResponse> {
-  const normalizedId = requireNumericRideRequestId('getRideRequestOffers', requestId)
+  return getPassengerRideRequestOffers(requestId)
+}
+
+export async function extendPassengerRideRequest(requestId: number | string) {
+  const normalizedId = requireNumericRideRequestId('extendPassengerRideRequest', requestId)
   if (!normalizedId) {
-    return { items: [], raw: null }
+    throw new Error('Ride request id must be numeric.')
   }
 
-  const response = await backendGet(`/ride/requests/${normalizedId}/offers`)
-  const list = isBackendEnvelope(response) && Array.isArray(response.items)
-    ? response.items
-    : response
-  return normalizeResponse<RideOffer>(list, mapRideOfferToViewModel)
+  return mapRideRequestToViewModel(
+    await backendPost(`/ride/passenger/requests/${normalizedId}/extend`),
+  )
+}
+
+export async function updatePassengerRideRequestPrice(
+  requestId: number | string,
+  requestedPrice: number,
+) {
+  const normalizedId = requireNumericRideRequestId('updatePassengerRideRequestPrice', requestId)
+  if (!normalizedId) {
+    throw new Error('Ride request id must be numeric.')
+  }
+
+  return mapRideRequestToViewModel(
+    await backendPatch(`/ride/passenger/requests/${normalizedId}/price`, {
+      requestedPrice,
+    }),
+  )
 }
 
 export async function rejectRideOffer(offerId: number | string) {

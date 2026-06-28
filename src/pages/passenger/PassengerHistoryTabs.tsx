@@ -4,6 +4,7 @@ import { ChevronRight, MapPinned } from 'lucide-react'
 import { useAppActions, useAppState } from '../../providers/AppStateProvider'
 import { cn } from '../../lib/cn'
 import {
+  formatCountdown,
   formatKzt,
   formatRideRequestStatusLabel,
   formatRideRequestWhenLabel,
@@ -183,7 +184,7 @@ export function PassengerHistoryTabs() {
                   {formatRoute(item.from, item.to)}
                 </p>
                 <p className="mt-2 text-sm text-muted">
-                  {item.driverName ?? 'Водитель'} · {item.status}
+                  {item.driverName ?? 'Водитель'} · {formatRideRequestStatusLabel(item.status)}
                 </p>
                 <div className="mt-3 flex items-center justify-between gap-3">
                   <p className="text-sm font-semibold text-accent">{formatKzt(item.price)}</p>
@@ -289,6 +290,20 @@ export function PassengerHistoryTabs() {
               </div>
               <div className="rounded-2xl bg-surface-soft p-4">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">
+                  Поиск
+                </p>
+                <p className="mt-2 text-sm font-semibold text-ink">
+                  {selectedRequest.status === 'EXPIRED'
+                    ? 'Время поиска истекло'
+                    : typeof selectedRequest.searchRemainingSeconds === 'number'
+                      ? `Поиск активен ещё ${formatCountdown(selectedRequest.searchRemainingSeconds)}`
+                      : selectedRequest.expiresAt
+                        ? `Истекает ${formatDateTime(selectedRequest.expiresAt)}`
+                        : 'Поиск водителя'}
+                </p>
+              </div>
+              <div className="rounded-2xl bg-surface-soft p-4">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">
                   Предложения
                 </p>
                 <p className="mt-2 text-sm font-semibold text-ink">
@@ -342,7 +357,7 @@ export function PassengerHistoryTabs() {
                   type="button"
                   onClick={() => {
                     setSelectedRequestId(null)
-                    actions.cancelActiveRide()
+                    void actions.cancelActiveRide()
                   }}
                   className="rounded-2xl border border-border bg-white px-4 py-3 text-sm font-semibold text-ink"
                 >

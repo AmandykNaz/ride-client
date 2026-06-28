@@ -228,19 +228,31 @@ export function formatRideOrderStatusLabel(status?: RideOrderStatus | string | n
 export function formatRideRequestWhenLabel(
   request?:
     | {
-        timingMode?: 'immediate' | 'scheduled'
+        timingMode?: 'NOW' | 'SCHEDULED' | 'immediate' | 'scheduled'
         date?: string
         time?: string
         scheduledDate?: string
         scheduledTime?: string
+        scheduledAt?: string | null
       }
     | null,
 ) {
   if (!request) return 'Сегодня, как можно скорее'
 
-  const hasScheduledFields = Boolean(request.scheduledDate?.trim() || request.scheduledTime?.trim())
+  if (request.scheduledAt?.trim()) {
+    const scheduledAt = new Date(request.scheduledAt)
+    if (!Number.isNaN(scheduledAt.getTime())) {
+      return new Intl.DateTimeFormat('ru-RU', {
+        dateStyle: 'medium',
+        timeStyle: 'short',
+      }).format(scheduledAt)
+    }
+  }
 
-  if (request.timingMode === 'scheduled' || (hasScheduledFields && request.timingMode !== 'immediate')) {
+  const hasScheduledFields = Boolean(request.scheduledDate?.trim() || request.scheduledTime?.trim())
+  const timingMode = typeof request.timingMode === 'string' ? request.timingMode.trim().toUpperCase() : ''
+
+  if (timingMode === 'SCHEDULED' || timingMode === 'scheduled' || (hasScheduledFields && timingMode !== 'IMMEDIATE' && timingMode !== 'NOW')) {
     return (
       formatDateTimeParts(
         request.scheduledDate ?? request.date ?? '',

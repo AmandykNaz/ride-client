@@ -103,6 +103,7 @@ export default function PassengerOrderPage() {
   const banner = getPassengerStatusMessage(passengerStatus, passengerProfile)
   const cityDisplay = getPassengerCityDisplay(passengerProfile)
   const [openSheet, setOpenSheet] = useState<'schedule' | 'price' | 'comment' | null>(null)
+  const [parcelInfoMessage, setParcelInfoMessage] = useState<string | null>(null)
 
   const handleSearch = () => {
     if (passengerStatus === 'GUEST') {
@@ -115,7 +116,24 @@ export default function PassengerOrderPage() {
   }
 
   const currentPrice = Number(rideDraft.price)
+  const hasOrigin = Boolean((rideDraft.originCityName ?? '').trim() && (rideDraft.originAddress ?? '').trim())
+  const hasDestination = Boolean(
+    (rideDraft.destinationCityName ?? '').trim() && (rideDraft.destinationAddress ?? '').trim(),
+  )
   const hasPrice = rideDraft.price.trim().length > 0 && Number.isFinite(currentPrice) && currentPrice > 0
+  const needsScheduledTime = rideDraft.timingMode === 'scheduled'
+  const isScheduledFieldsValid =
+    !needsScheduledTime || (Boolean(rideDraft.date.trim()) && Boolean(rideDraft.time.trim()))
+  const validationError = !hasOrigin
+    ? 'Выберите город и адрес отправления.'
+    : !hasDestination
+      ? 'Выберите город и адрес прибытия.'
+      : !hasPrice
+        ? 'Укажите цену поездки.'
+        : !isScheduledFieldsValid
+          ? 'Для запланированной поездки выберите дату и время.'
+          : ''
+  const canSearch = !isSubmitting && passengerStatus !== 'LIMITED' && passengerStatus !== 'BLOCKED' && !validationError
   const originLabel = buildLocationLabel(rideDraft.originCityName, rideDraft.originAddress)
   const destinationLabel = buildLocationLabel(rideDraft.destinationCityName, rideDraft.destinationAddress)
   const timingLabel = formatRideRequestWhenLabel(rideDraft)
@@ -125,7 +143,7 @@ export default function PassengerOrderPage() {
   const openCommentSheet = () => setOpenSheet('comment')
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 pb-[calc(6rem+env(safe-area-inset-bottom))]">
       {activeRide ? (
         <div className="rounded-[24px] border border-accent/20 bg-accent/8 px-4 py-3 text-sm text-ink">
           <div className="flex items-center justify-between gap-3">
@@ -281,12 +299,17 @@ export default function PassengerOrderPage() {
             ))}
             <button
               type="button"
-              onClick={() => actions.setScreen('passengerParcels')}
+              onClick={() => setParcelInfoMessage('Посылки скоро будут доступны')}
               className="rounded-[20px] border border-border bg-surface-soft px-4 py-3 text-sm font-semibold text-ink transition hover:border-accent/30"
             >
-              Отправить посылку
+              Отправить посылку · скоро
             </button>
           </div>
+          {parcelInfoMessage ? (
+            <div className="mt-3 rounded-[20px] border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
+              {parcelInfoMessage}
+            </div>
+          ) : null}
         </div>
 
         <div className="mt-4 rounded-[24px] border border-dashed border-border bg-slate-50 px-4 py-3 text-sm text-muted">
@@ -299,13 +322,14 @@ export default function PassengerOrderPage() {
             onClick={handleSearch}
             className="w-full rounded-[22px] bg-accent px-4 py-4 text-base font-semibold text-white shadow-lg shadow-accent/20"
             disabled={
-              passengerStatus === 'LIMITED' ||
-              passengerStatus === 'BLOCKED' ||
-              isSubmitting
+              !canSearch
             }
           >
             {isSubmitting ? 'Создаём заявку...' : 'Найти водителя'}
           </button>
+          {validationError ? (
+            <p className="mt-2 px-1 text-sm font-medium text-red-600">{validationError}</p>
+          ) : null}
         </div>
       </div>
 

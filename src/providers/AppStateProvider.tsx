@@ -13,17 +13,19 @@ import {
 } from '../features/passenger/api/passenger.api'
 import { refreshRideSession, logoutRideSession } from '../features/ride-auth/api/ride-auth.api'
 import {
-  cancelRideRequest,
+  cancelPassengerRideRequest,
   acceptRideOffer,
   createRideRequest,
+  extendPassengerRideRequest,
   getPassengerOrders,
-  getRideRequestOffers,
+  getPassengerRideRequestOffers,
   getPassengerRequests,
   getRideOrder,
   getRideOrderEvents,
   getRideRequest,
   mapOrderToActiveRide,
   rejectRideOffer,
+  updatePassengerRideRequestPrice,
 } from '../features/passenger/api/passenger-rides.api'
 import {
   acceptRideRequestPrice,
@@ -78,6 +80,7 @@ import type { RideReview as RideReviewApi, RideReviewSummary as RideReviewSummar
 import type {
   RideOrder as PassengerRideOrder,
   RideOrderEvent as PassengerRideOrderEvent,
+  CancelRideRequestPayload,
   RideRequest as PassengerRideRequest,
   RideType,
 } from '../features/passenger/api/passenger-rides.types'
@@ -249,6 +252,8 @@ type AppContextValue = {
     refreshDriverFeed: () => Promise<void>
     refreshDriverOffers: () => Promise<void>
     refreshDriverOrders: () => Promise<void>
+    extendPassengerRideRequest: () => Promise<void>
+    updatePassengerRideRequestPrice: (requestedPrice: number) => Promise<void>
     createDriverTopUpRequest: (payload: {
       amount: number
       method: TopUpRequestMethod
@@ -317,7 +322,7 @@ type AppContextValue = {
     acceptParcelOffer: (offerId: string) => void
     setActiveRideStatus: (status: ActiveRideStatus) => void
     setActiveParcelStatus: (status: ActiveParcelStatus) => void
-    cancelActiveRide: () => Promise<void>
+    cancelActiveRide: (payload?: CancelRideRequestPayload) => Promise<boolean>
     cancelActiveParcel: () => void
     setPassengerProfile: (profile: PassengerProfile) => void
     completeRideAndOpenRating: () => void
@@ -461,6 +466,7 @@ type AppAction =
   | { type: 'openPassengerRating' }
   | { type: 'closePassengerRating' }
   | { type: 'setPassengerOrdersTab'; tab: PassengerOrdersTab }
+  | { type: 'setPassengerHistory'; history: PassengerHistoryItem[] }
   | { type: 'setVerifiedPhone'; phone: string }
   | { type: 'setPassengerProfile'; profile: PassengerProfile }
   | { type: 'startRideSearch' }
@@ -1005,10 +1011,14 @@ function buildRideLocationText(cityName?: string | null, address?: string | null
 
 function buildRideRequestPayload(rideDraft: RideDraft): CreateRideRequestPayload {
   const requestedPrice = Number(rideDraft.price)
+  const isScheduled = rideDraft.timingMode === 'scheduled'
+  const scheduledAt = isScheduled ? buildRideScheduledAt(rideDraft.date, rideDraft.time) : null
 
   return {
     serviceType: 'INTERCITY_RIDE',
     rideType: toBackendRideType(rideDraft.type),
+    timingMode: isScheduled ? 'SCHEDULED' : 'NOW',
+    scheduledAt,
     originCityId: rideDraft.originCityId as number,
     destinationCityId: rideDraft.destinationCityId as number,
     originText: buildRideLocationText(rideDraft.originCityName, rideDraft.originAddress),
@@ -1019,18 +1029,41 @@ function buildRideRequestPayload(rideDraft: RideDraft): CreateRideRequestPayload
   }
 }
 
-type RideRequestClientMeta = Pick<PassengerRideRequest, 'timingMode' | 'scheduledDate' | 'scheduledTime'>
+function buildRideScheduledAt(date: string, time: string) {
+  const trimmedDate = trimRideLocationText(date)
+  const trimmedTime = trimRideLocationText(time)
+
+  if (!trimmedDate || !trimmedTime) return null
+
+  const parsed = new Date(`${trimmedDate}T${trimmedTime}:00`)
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString()
+}
+
+function isRideRequestExpiredError(error: unknown) {
+  if (!(error instanceof BackendApiError)) {
+    return false
+  }
+
+  const normalizedMessage = String(error.message ?? '').toLowerCase()
+  return error.status === 409 || error.status === 410 || normalizedMessage.includes('expired') || normalizedMessage.includes('истек')
+}
+
+type RideRequestClientMeta = Pick<
+  PassengerRideRequest,
+  'timingMode' | 'scheduledAt' | 'scheduledDate' | 'scheduledTime' | 'priceUpdatedAt' | 'searchRemainingSeconds' | 'expiresAt'
+>
 
 function getRideRequestClientMeta(rideDraft: RideDraft): RideRequestClientMeta {
   if (rideDraft.timingMode === 'scheduled') {
     return {
-      timingMode: 'scheduled',
+      timingMode: 'SCHEDULED',
+      scheduledAt: buildRideScheduledAt(rideDraft.date, rideDraft.time),
       scheduledDate: rideDraft.date.trim() || undefined,
       scheduledTime: rideDraft.time.trim() || undefined,
     }
   }
 
-  return { timingMode: 'immediate' }
+  return { timingMode: 'NOW', scheduledAt: null }
 }
 
 function mergeRideRequestClientMeta(
@@ -1043,8 +1076,12 @@ function mergeRideRequestClientMeta(
     ...previous,
     ...request,
     timingMode: request.timingMode ?? previous.timingMode,
+    scheduledAt: request.scheduledAt ?? previous.scheduledAt,
     scheduledDate: request.scheduledDate ?? previous.scheduledDate,
     scheduledTime: request.scheduledTime ?? previous.scheduledTime,
+    priceUpdatedAt: request.priceUpdatedAt ?? previous.priceUpdatedAt,
+    searchRemainingSeconds: request.searchRemainingSeconds ?? previous.searchRemainingSeconds,
+    expiresAt: request.expiresAt ?? previous.expiresAt,
   }
 }
 
@@ -1820,6 +1857,8 @@ function appReducer(state: AppState, action: AppAction): AppState {
       return { ...state, isPassengerRatingOpen: false, rideSafetyError: null }
     case 'setPassengerOrdersTab':
       return { ...state, passengerOrdersTab: action.tab, currentScreen: 'passengerOrders' }
+    case 'setPassengerHistory':
+      return { ...state, passengerHistory: action.history }
     case 'setVerifiedPhone':
       return { ...state, verifiedPhone: action.phone }
     case 'setPassengerProfile':
@@ -2425,7 +2464,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     dispatch({ type: 'setRideFlowError', error: null })
 
     try {
-      const response = await getRideRequestOffers(activeRequestBackendId)
+      const response = await getPassengerRideRequestOffers(activeRequestBackendId)
       dispatch({
         type: 'setPassengerRideSnapshot',
         passengerRideRequests: state.passengerRideRequests,
@@ -2543,21 +2582,21 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     const destinationCityId = state.rideDraft.destinationCityId
     const originCityName = trimRideLocationText(state.rideDraft.originCityName)
     const destinationCityName = trimRideLocationText(state.rideDraft.destinationCityName)
-    const originText = buildRideLocationText(originCityName, state.rideDraft.originAddress)
-    const destinationText = buildRideLocationText(destinationCityName, state.rideDraft.destinationAddress)
+    const originAddress = trimRideLocationText(state.rideDraft.originAddress)
+    const destinationAddress = trimRideLocationText(state.rideDraft.destinationAddress)
 
-    if (!originCityId || !originCityName) {
+    if (!originCityId || !originCityName || !originAddress) {
       dispatch({
         type: 'setRideFlowError',
-        error: 'Выберите город отправления.',
+        error: 'Выберите город и адрес отправления.',
       })
       return
     }
 
-    if (!destinationCityId || !destinationCityName) {
+    if (!destinationCityId || !destinationCityName || !destinationAddress) {
       dispatch({
         type: 'setRideFlowError',
-        error: 'Выберите город прибытия.',
+        error: 'Выберите город и адрес прибытия.',
       })
       return
     }
@@ -2566,14 +2605,6 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       dispatch({
         type: 'setRideFlowError',
         error: 'Город отправления и прибытия должны отличаться.',
-      })
-      return
-    }
-
-    if (!originText || !destinationText) {
-      dispatch({
-        type: 'setRideFlowError',
-        error: 'Проверьте выбранные города и адреса.',
       })
       return
     }
@@ -2593,7 +2624,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     if (!Number.isFinite(requestedPrice) || requestedPrice <= 0) {
       dispatch({
         type: 'setRideFlowError',
-        error: 'Укажите цену заявки',
+        error: 'Укажите цену поездки.',
       })
       return
     }
@@ -2728,14 +2759,11 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  const cancelPassengerRideRequest = async () => {
-    if (!state.activeRideRequest || !isOpenRideRequestStatus(state.activeRideRequest.status)) {
-      return
-    }
+  const extendPassengerRideRequestAction = async () => {
+    const activeRequest = state.activeRideRequest
+    const activeRequestBackendId = getBackendRideRequestId(activeRequest)
 
-    const activeRequestBackendId = getBackendRideRequestId(state.activeRideRequest)
-    if (!activeRequestBackendId) {
-      console.warn('[ride] cancelPassengerRideRequest: skipping cancel for non-numeric request id', state.activeRideRequest.id)
+    if (!activeRequest || !activeRequestBackendId) {
       return
     }
 
@@ -2743,34 +2771,165 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     dispatch({ type: 'setRideFlowError', error: null })
 
     try {
-      const cancelledRequest = await cancelRideRequest(activeRequestBackendId)
-
+      const extendedRequest = await extendPassengerRideRequest(activeRequestBackendId)
       dispatch({
         type: 'setPassengerRideSnapshot',
         passengerRideRequests: [
-          cancelledRequest,
-          ...state.passengerRideRequests.filter((item) => item.id !== cancelledRequest.id),
+          extendedRequest,
+          ...state.passengerRideRequests.filter(
+            (item) => item.id !== extendedRequest.id && item.backendId !== extendedRequest.backendId,
+          ),
         ],
-        passengerRideOrders: [],
-        activeRideRequest: null,
-        driverOffers: [],
-        activeRide: null,
-        activeRideEvents: [],
-        currentScreen: 'passengerOrder',
-        clearCurrentRide: true,
+        passengerRideOrders: state.passengerRideOrders,
+        activeRideRequest: extendedRequest,
+        driverOffers: state.driverOffers,
+        activeRide: state.activeRide,
+        activeRideEvents: state.activeRideEvents,
       })
-
-      void refreshPassengerRideSnapshot()
+      void loadActiveRequestOffers()
     } catch (error) {
       if (error instanceof BackendAuthError) {
-        logoutPassengerSession()
+        clearRideAccessToken()
+        dispatch({ type: 'resetPassengerSession' })
         return
       }
 
       dispatch({
         type: 'setRideFlowError',
-        error: error instanceof Error ? error.message : 'Не удалось отменить заявку.',
+        error: isRideRequestExpiredError(error)
+          ? 'Время поиска истекло. Сначала продлите поиск.'
+          : error instanceof BackendApiError
+            ? 'Не удалось продлить поиск. Попробуйте ещё раз.'
+            : error instanceof Error
+              ? error.message
+            : 'Не удалось продлить поиск. Попробуйте еще раз.',
       })
+    } finally {
+      dispatch({ type: 'setRideActionLoading', loading: false })
+    }
+  }
+
+  const updatePassengerRideRequestPriceAction = async (requestedPrice: number) => {
+    const activeRequest = state.activeRideRequest
+    const activeRequestBackendId = getBackendRideRequestId(activeRequest)
+
+    if (!activeRequest || !activeRequestBackendId) {
+      return
+    }
+
+    const nextRequestedPrice = Math.max(100, Math.trunc(requestedPrice))
+
+    dispatch({ type: 'setRideActionLoading', loading: true })
+    dispatch({ type: 'setRideFlowError', error: null })
+
+    try {
+      const updatedRequest = await updatePassengerRideRequestPrice(activeRequestBackendId, nextRequestedPrice)
+      dispatch({
+        type: 'setPassengerRideSnapshot',
+        passengerRideRequests: [
+          updatedRequest,
+          ...state.passengerRideRequests.filter(
+            (item) => item.id !== updatedRequest.id && item.backendId !== updatedRequest.backendId,
+          ),
+        ],
+        passengerRideOrders: state.passengerRideOrders,
+        activeRideRequest: updatedRequest,
+        driverOffers: state.driverOffers,
+        activeRide: state.activeRide,
+        activeRideEvents: state.activeRideEvents,
+      })
+      void loadActiveRequestOffers()
+      void refreshPassengerRideSnapshot()
+    } catch (error) {
+      if (error instanceof BackendAuthError) {
+        clearRideAccessToken()
+        dispatch({ type: 'resetPassengerSession' })
+        return
+      }
+
+      dispatch({
+        type: 'setRideFlowError',
+        error: isRideRequestExpiredError(error)
+          ? 'Время поиска истекло. Сначала продлите поиск.'
+          : error instanceof BackendApiError
+            ? 'Не удалось обновить цену поездки. Попробуйте ещё раз.'
+            : error instanceof Error
+              ? error.message
+            : 'Не удалось обновить цену поездки.',
+      })
+    } finally {
+      dispatch({ type: 'setRideActionLoading', loading: false })
+    }
+  }
+
+  const cancelPassengerRideRequestAction = async (payload?: CancelRideRequestPayload): Promise<boolean> => {
+    if (!state.activeRideRequest || !isOpenRideRequestStatus(state.activeRideRequest.status)) {
+      return false
+    }
+
+    const activeRequestBackendId = getBackendRideRequestId(state.activeRideRequest)
+    if (!activeRequestBackendId) {
+      console.warn('[ride] cancelPassengerRideRequest: skipping cancel for non-numeric request id', state.activeRideRequest.id)
+      return false
+    }
+
+    dispatch({ type: 'setRideActionLoading', loading: true })
+    dispatch({ type: 'setRideFlowError', error: null })
+
+    try {
+      const cancelledRequest = await cancelPassengerRideRequest(activeRequestBackendId, payload)
+      const cancelledHistory: PassengerHistoryItem | null = state.activeRideRequest
+        ? {
+            id: makeId('hist'),
+            category: 'ride',
+            from: state.activeRideRequest.from,
+            to: state.activeRideRequest.to,
+            date: state.activeRideRequest.date,
+            price: state.activeRideRequest.price,
+            status: 'cancelled',
+            driverName: state.activeRide?.driverName,
+          }
+        : null
+
+      dispatch({
+        type: 'setPassengerRideSnapshot',
+        passengerRideRequests: [
+          cancelledRequest,
+          ...state.passengerRideRequests.filter(
+            (item) => item.id !== cancelledRequest.id && item.backendId !== cancelledRequest.backendId,
+          ),
+        ],
+        passengerRideOrders: state.passengerRideOrders,
+        activeRideRequest: null,
+        driverOffers: [],
+        activeRide: null,
+        activeRideEvents: [],
+        clearCurrentRide: true,
+      })
+
+      if (cancelledHistory) {
+        dispatch({
+          type: 'setPassengerHistory',
+          history: [cancelledHistory, ...state.passengerHistory],
+        })
+      }
+
+      void refreshPassengerRideSnapshot()
+      return true
+    } catch (error) {
+      if (error instanceof BackendAuthError) {
+        logoutPassengerSession()
+        return false
+      }
+
+      dispatch({
+        type: 'setRideFlowError',
+        error:
+          error instanceof Error
+            ? error.message
+            : 'Не удалось отменить заявку. Попробуйте ещё раз.',
+      })
+      return false
     } finally {
       dispatch({ type: 'setRideActionLoading', loading: false })
     }
@@ -4139,6 +4298,9 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       refreshDriverFeed: () => refreshDriverFeed(),
       refreshDriverOffers: () => refreshDriverOffers(),
       refreshDriverOrders: () => refreshDriverOrders(),
+      extendPassengerRideRequest: () => extendPassengerRideRequestAction(),
+      updatePassengerRideRequestPrice: (requestedPrice) =>
+        updatePassengerRideRequestPriceAction(requestedPrice),
       startDriverRegistration: () => dispatch({ type: 'startDriverRegistration' }),
       updateDriverApplicationField: (field, value) =>
         dispatch({ type: 'updateDriverApplicationField', field, value }),
@@ -4275,7 +4437,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         dispatch({ type: 'setActiveRideStatus', status }),
       setActiveParcelStatus: (status) =>
         dispatch({ type: 'setActiveParcelStatus', status }),
-      cancelActiveRide: () => cancelPassengerRideRequest(),
+      cancelActiveRide: (payload) => cancelPassengerRideRequestAction(payload),
       cancelActiveParcel: () => dispatch({ type: 'cancelActiveParcel' }),
       setPassengerProfile: (profile) =>
         dispatch({ type: 'setPassengerProfile', profile }),

@@ -2,10 +2,13 @@ import type { RideOrderStatus, RideRequestStatus, TripType } from '../../../type
 
 export type RideServiceType = 'INTERCITY_RIDE' | 'PARCEL'
 export type RideType = 'SHARED' | 'FULL'
+export type RideRequestTimingMode = 'NOW' | 'SCHEDULED'
 
 export type CreateRideRequestPayload = {
   serviceType: RideServiceType
   rideType?: RideType
+  timingMode: RideRequestTimingMode
+  scheduledAt?: string | null
   originCityId: number
   destinationCityId: number
   originText: string
@@ -22,7 +25,8 @@ export type RideRequest = {
   status: RideRequestStatus
   serviceType: string
   rideType?: TripType | string
-  timingMode?: 'immediate' | 'scheduled'
+  timingMode?: RideRequestTimingMode
+  scheduledAt?: string | null
   scheduledDate?: string
   scheduledTime?: string
   time: string
@@ -46,6 +50,8 @@ export type RideRequest = {
   dropoffAddress?: string
   comment: string
   createdAt: string
+  priceUpdatedAt?: string
+  searchRemainingSeconds?: number
   expiresAt?: string
   offersCount: number
   selectedOfferId?: string
@@ -55,7 +61,9 @@ export type RideRequest = {
 export type RideOffer = {
   id: string
   requestId?: string
+  driverId?: string
   status?: 'pending' | 'accepted' | 'rejected' | string
+  currency?: string
   driverName: string
   rating: number
   tripsCount: number
@@ -73,6 +81,11 @@ export type RideOffer = {
 export type RideOfferListResponse = {
   items: RideOffer[]
   raw: unknown
+}
+
+export type CancelRideRequestPayload = {
+  reasonCode?: string | null
+  reasonText?: string | null
 }
 
 export type AcceptRideOfferResponse =

@@ -127,7 +127,7 @@ export default function PassengerActiveRidePage() {
         )}
         <button
           type="button"
-          onClick={actions.cancelActiveRide}
+          onClick={() => void actions.cancelActiveRide()}
           className="flex items-center justify-center gap-2 rounded-2xl border border-border bg-white px-3 py-3 text-sm font-semibold text-ink"
         >
           <XCircle className="h-4 w-4 text-accent" />

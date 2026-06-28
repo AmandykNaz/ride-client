@@ -73,6 +73,7 @@ function TextField({
 export function PhoneVerifySheet() {
   const { isPhoneVerifySheetOpen, verifiedPhone, pendingPassengerFlow } = useAppState()
   const actions = useAppActions()
+  const showDevCode = import.meta.env.DEV
 
   const initialFlow: RideFlow =
     pendingPassengerFlow === 'parcel'
@@ -510,10 +511,10 @@ export function PhoneVerifySheet() {
               value={code}
               onChange={(value) => setCode(value)}
               type="text"
-              placeholder="1234"
+              placeholder={showDevCode ? '1234' : 'Код из SMS'}
             />
 
-            {devCode || otpRequested ? (
+            {showDevCode && (devCode || otpRequested) ? (
               <div className="flex items-start gap-2 rounded-2xl bg-amber-50 px-4 py-3 text-sm text-amber-900">
                 <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
                 <p>{devCode ? `Dev-код: ${devCode}` : 'Код отправлен. Проверьте SMS.'}</p>
@@ -612,7 +613,7 @@ export function PhoneVerifySheet() {
               label="SMS-код"
               value={code}
               onChange={(value) => setCode(value)}
-              placeholder="1234"
+              placeholder={showDevCode ? '1234' : 'Код из SMS'}
             />
             <PasswordField
               label="Новый пароль"
@@ -627,7 +628,7 @@ export function PhoneVerifySheet() {
               placeholder="Повторите пароль"
             />
 
-            {devCode || passwordResetOtpRequested ? (
+            {showDevCode && (devCode || passwordResetOtpRequested) ? (
               <div className="flex items-start gap-2 rounded-2xl bg-amber-50 px-4 py-3 text-sm text-amber-900">
                 <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
                 <p>{devCode ? `Dev-код: ${devCode}` : 'Код отправлен. Проверьте SMS.'}</p>
