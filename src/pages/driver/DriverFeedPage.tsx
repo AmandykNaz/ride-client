@@ -35,6 +35,7 @@ export default function DriverFeedPage() {
     driverCounterOffers,
     driverProfile,
     driverWallet,
+    driverAccess,
     activeRecheck,
     driverActiveOrder,
     isDriverFeedLoading,
@@ -43,13 +44,14 @@ export default function DriverFeedPage() {
   } = useAppState()
   const actions = useAppActions()
   const [feedFilter, setFeedFilter] = useState<FeedFilter>('all')
-  const accessState = getDriverAccessState(driverVerificationStatus, driverWallet)
+  const accessState = getDriverAccessState(driverVerificationStatus, driverWallet, driverAccess)
   const walletShortfall = getDriverWalletShortfall(driverWallet)
   const blockedReason =
     driverProfile?.blockedReason?.trim() ||
     driverWallet?.blockedReason?.trim() ||
     'Профиль водителя заблокирован модератором.'
   const lowBalance = accessState === 'APPROVED_LOW_BALANCE'
+  const subscriptionLocked = driverAccess?.monetizationMode === 'ACCESS_SUBSCRIPTION' && !driverAccess?.hasAccess
   const visibleOrders = useMemo(
     () =>
       driverFeedOrders
@@ -113,7 +115,7 @@ export default function DriverFeedPage() {
     )
   }
 
-  if (lowBalance) {
+  if (lowBalance && !subscriptionLocked) {
     return (
       <div className="space-y-4">
         {activeRecheck ? (
@@ -171,6 +173,37 @@ export default function DriverFeedPage() {
         />
       ) : null}
 
+      {subscriptionLocked ? (
+        <PageCard
+          eyebrow="Доступ"
+          title="Доступ к заявкам закрыт"
+          description="Чтобы отправлять предложения пассажирам, купите тариф."
+        >
+          <div className="space-y-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+            <p className="font-semibold">
+              {driverAccess?.reason?.trim() || 'Нет активного доступа'}
+            </p>
+            <p>Осталось контактов: {driverAccess?.remainingContactUnlocks ?? 0}</p>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-2">
+            <button
+              type="button"
+              onClick={() => actions.setScreen('driverBalance')}
+              className="rounded-2xl bg-accent px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-accent/20"
+            >
+              Купить тариф
+            </button>
+            <button
+              type="button"
+              onClick={() => void actions.refreshDriverAccess()}
+              className="rounded-2xl border border-border bg-white px-4 py-3 text-sm font-semibold text-ink"
+            >
+              Обновить доступ
+            </button>
+          </div>
+        </PageCard>
+      ) : null}
+
       <PageCard
         eyebrow="Водитель"
         title="Лента заказов"
@@ -217,6 +250,12 @@ export default function DriverFeedPage() {
             </p>
           </div>
         </div>
+
+        {driverAccess?.hasAccess ? (
+          <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">
+            Осталось контактов: {driverAccess.remainingContactUnlocks ?? 0}
+          </div>
+        ) : null}
 
         <div className="flex flex-wrap gap-2">
           {filterChips.map((chip) => {
@@ -275,7 +314,8 @@ export default function DriverFeedPage() {
         </PageCard>
       ) : null}
 
-      <div className="space-y-3">
+      {!subscriptionLocked ? (
+        <div className="space-y-3">
         {visibleOrders.map((order) => (
           <DriverFeedOrderCard
             key={order.id}
@@ -285,7 +325,8 @@ export default function DriverFeedPage() {
             onOpenCounterOffer={() => actions.openDriverCounterOfferSheet(order.id)}
           />
         ))}
-      </div>
+        </div>
+      ) : null}
 
       {visibleOrders.length === 0 ? (
         <PageCard

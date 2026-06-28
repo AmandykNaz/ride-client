@@ -56,6 +56,7 @@ export default function DriverDashboardPage() {
     driverRegistrationStep,
     driverActiveOrder,
     driverWallet,
+    driverAccess,
     driverReviewSummary,
     driverReviews,
     driverFlowError,
@@ -63,7 +64,7 @@ export default function DriverDashboardPage() {
   } = useAppState()
   const actions = useAppActions()
   const refreshDriverOrdersRef = useRef(actions.refreshDriverOrders)
-  const accessState = getDriverAccessState(driverVerificationStatus, driverWallet)
+  const accessState = getDriverAccessState(driverVerificationStatus, driverWallet, driverAccess)
   const verificationStatusLabel = getDriverVerificationStatusLabel(driverVerificationStatus)
   const walletShortfall = getDriverWalletShortfall(driverWallet)
   const applicationReason = getDriverApplicationReason(driverApplicationDraft, driverVerificationStatus)
@@ -71,6 +72,7 @@ export default function DriverDashboardPage() {
     driverProfile?.blockedReason?.trim() ||
     driverWallet?.blockedReason?.trim() ||
     'Профиль водителя заблокирован модератором.'
+  const subscriptionLocked = driverAccess?.monetizationMode === 'ACCESS_SUBSCRIPTION' && !driverAccess?.hasAccess
 
   useEffect(() => {
     refreshDriverOrdersRef.current = actions.refreshDriverOrders
@@ -266,34 +268,51 @@ export default function DriverDashboardPage() {
       ) : null}
 
       <PageCard
-      eyebrow="Водитель"
-      title={accessState === 'APPROVED_LOW_BALANCE' ? 'Профиль одобрен' : 'Кабинет водителя'}
-      description={
-        accessState === 'APPROVED_LOW_BALANCE'
-          ? `Пополните баланс минимум до ${formatKzt(driverWallet.minBalance)} чтобы выйти на линию.`
-          : 'Ваш профиль подтверждён. Можно включать онлайн-режим и пользоваться кабинетом.'
-      }
-    >
-      {driverFlowError ? (
-        <div className="rounded-2xl bg-red-50 px-4 py-3 text-sm text-red-700">
-          {driverFlowError}
-        </div>
-      ) : null}
+        eyebrow="Водитель"
+        title={
+          accessState === 'APPROVED_LOW_BALANCE'
+            ? subscriptionLocked
+              ? 'Доступ к заявкам закрыт'
+              : 'Профиль одобрен'
+            : 'Кабинет водителя'
+        }
+        description={
+          accessState === 'APPROVED_LOW_BALANCE'
+            ? subscriptionLocked
+              ? 'Чтобы отправлять предложения пассажирам, купите тариф.'
+              : `Пополните баланс минимум до ${formatKzt(driverWallet.minBalance)} чтобы выйти на линию.`
+            : 'Ваш профиль подтверждён. Можно включать онлайн-режим и пользоваться кабинетом.'
+        }
+      >
+        {driverFlowError ? (
+          <div className="rounded-2xl bg-red-50 px-4 py-3 text-sm text-red-700">
+            {driverFlowError}
+          </div>
+        ) : null}
 
-      {accessState === 'APPROVED_LOW_BALANCE' ? (
-        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-          <p className="font-semibold">Профиль одобрен</p>
-          <p className="mt-1">
-            Пополните баланс минимум до {formatKzt(driverWallet.minBalance)}.
-          </p>
-        </div>
-      ) : null}
+        {accessState === 'APPROVED_LOW_BALANCE' ? (
+          subscriptionLocked ? (
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+              <p className="font-semibold">Нет активного доступа</p>
+              <p className="mt-1">
+                {driverAccess?.reason?.trim() || 'Купите тариф, чтобы продолжить работу.'}
+              </p>
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+              <p className="font-semibold">Профиль одобрен</p>
+              <p className="mt-1">
+                Пополните баланс минимум до {formatKzt(driverWallet.minBalance)}.
+              </p>
+            </div>
+          )
+        ) : null}
 
-      <StatusRow
-        icon={BadgeCheck}
-        title="Статус"
-        value={accessState === 'APPROVED_LOW_BALANCE' ? 'Профиль одобрен' : 'Готов к линии'}
-      />
+        <StatusRow
+          icon={BadgeCheck}
+          title="Статус"
+          value={accessState === 'APPROVED_LOW_BALANCE' ? 'Профиль одобрен' : 'Готов к линии'}
+        />
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="rounded-2xl bg-surface-soft p-4">
           <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">
@@ -491,12 +510,9 @@ export default function DriverDashboardPage() {
         <button
           type="button"
           onClick={() => actions.setScreen('driverFeed')}
-          disabled={!driverWallet.canGoOnline}
           className={cn(
             'rounded-2xl px-3 py-3 text-sm font-semibold',
-            !driverWallet.canGoOnline
-              ? 'cursor-not-allowed border border-border bg-slate-50 text-muted'
-              : 'border border-border bg-white text-ink',
+            'border border-border bg-white text-ink',
           )}
         >
           Лента заказов

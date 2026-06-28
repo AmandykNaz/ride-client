@@ -41,6 +41,7 @@ export default function DriverActiveOrderPage() {
     driverActiveOrder,
     driverVerificationStatus,
     driverWallet,
+    driverAccess,
     isDriverActionLoading,
     driverFlowError,
     orderReviews,
@@ -51,6 +52,8 @@ export default function DriverActiveOrderPage() {
   const refreshOrderComplaintsRef = useRef(actions.refreshOrderComplaints)
   const refreshDriverOrdersRef = useRef(actions.refreshDriverOrders)
   const activeOrderId = driverActiveOrder?.id ?? null
+  const accessMode = driverAccess?.monetizationMode ?? 'ORDER_COMMISSION'
+  const subscriptionAccess = accessMode === 'ACCESS_SUBSCRIPTION'
 
   useEffect(() => {
     refreshOrderReviewsRef.current = actions.refreshOrderReviews
@@ -126,7 +129,11 @@ export default function DriverActiveOrderPage() {
     <PageCard
       eyebrow="Водитель"
       title="Активный заказ"
-      description="Комиссия списывается только после завершения заказа."
+      description={
+        subscriptionAccess
+          ? 'Комиссия за заказ не списывается. Работа доступна по тарифу.'
+          : 'Комиссия списывается только после завершения заказа.'
+      }
     >
       {driverFlowError ? (
         <div className="rounded-2xl bg-red-50 px-4 py-3 text-sm text-red-700">
@@ -154,46 +161,76 @@ export default function DriverActiveOrderPage() {
         <div className="rounded-2xl bg-surface-soft p-4">
           <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">Маршрут</p>
           <p className="mt-2 text-lg font-semibold tracking-[-0.02em] text-ink">
-            {formatRoute(driverActiveOrder.originText ?? driverActiveOrder.from, driverActiveOrder.destinationText ?? driverActiveOrder.to)}
+            {formatRoute(
+              driverActiveOrder.originText ?? driverActiveOrder.from,
+              driverActiveOrder.destinationText ?? driverActiveOrder.to,
+            )}
           </p>
         </div>
 
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="rounded-2xl bg-surface-soft p-4">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">Клиент</p>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">
+              Клиент
+            </p>
             <p className="mt-2 text-sm font-semibold text-ink">{driverActiveOrder.clientName}</p>
           </div>
+          {driverActiveOrder.canCallPassenger ? (
+            <a
+              href={`tel:${driverActiveOrder.clientPhone.replace(/\s+/g, '')}`}
+              className="rounded-2xl bg-white p-4 text-left"
+            >
+              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">
+                Телефон
+              </p>
+              <p className="mt-2 text-sm font-semibold text-ink">{driverActiveOrder.clientPhone}</p>
+            </a>
+          ) : (
+            <div className="rounded-2xl bg-surface-soft p-4 text-sm text-muted">
+              Контакт откроется после подтверждения заказа
+            </div>
+          )}
           <div className="rounded-2xl bg-surface-soft p-4">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">Телефон</p>
-            <p className="mt-2 text-sm font-semibold text-ink">{driverActiveOrder.clientPhone}</p>
-          </div>
-          <div className="rounded-2xl bg-surface-soft p-4">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">Цена</p>
-            <p className="mt-2 text-sm font-semibold text-ink">{formatKzt(driverActiveOrder.agreedPrice ?? driverActiveOrder.price)}</p>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">
+              Цена
+            </p>
+            <p className="mt-2 text-sm font-semibold text-ink">
+              {formatKzt(driverActiveOrder.agreedPrice ?? driverActiveOrder.price)}
+            </p>
           </div>
           <div className="rounded-2xl bg-surface-soft p-4">
             <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">
-              Комиссия после завершения
+              {subscriptionAccess ? 'Комиссия' : 'Комиссия после завершения'}
             </p>
             <p className="mt-2 text-sm font-semibold text-ink">
-              {commissionPreview != null ? formatKzt(commissionPreview) : 'Комиссия будет списана после завершения'}
+              {subscriptionAccess
+                ? 'Комиссия за заказ не списывается. Работа доступна по тарифу.'
+                : commissionPreview != null
+                  ? formatKzt(commissionPreview)
+                  : 'Комиссия будет списана после завершения'}
             </p>
           </div>
         </div>
 
-        <div className="rounded-2xl border border-border bg-white p-4">
-          <div className="flex items-center gap-3">
-            <ReceiptText className="h-5 w-5 text-accent" />
-            <div>
-              <p className="text-sm font-semibold text-ink">До и после комиссии</p>
-              <p className="mt-1 text-sm text-muted">
-                {commissionPreview != null
-                  ? `Получите ${formatKzt(driverActiveOrder.agreedPrice ?? driverActiveOrder.price)} до списания комиссии и ${formatKzt(afterCommission ?? 0)} после предварительного расчёта.`
-                  : 'Комиссия будет рассчитана и списана после завершения заказа.'}
-              </p>
+        {subscriptionAccess ? (
+          <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
+            Комиссия за заказ не списывается. Работа доступна по тарифу.
+          </div>
+        ) : (
+          <div className="rounded-2xl border border-border bg-white p-4">
+            <div className="flex items-center gap-3">
+              <ReceiptText className="h-5 w-5 text-accent" />
+              <div>
+                <p className="text-sm font-semibold text-ink">До и после комиссии</p>
+                <p className="mt-1 text-sm text-muted">
+                  {commissionPreview != null
+                    ? `Получите ${formatKzt(driverActiveOrder.agreedPrice ?? driverActiveOrder.price)} до списания комиссии и ${formatKzt(afterCommission ?? 0)} после предварительного расчёта.`
+                    : 'Комиссия будет рассчитана и списана после завершения заказа.'}
+                </p>
+              </div>
             </div>
           </div>
-        </div>
+        )}
 
         {driverActiveOrder.category === 'ride' ? (
           <div className="grid gap-3 rounded-2xl bg-surface-soft p-4 text-sm text-ink">
@@ -223,7 +260,9 @@ export default function DriverActiveOrderPage() {
               <p className="text-sm text-muted">Получатель: {driverActiveOrder.receiverName}</p>
             ) : null}
             {driverActiveOrder.receiverPhone ? (
-              <p className="text-sm text-muted">Телефон получателя: {driverActiveOrder.receiverPhone}</p>
+              <p className="text-sm text-muted">
+                Телефон получателя: {driverActiveOrder.receiverPhone}
+              </p>
             ) : null}
           </div>
         )}
@@ -231,20 +270,32 @@ export default function DriverActiveOrderPage() {
         {isCompleted ? (
           <div className="space-y-3 rounded-2xl bg-emerald-50 p-4 text-sm text-emerald-800">
             <p className="font-semibold">Заказ завершён</p>
-            <p>Состояние и списания приходят из бэкенда после смены статуса.</p>
+            <p>
+              {subscriptionAccess
+                ? 'Комиссия не списывается. Работа доступна по тарифу.'
+                : 'Состояние и списания приходят из бэкенда после смены статуса.'}
+            </p>
             <div className="grid gap-2 rounded-2xl bg-white/70 p-3 text-emerald-900">
               <div className="flex items-center justify-between gap-3">
                 <span>Цена заказа</span>
-                <span className="font-semibold">{formatKzt(driverActiveOrder.agreedPrice ?? driverActiveOrder.price)}</span>
-              </div>
-              <div className="flex items-center justify-between gap-3">
-                <span>Комиссия</span>
                 <span className="font-semibold">
-                  {commissionAmount != null
-                    ? `-${formatKzt(commissionAmount)}`
-                    : 'Будет рассчитана после завершения'}
+                  {formatKzt(driverActiveOrder.agreedPrice ?? driverActiveOrder.price)}
                 </span>
               </div>
+              {!subscriptionAccess ? (
+                <div className="flex items-center justify-between gap-3">
+                  <span>Комиссия</span>
+                  <span className="font-semibold">
+                    {commissionAmount != null
+                      ? `-${formatKzt(commissionAmount)}`
+                      : 'Будет рассчитана после завершения'}
+                  </span>
+                </div>
+              ) : (
+                <div className="rounded-2xl bg-emerald-100 px-3 py-2 text-emerald-900">
+                  Комиссия за заказ не списывается. Работа доступна по тарифу.
+                </div>
+              )}
               {balanceBefore != null && balanceAfter != null ? (
                 <>
                   <div className="flex items-center justify-between gap-3">

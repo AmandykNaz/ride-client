@@ -12,6 +12,43 @@ export type DriverWallet = {
   raw?: unknown
 }
 
+export type DriverTariff = {
+  id: string
+  code: string
+  name: string
+  description?: string
+  price: number
+  durationMinutes: number
+  includedContactUnlocks: number
+  isTrial: boolean
+  isActive: boolean
+  sortOrder: number
+  raw?: unknown
+}
+
+export type DriverAccessPass = {
+  id: string
+  type: 'TRIAL' | 'PAID' | 'MANUAL'
+  status: 'ACTIVE' | 'EXPIRED' | 'CANCELLED'
+  tariffName?: string
+  startsAt?: string | null
+  expiresAt?: string | null
+  includedContactUnlocks: number
+  usedContactUnlocks: number
+  remainingContactUnlocks: number
+  raw?: unknown
+}
+
+export type DriverAccessSummary = {
+  hasAccess: boolean
+  monetizationMode: 'ORDER_COMMISSION' | 'ACCESS_SUBSCRIPTION' | 'HYBRID'
+  remainingContactUnlocks: number
+  reason?: string
+  activePass: DriverAccessPass | null
+  availableTariffs: DriverTariff[]
+  raw?: unknown
+}
+
 export type DriverWalletTransaction = {
   id: string
   type: WalletTransactionType | string

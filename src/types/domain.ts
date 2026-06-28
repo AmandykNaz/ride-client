@@ -423,6 +423,9 @@ export type DriverActiveOrder = {
   price: number
   agreedPrice?: number
   commissionAmount?: number
+  contactUnlocked?: boolean
+  canCallPassenger?: boolean
+  canCallDriver?: boolean
   clientName: string
   clientPhone: string
   requestedPrice: number
@@ -526,6 +529,9 @@ export type ActiveRide = {
   id: string
   requestId: string
   status: ActiveRideStatus
+  contactUnlocked?: boolean
+  canCallDriver?: boolean
+  canCallPassenger?: boolean
   driverName: string
   driverPhone: string
   driverRating: number

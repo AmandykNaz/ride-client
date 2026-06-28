@@ -114,6 +114,8 @@ export type RideOrder = {
   pickupAddress?: string
   dropoffAddress?: string
   agreedPrice: number
+  contactUnlocked?: boolean
+  canCallDriver?: boolean
   driverName: string
   driverPhone: string
   driverRating: number

@@ -30,6 +30,27 @@ function formatDateTime(createdAt: string) {
   }).format(new Date(createdAt))
 }
 
+function formatDurationMinutes(minutes: number) {
+  if (!Number.isFinite(minutes) || minutes <= 0) return '—'
+
+  const days = Math.floor(minutes / (60 * 24))
+  const hours = Math.floor((minutes % (60 * 24)) / 60)
+
+  if (days > 0 && hours > 0) {
+    return `${days} дн ${hours} ч`
+  }
+
+  if (days > 0) {
+    return `${days} дн`
+  }
+
+  if (hours > 0) {
+    return `${hours} ч`
+  }
+
+  return `${minutes} мин`
+}
+
 function resolveTopUpRequestId(request: { id: string | number }) {
   const numericId = Number(request.id)
   return Number.isFinite(numericId) && numericId > 0 ? numericId : null
@@ -274,16 +295,21 @@ export default function DriverBalancePage() {
   const {
     driverVerificationStatus,
     driverWallet,
+    driverAccess,
+    driverTariffs,
     driverWalletTransactions,
     driverTopUpRequests,
     activeRecheck,
     isDriverWalletLoading,
+    isDriverAccessLoading,
     isDriverTopUpSubmitting,
     driverWalletError,
+    driverAccessError,
   } = useAppState()
   const actions = useAppActions()
   const [selectedTopUpRequestId, setSelectedTopUpRequestId] = useState<string | null>(null)
   const [selectedTransactionId, setSelectedTransactionId] = useState<string | null>(null)
+  const availableTariffs = driverTariffs.length > 0 ? driverTariffs : driverAccess?.availableTariffs ?? []
   if (driverVerificationStatus !== 'APPROVED') {
     const blockedReason =
       driverWallet.blockedReason?.trim() ||
@@ -339,6 +365,17 @@ export default function DriverBalancePage() {
     selectedTransactionId
       ? driverWalletTransactions.find((transaction) => transaction.id === selectedTransactionId) ?? null
       : null
+  const accessMode = driverAccess?.monetizationMode ?? 'ORDER_COMMISSION'
+  const hasSubscriptionAccess = accessMode === 'ACCESS_SUBSCRIPTION' && Boolean(driverAccess?.hasAccess)
+  const noSubscriptionAccess = accessMode === 'ACCESS_SUBSCRIPTION' && !driverAccess?.hasAccess
+  const accessTitle =
+    hasSubscriptionAccess
+      ? 'Доступ активен'
+      : noSubscriptionAccess
+        ? 'Доступ к заявкам закрыт'
+      : accessMode === 'ACCESS_SUBSCRIPTION'
+          ? 'Нет активного доступа'
+          : 'Доступ по комиссии'
 
   return (
     <div className="space-y-4">
@@ -350,6 +387,158 @@ export default function DriverBalancePage() {
           onOpenDetails={() => actions.setScreen('driverProfile')}
         />
       ) : null}
+
+      <PageCard
+        eyebrow="Доступ"
+        title={accessTitle}
+        description={
+          accessMode === 'ACCESS_SUBSCRIPTION'
+            ? 'Управляйте тарифом и контактами для работы с заявками.'
+            : 'Доступ к заказам работает в текущем режиме монетизации.'
+        }
+      >
+        {isDriverAccessLoading ? (
+          <div className="rounded-2xl bg-surface-soft px-4 py-3 text-sm text-muted">
+            Загрузка доступов и тарифов...
+          </div>
+        ) : null}
+
+        {driverAccessError ? (
+          <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {driverAccessError}
+          </div>
+        ) : null}
+
+        {driverAccess?.reason ? (
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            {driverAccess.reason}
+          </div>
+        ) : null}
+
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="rounded-2xl bg-surface-soft p-4">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">
+              Режим монетизации
+            </p>
+            <p className="mt-2 text-sm font-semibold text-ink">
+              {accessMode === 'ACCESS_SUBSCRIPTION'
+                ? 'Подписка на доступ'
+                : accessMode === 'HYBRID'
+                  ? 'Гибридный режим'
+                  : 'Оплата комиссии за заказ'}
+            </p>
+          </div>
+          <div className="rounded-2xl bg-surface-soft p-4">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">
+              Осталось контактов
+            </p>
+            <p className="mt-2 text-sm font-semibold text-ink">
+              {driverAccess?.remainingContactUnlocks ?? 0}
+            </p>
+          </div>
+          <div className="rounded-2xl bg-surface-soft p-4">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">
+              Активный тариф
+            </p>
+            <p className="mt-2 text-sm font-semibold text-ink">
+              {driverAccess?.activePass?.tariffName || 'Нет активного доступа'}
+            </p>
+          </div>
+          <div className="rounded-2xl bg-surface-soft p-4">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">
+              Активен до
+            </p>
+            <p className="mt-2 text-sm font-semibold text-ink">
+              {driverAccess?.activePass?.expiresAt
+                ? formatDateTime(driverAccess.activePass.expiresAt)
+                : '—'}
+            </p>
+          </div>
+          <div className="rounded-2xl bg-surface-soft p-4">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">
+              Использовано контактов
+            </p>
+            <p className="mt-2 text-sm font-semibold text-ink">
+              {driverAccess?.activePass?.usedContactUnlocks ?? 0}
+            </p>
+          </div>
+          <div className="rounded-2xl bg-surface-soft p-4">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">
+              Доступно в тарифе
+            </p>
+            <p className="mt-2 text-sm font-semibold text-ink">
+              {driverAccess?.activePass?.includedContactUnlocks ?? 0}
+            </p>
+          </div>
+        </div>
+
+        {noSubscriptionAccess ? (
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+            Доступ к заявкам закрыт. Купите тариф, чтобы продолжить работу.
+          </div>
+        ) : null}
+
+        {availableTariffs.length > 0 ? (
+          <div className="space-y-3">
+            <p className="text-sm font-semibold text-ink">Тарифы</p>
+            <div className="space-y-3">
+              {availableTariffs
+                .slice()
+                .sort((left, right) => left.sortOrder - right.sortOrder)
+                .map((tariff) => {
+                  const hasEnoughBalance = driverWallet.balance >= tariff.price
+                  return (
+                    <div key={tariff.id} className="rounded-2xl border border-border bg-white p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-semibold text-ink">{tariff.name}</p>
+                          {tariff.description ? (
+                            <p className="mt-1 text-sm text-muted">{tariff.description}</p>
+                          ) : null}
+                        </div>
+                        <span className="rounded-full bg-accent/10 px-3 py-1 text-xs font-semibold text-accent">
+                          {tariff.isTrial ? 'Бесплатный период' : 'Платный тариф'}
+                        </span>
+                      </div>
+
+                      <div className="mt-3 grid gap-2 text-sm text-muted sm:grid-cols-2">
+                        <p>Цена: {formatKzt(tariff.price)}</p>
+                        <p>Длительность: {formatDurationMinutes(tariff.durationMinutes)}</p>
+                        <p>Контактов: {tariff.includedContactUnlocks}</p>
+                        <p>Код: {tariff.code}</p>
+                      </div>
+
+                      {!hasEnoughBalance ? (
+                        <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                          <p className="font-semibold">Недостаточно средств</p>
+                          <p className="mt-1">Пополните баланс, чтобы купить тариф.</p>
+                        </div>
+                      ) : null}
+
+                      <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                        <button
+                          type="button"
+                          disabled={!hasEnoughBalance || isDriverAccessLoading}
+                          onClick={() => void actions.purchaseDriverTariff(tariff.id)}
+                          className="flex-1 rounded-2xl bg-accent px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-accent/20 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          Купить тариф
+                        </button>
+                        <button
+                          type="button"
+                          onClick={actions.openTopUpForm}
+                          className="rounded-2xl border border-border bg-white px-4 py-3 text-sm font-semibold text-ink"
+                        >
+                          Пополните баланс
+                        </button>
+                      </div>
+                    </div>
+                  )
+                })}
+            </div>
+          </div>
+        ) : null}
+      </PageCard>
 
       <PageCard
         eyebrow="Водитель"

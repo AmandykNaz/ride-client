@@ -31,9 +31,10 @@ export default function DriverProfilePage() {
     activeRecheck,
     driverApplicationDraft,
     driverWallet,
+    driverAccess,
   } = useAppState()
   const actions = useAppActions()
-  const accessState = getDriverAccessState(driverVerificationStatus, driverWallet)
+  const accessState = getDriverAccessState(driverVerificationStatus, driverWallet, driverAccess)
   const verificationStatusLabel = getDriverVerificationStatusLabel(driverVerificationStatus)
   const walletShortfall = getDriverWalletShortfall(driverWallet)
   const applicationReason = getDriverApplicationReason(driverApplicationDraft, driverVerificationStatus)
@@ -41,6 +42,7 @@ export default function DriverProfilePage() {
     driverProfile?.blockedReason?.trim() ||
     driverWallet?.blockedReason?.trim() ||
     'Профиль водителя заблокирован модератором.'
+  const subscriptionLocked = driverAccess?.monetizationMode === 'ACCESS_SUBSCRIPTION' && !driverAccess?.hasAccess
   const resolvedCity =
     driverProfile?.city?.trim() ||
     driverProfile?.cityName?.trim() ||
@@ -253,18 +255,29 @@ export default function DriverProfilePage() {
           title="Профиль водителя"
           description={
             accessState === 'APPROVED_LOW_BALANCE'
-              ? `Профиль одобрен, но для выхода на линию нужно пополнить баланс минимум до ${formatKzt(driverWallet.minBalance)}.`
+              ? subscriptionLocked
+                ? 'Чтобы отправлять предложения пассажирам, купите тариф.'
+                : `Профиль одобрен, но для выхода на линию нужно пополнить баланс минимум до ${formatKzt(driverWallet.minBalance)}.`
               : 'Полные данные подтверждённого водителя.'
           }
         >
           {accessState === 'APPROVED_LOW_BALANCE' ? (
-            <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-              <p className="font-semibold">Профиль одобрен</p>
-              <p className="mt-1">
-                Пополните баланс минимум до {formatKzt(driverWallet.minBalance)}.
-              </p>
-              <p className="mt-1">Не хватает {formatKzt(walletShortfall)}.</p>
-            </div>
+            subscriptionLocked ? (
+              <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+                <p className="font-semibold">Нет активного доступа</p>
+                <p className="mt-1">
+                  {driverAccess?.reason?.trim() || 'Купите тариф, чтобы продолжить работу.'}
+                </p>
+              </div>
+            ) : (
+              <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+                <p className="font-semibold">Профиль одобрен</p>
+                <p className="mt-1">
+                  Пополните баланс минимум до {formatKzt(driverWallet.minBalance)}.
+                </p>
+                <p className="mt-1">Не хватает {formatKzt(walletShortfall)}.</p>
+              </div>
+            )
           ) : null}
 
           <div className="rounded-2xl bg-surface-soft p-4">

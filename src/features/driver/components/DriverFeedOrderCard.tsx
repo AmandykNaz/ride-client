@@ -1,4 +1,4 @@
-import { Clock3, MessageSquareQuote, Phone, Route, Sparkles, Truck } from 'lucide-react'
+import { Clock3, MessageSquareQuote, Route, Sparkles, Truck } from 'lucide-react'
 
 import { cn } from '../../../lib/cn'
 import { formatKzt, formatParcelSizeLabel, formatRoute } from '../../../lib/format'
@@ -74,12 +74,6 @@ export function DriverFeedOrderCard({
             <span className="text-muted">Клиент</span>
             <span className="font-semibold">{order.clientName}</span>
           </div>
-          {order.clientPhone ? (
-            <div className="flex items-center justify-between gap-3">
-              <span className="text-muted">Телефон</span>
-              <span className="font-semibold">{maskPhone(order.clientPhone)}</span>
-            </div>
-          ) : null}
         </div>
 
         {order.category === 'ride' ? (
@@ -91,9 +85,10 @@ export function DriverFeedOrderCard({
               </span>
             </div>
             <div className="flex items-center gap-2 text-muted">
-              <Phone className="h-4 w-4" />
+              <Route className="h-4 w-4" />
               <span>{order.passengersCount ?? 1} пассажир(а)</span>
             </div>
+            <p className="text-sm text-muted">Контакт скрыт до выбора водителя.</p>
             {order.comment ? <p className="text-sm text-muted">{order.comment}</p> : null}
           </div>
         ) : (

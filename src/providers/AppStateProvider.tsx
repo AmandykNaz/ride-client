@@ -44,9 +44,12 @@ import {
 import {
     createDriverTopUpRequest as createDriverTopUpRequestApi,
     cancelTopUpRequest as cancelTopUpRequestApi,
+    getDriverAccess,
     getDriverTopUpRequests,
+    getDriverTariffs,
     getDriverWallet,
     getDriverWalletTransactions,
+    purchaseDriverTariff as purchaseDriverTariffApi,
     uploadTopUpReceipt as uploadTopUpReceiptApi,
 } from '../features/driver/api/driver-wallet.api'
 import {
@@ -64,9 +67,11 @@ import {
   getRideOrderReviews,
 } from '../features/ride-safety/api/ride-reviews.api'
 import type {
+  DriverAccessSummary as DriverAccessSummaryApi,
   DriverTopUpRequest as DriverTopUpRequestApi,
   DriverWallet as DriverWalletApi,
   DriverWalletTransaction as DriverWalletTransactionApi,
+  DriverTariff as DriverTariffApi,
 } from '../features/driver/api/driver-wallet.types'
 import type { RideComplaint as RideComplaintApi } from '../features/ride-safety/api/ride-complaints.types'
 import type { RideReview as RideReviewApi, RideReviewSummary as RideReviewSummaryApi } from '../features/ride-safety/api/ride-reviews.types'
@@ -131,6 +136,8 @@ type AppState = {
   driverRegistrationStep: DriverApplicationStep
   activeRecheck: RideDriverRecheck | null
   driverWallet: DriverWallet
+  driverAccess: DriverAccessSummaryApi | null
+  driverTariffs: DriverTariffApi[]
   driverWalletTransactions: WalletTransaction[]
   driverTopUpRequests: TopUpRequest[]
   passengerReviewSummary: RideReviewSummaryApi | null
@@ -152,11 +159,13 @@ type AppState = {
   isDriverFeedLoading: boolean
   isDriverActionLoading: boolean
   isDriverWalletLoading: boolean
+  isDriverAccessLoading: boolean
   isDriverTopUpSubmitting: boolean
   isRideReviewSubmitting: boolean
   isRideComplaintSubmitting: boolean
   driverFlowError: string | null
   driverWalletError: string | null
+  driverAccessError: string | null
   rideSafetyError: string | null
   isTopUpFormOpen: boolean
   isRideComplaintOpen: boolean
@@ -224,6 +233,7 @@ type AppContextValue = {
     editDriverApplicationAfterChanges: () => void
     toggleDriverOnlineStatus: () => void
     setDriverOnline: (online: boolean) => void
+    refreshDriverAccess: () => Promise<void>
     refreshDriverSnapshot: () => Promise<void>
     refreshDriverWallet: () => Promise<void>
     refreshDriverWalletTransactions: () => Promise<void>
@@ -272,6 +282,7 @@ type AppContextValue = {
     sendDriverCounterOffer: (price: number, comment: string) => void
     acceptDemoCounterOfferAsPassenger: (orderId?: string) => void
     acceptDriverFeedOrder: (orderId: string) => void
+    purchaseDriverTariff: (tariffId: string | number) => Promise<void>
     driverOrderNextStatus: () => void
     cancelDriverActiveOrder: () => void
     clearCompletedDriverOrder: () => void
@@ -336,10 +347,12 @@ type AppAction =
   | { type: 'setDriverActionLoading'; loading: boolean }
   | { type: 'setDriverFlowError'; error: string | null }
   | { type: 'setDriverWalletLoading'; loading: boolean }
+  | { type: 'setDriverAccessLoading'; loading: boolean }
   | { type: 'setDriverTopUpSubmitting'; loading: boolean }
   | { type: 'setRideReviewSubmitting'; loading: boolean }
   | { type: 'setRideComplaintSubmitting'; loading: boolean }
   | { type: 'setDriverWalletError'; error: string | null }
+  | { type: 'setDriverAccessError'; error: string | null }
   | { type: 'setRideSafetyError'; error: string | null }
   | {
       type: 'setDriverWalletSnapshot'
@@ -380,6 +393,8 @@ type AppAction =
   | { type: 'setDriverCounterOffers'; offers: DriverCounterOffer[] }
   | { type: 'setDriverOrders'; orders: DriverActiveOrder[] }
   | { type: 'setDriverActiveOrder'; order: DriverActiveOrder | null; currentScreen?: AppScreen }
+  | { type: 'setDriverAccess'; driverAccess: DriverAccessSummaryApi | null }
+  | { type: 'setDriverTariffs'; driverTariffs: DriverTariffApi[] }
   | {
       type: 'setPassengerRideSnapshot'
       passengerRideRequests: PassengerRideRequest[]
@@ -824,11 +839,37 @@ function formatTopUpMethod(method: TopUpRequestMethod) {
   return 'Other'
 }
 
-function canAccessDriverOrders(state: Pick<AppState, 'driverVerificationStatus' | 'driverWallet'>) {
-  return (
-    state.driverVerificationStatus === 'APPROVED' &&
-    canDriverGoOnline(state.driverWallet)
-  )
+function canAccessDriverOrders(
+  state: Pick<AppState, 'driverVerificationStatus' | 'driverWallet' | 'driverAccess'>,
+) {
+  if (state.driverVerificationStatus !== 'APPROVED') return false
+
+  const monetizationMode = state.driverAccess?.monetizationMode ?? 'ORDER_COMMISSION'
+  if (monetizationMode === 'ACCESS_SUBSCRIPTION') {
+    return Boolean(state.driverAccess?.hasAccess)
+  }
+
+  if (monetizationMode === 'HYBRID') {
+    return Boolean(state.driverAccess?.hasAccess) || canDriverGoOnline(state.driverWallet)
+  }
+
+  return canDriverGoOnline(state.driverWallet)
+}
+
+function getDriverAccessGateMessage(
+  state: Pick<AppState, 'driverWallet' | 'driverAccess'>,
+) {
+  const monetizationMode = state.driverAccess?.monetizationMode ?? 'ORDER_COMMISSION'
+
+  if (monetizationMode === 'ACCESS_SUBSCRIPTION' && !state.driverAccess?.hasAccess) {
+    return state.driverAccess?.reason?.trim() || 'Доступ к заявкам закрыт. Купите тариф, чтобы продолжить работу.'
+  }
+
+  if (monetizationMode === 'HYBRID' && state.driverAccess && !state.driverAccess.hasAccess) {
+    return state.driverAccess.reason?.trim() || 'Доступ к заявкам закрыт. Купите тариф, чтобы продолжить работу.'
+  }
+
+  return `Пополните баланс минимум до ${formatKzt(state.driverWallet.minBalance)} чтобы выйти на линию.`
 }
 
 function createTopUpRequestFromForm(
@@ -1019,6 +1060,8 @@ function appReducer(state: AppState, action: AppAction): AppState {
       return { ...state, driverFlowError: action.error }
     case 'setDriverWalletLoading':
       return { ...state, isDriverWalletLoading: action.loading }
+    case 'setDriverAccessLoading':
+      return { ...state, isDriverAccessLoading: action.loading }
     case 'setDriverTopUpSubmitting':
       return { ...state, isDriverTopUpSubmitting: action.loading }
     case 'setRideReviewSubmitting':
@@ -1027,6 +1070,8 @@ function appReducer(state: AppState, action: AppAction): AppState {
       return { ...state, isRideComplaintSubmitting: action.loading }
     case 'setDriverWalletError':
       return { ...state, driverWalletError: action.error }
+    case 'setDriverAccessError':
+      return { ...state, driverAccessError: action.error }
     case 'setRideSafetyError':
       return { ...state, rideSafetyError: action.error }
     case 'setPassengerReviewSummary':
@@ -1102,6 +1147,17 @@ function appReducer(state: AppState, action: AppAction): AppState {
         driverProfile: syncDriverProfileWithWallet(state.driverProfile, action.driverWallet),
         driverFlowError: null,
         driverWalletError: null,
+      }
+    case 'setDriverAccess':
+      return {
+        ...state,
+        driverAccess: action.driverAccess,
+        driverAccessError: null,
+      }
+    case 'setDriverTariffs':
+      return {
+        ...state,
+        driverTariffs: action.driverTariffs,
       }
     case 'setDriverWallet':
       return {
@@ -2042,6 +2098,8 @@ function createInitialState(): AppState {
   driverRegistrationStep: 1,
   activeRecheck: null,
   driverWallet: defaultDriverWallet(),
+  driverAccess: null,
+  driverTariffs: [],
   driverWalletTransactions: [],
   driverTopUpRequests: [],
   driverFeedOrders: [],
@@ -2055,11 +2113,13 @@ function createInitialState(): AppState {
   isDriverFeedLoading: false,
   isDriverActionLoading: false,
   isDriverWalletLoading: false,
+  isDriverAccessLoading: false,
   isDriverTopUpSubmitting: false,
   isRideReviewSubmitting: false,
   isRideComplaintSubmitting: false,
   driverFlowError: null,
   driverWalletError: null,
+  driverAccessError: null,
   rideSafetyError: null,
   isTopUpFormOpen: false,
   isRideComplaintOpen: false,
@@ -2665,6 +2725,41 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     }
   }, [dispatch, state.driverProfile?.isOnline, state.driverVerificationStatus])
 
+  const refreshDriverAccess = useCallback(async (force = false) => {
+    if (!force && state.driverVerificationStatus !== 'APPROVED') {
+      return
+    }
+
+    dispatch({ type: 'setDriverAccessLoading', loading: true })
+    dispatch({ type: 'setDriverAccessError', error: null })
+
+    try {
+      const [access, tariffs] = await Promise.all([
+        getDriverAccess(),
+        getDriverTariffs(),
+      ])
+
+      dispatch({ type: 'setDriverAccess', driverAccess: access })
+      dispatch({
+        type: 'setDriverTariffs',
+        driverTariffs: tariffs.length > 0 ? tariffs : access.availableTariffs,
+      })
+    } catch (error) {
+      if (error instanceof BackendAuthError) {
+        clearRideAccessToken()
+        dispatch({ type: 'resetPassengerSession' })
+        return
+      }
+
+      dispatch({
+        type: 'setDriverAccessError',
+        error: error instanceof Error ? error.message : 'Не удалось загрузить доступ и тарифы.',
+      })
+    } finally {
+      dispatch({ type: 'setDriverAccessLoading', loading: false })
+    }
+  }, [dispatch, state.driverVerificationStatus])
+
   const refreshDriverWallet = useCallback(async (force = false) => {
     if (!force && state.driverVerificationStatus !== 'APPROVED') {
       return
@@ -2679,6 +2774,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         type: 'setDriverWallet',
         driverWallet: mapWalletResponseToState(wallet),
       })
+      await refreshDriverAccess(true)
     } catch (error) {
       if (error instanceof BackendAuthError) {
         clearRideAccessToken()
@@ -2693,7 +2789,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     } finally {
       dispatch({ type: 'setDriverWalletLoading', loading: false })
     }
-  }, [dispatch, state.driverVerificationStatus])
+  }, [dispatch, refreshDriverAccess, state.driverVerificationStatus])
 
   const refreshDriverWalletTransactions = useCallback(async (force = false) => {
     if (!force && state.driverVerificationStatus !== 'APPROVED') {
@@ -3293,10 +3389,10 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     }
 
     const nextOnline = !state.driverProfile.isOnline
-    if (nextOnline && !canDriverGoOnline(state.driverWallet)) {
+    if (nextOnline && !canAccessDriverOrders(state)) {
       dispatch({
         type: 'setDriverFlowError',
-        error: `Пополните баланс минимум до ${formatKzt(state.driverWallet.minBalance)} чтобы выйти на линию.`,
+        error: getDriverAccessGateMessage(state),
       })
       return
     }
@@ -3348,10 +3444,10 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       return
     }
     if (state.driverProfile.isOnline === online) return
-    if (online && !canDriverGoOnline(state.driverWallet)) {
+    if (online && !canAccessDriverOrders(state)) {
       dispatch({
         type: 'setDriverFlowError',
-        error: `Пополните баланс минимум до ${formatKzt(state.driverWallet.minBalance)} чтобы выйти на линию.`,
+        error: getDriverAccessGateMessage(state),
       })
       return
     }
@@ -3513,6 +3609,40 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  const purchaseDriverTariffAction = async (tariffId: string | number) => {
+    if (state.driverVerificationStatus !== 'APPROVED') {
+      throw new Error('Профиль водителя недоступен.')
+    }
+
+    dispatch({ type: 'setDriverAccessLoading', loading: true })
+    dispatch({ type: 'setDriverAccessError', error: null })
+
+    try {
+      const purchased = await purchaseDriverTariffApi(tariffId)
+      dispatch({ type: 'setDriverAccess', driverAccess: purchased })
+      dispatch({
+        type: 'setDriverTariffs',
+        driverTariffs: purchased.availableTariffs,
+      })
+
+      await refreshDriverWallet(true)
+    } catch (error) {
+      if (error instanceof BackendAuthError) {
+        clearRideAccessToken()
+        dispatch({ type: 'resetPassengerSession' })
+        throw error
+      }
+
+      dispatch({
+        type: 'setDriverAccessError',
+        error: error instanceof Error ? error.message : 'Не удалось купить тариф.',
+      })
+      throw error
+    } finally {
+      dispatch({ type: 'setDriverAccessLoading', loading: false })
+    }
+  }
+
   const createOrderReviewAction = async (
     orderId: string,
     payload: CreateRideReviewPayload,
@@ -3620,6 +3750,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         currentScreen: 'driverOrders',
       })
 
+      void refreshDriverAccess(true)
       void refreshDriverFeed(true)
       void refreshDriverOffers(true)
       void refreshDriverOrders(true)
@@ -3627,6 +3758,16 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       if (error instanceof BackendAuthError) {
         clearRideAccessToken()
         dispatch({ type: 'resetPassengerSession' })
+        return
+      }
+
+      if (error instanceof BackendApiError && error.status === 403) {
+        dispatch({
+          type: 'setDriverFlowError',
+          error: error.message || 'Для отправки предложения купите тариф.',
+        })
+        void refreshDriverAccess(true)
+        dispatch({ type: 'setScreen', screen: 'driverBalance' })
         return
       }
 
@@ -3665,12 +3806,23 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         ],
       })
 
+      void refreshDriverAccess(true)
       void refreshDriverFeed(true)
       void refreshDriverOffers(true)
     } catch (error) {
       if (error instanceof BackendAuthError) {
         clearRideAccessToken()
         dispatch({ type: 'resetPassengerSession' })
+        return
+      }
+
+      if (error instanceof BackendApiError && error.status === 403) {
+        dispatch({
+          type: 'setDriverFlowError',
+          error: error.message || 'Для отправки предложения купите тариф.',
+        })
+        void refreshDriverAccess(true)
+        dispatch({ type: 'setScreen', screen: 'driverBalance' })
         return
       }
 
@@ -3744,6 +3896,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       })
       dispatch({ type: 'setDriverActiveOrder', order: updated })
 
+      void refreshDriverAccess(true)
       void refreshDriverOrders(true)
     } catch (error) {
       if (error instanceof BackendAuthError) {
@@ -3892,6 +4045,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       setPendingPassengerFlow: (flow) =>
         dispatch({ type: 'setPendingPassengerFlow', flow }),
       refreshPassengerRideSnapshot: () => refreshPassengerRideSnapshot(),
+      refreshDriverAccess: () => refreshDriverAccess(),
       refreshDriverSnapshot: () => refreshDriverSnapshot(),
       refreshDriverWallet: () => refreshDriverWallet(),
       refreshDriverWalletTransactions: () => refreshDriverWalletTransactions(),
@@ -3995,6 +4149,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       acceptDemoCounterOfferAsPassenger: (orderId) =>
         dispatch({ type: 'acceptDemoCounterOfferAsPassenger', orderId }),
       acceptDriverFeedOrder: (orderId) => acceptDriverFeedOrderAction(orderId),
+      purchaseDriverTariff: (tariffId) => purchaseDriverTariffAction(tariffId),
       withdrawDriverOffer: (offerId) => withdrawDriverOfferAction(offerId),
       driverOrderNextStatus: () => driverOrderNextStatusAction(),
       cancelDriverActiveOrder: () => cancelDriverActiveOrderAction(),

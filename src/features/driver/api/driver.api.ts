@@ -783,6 +783,9 @@ function mapDriverOrder(raw: unknown): DriverActiveOrder {
     0,
   )
   const status = mapActiveDriverStatus(record.status)
+  const contactUnlocked = asBoolean(record.contactUnlocked ?? record.contact_unlocked ?? record.contactUnlockedAt ?? record.contact_unlocked_at)
+  const canCallPassenger = asBoolean(record.canCallPassenger ?? record.can_call_passenger ?? contactUnlocked)
+  const canCallDriver = asBoolean(record.canCallDriver ?? record.can_call_driver, false)
 
   return {
     id: asString(record.id, `driver-order-${Date.now()}`),
@@ -794,6 +797,9 @@ function mapDriverOrder(raw: unknown): DriverActiveOrder {
     price: routePrice,
     agreedPrice: routePrice,
     commissionAmount: asNumber(record.commissionAmount ?? record.commission_amount, 0) || undefined,
+    contactUnlocked,
+    canCallPassenger,
+    canCallDriver,
     clientName: asString(
       record.clientName ??
         record.client_name ??

@@ -71,7 +71,9 @@ export default function PassengerActiveRidePage() {
               Водитель
             </p>
             <p className="mt-2 text-sm font-semibold text-ink">{activeRide.driverName}</p>
-            <p className="mt-1 text-sm text-muted">{activeRide.driverPhone}</p>
+            <p className="mt-1 text-sm text-muted">
+              {activeRide.canCallDriver ? activeRide.driverPhone : 'Контакт скрыт до подтверждения заказа'}
+            </p>
           </div>
           <div className="rounded-2xl bg-surface-soft p-4">
             <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">
@@ -109,14 +111,20 @@ export default function PassengerActiveRidePage() {
         </p>
       </div>
 
-      <div className="grid grid-cols-3 gap-2">
-        <a
-          href={`tel:${activeRide.driverPhone.replace(/\s+/g, '')}`}
-          className="flex items-center justify-center gap-2 rounded-2xl border border-border bg-white px-3 py-3 text-sm font-semibold text-ink"
-        >
-          <Phone className="h-4 w-4 text-accent" />
-          Позвонить
-        </a>
+      <div className="grid gap-2 sm:grid-cols-3">
+        {activeRide.canCallDriver ? (
+          <a
+            href={`tel:${activeRide.driverPhone.replace(/\s+/g, '')}`}
+            className="flex items-center justify-center gap-2 rounded-2xl border border-border bg-white px-3 py-3 text-sm font-semibold text-ink"
+          >
+            <Phone className="h-4 w-4 text-accent" />
+            Позвонить водителю
+          </a>
+        ) : (
+          <div className="flex items-center justify-center rounded-2xl border border-border bg-white px-3 py-3 text-sm font-semibold text-muted">
+            Контакт откроется после подтверждения заказа
+          </div>
+        )}
         <button
           type="button"
           onClick={actions.cancelActiveRide}

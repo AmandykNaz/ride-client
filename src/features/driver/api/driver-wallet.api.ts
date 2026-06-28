@@ -1,8 +1,11 @@
 import { backendGet, backendPost } from '../../../shared/api/backend'
 import type {
+  DriverAccessPass,
+  DriverAccessSummary,
   CreateDriverTopUpRequestPayload,
   DriverTopUpRequest,
   DriverTopUpRequestsResponse,
+  DriverTariff,
   DriverWallet,
   DriverWalletTransaction,
   DriverWalletTransactionsResponse,
@@ -231,11 +234,114 @@ function buildQuery(params?: Record<string, string | number | boolean | undefine
   return query ? `?${query}` : ''
 }
 
+function mapDriverTariff(raw: unknown): DriverTariff {
+  const record = isRecord(raw) ? raw : {}
+
+  return {
+    id: asIdString(record.id ?? record.tariffId ?? record.tariff_id, `tariff-${Date.now()}`),
+    code: asString(record.code ?? record.tariffCode ?? record.tariff_code),
+    name: asString(record.name ?? record.title, 'Тариф'),
+    description: asNullableString(record.description ?? record.details ?? record.summary) ?? undefined,
+    price: asNumber(record.price ?? record.amount ?? record.cost, 0),
+    durationMinutes: asNumber(record.durationMinutes ?? record.duration_minutes ?? record.duration, 0),
+    includedContactUnlocks: asNumber(
+      record.includedContactUnlocks ?? record.included_contact_unlocks ?? record.contactUnlocks ?? record.contact_unlocks,
+      0,
+    ),
+    isTrial: Boolean(record.isTrial ?? record.is_trial),
+    isActive: typeof record.isActive === 'boolean' ? record.isActive : typeof record.is_active === 'boolean' ? record.is_active : true,
+    sortOrder: asNumber(record.sortOrder ?? record.sort_order, 0),
+    raw,
+  }
+}
+
+function mapDriverAccessPass(raw: unknown): DriverAccessPass {
+  const record = isRecord(raw) ? raw : {}
+
+  return {
+    id: asIdString(record.id ?? record.passId ?? record.pass_id, `pass-${Date.now()}`),
+    type: asString(record.type ?? record.passType ?? record.pass_type, 'PAID') as DriverAccessPass['type'],
+    status: asString(record.status, 'ACTIVE') as DriverAccessPass['status'],
+    tariffName: asNullableString(record.tariffName ?? record.tariff_name) ?? undefined,
+    startsAt: asNullableString(record.startsAt ?? record.starts_at),
+    expiresAt: asNullableString(record.expiresAt ?? record.expires_at),
+    includedContactUnlocks: asNumber(
+      record.includedContactUnlocks ?? record.included_contact_unlocks ?? record.contactUnlocks ?? record.contact_unlocks,
+      0,
+    ),
+    usedContactUnlocks: asNumber(record.usedContactUnlocks ?? record.used_contact_unlocks ?? record.usedContacts ?? record.used_contacts, 0),
+    remainingContactUnlocks: asNumber(
+      record.remainingContactUnlocks ?? record.remaining_contact_unlocks ?? record.remainingContacts ?? record.remaining_contacts,
+      0,
+    ),
+    raw,
+  }
+}
+
+function mapDriverAccessSummary(raw: unknown): DriverAccessSummary {
+  const record = isRecord(raw) ? raw : {}
+  const availableTariffs = Array.isArray(record.availableTariffs)
+    ? record.availableTariffs
+    : Array.isArray(record.available_tariffs)
+      ? record.available_tariffs
+      : []
+
+  return {
+    hasAccess: typeof record.hasAccess === 'boolean'
+      ? record.hasAccess
+      : typeof record.has_access === 'boolean'
+        ? record.has_access
+        : false,
+    monetizationMode: asString(
+      record.monetizationMode ?? record.monetization_mode,
+      'ORDER_COMMISSION',
+    ) as DriverAccessSummary['monetizationMode'],
+    remainingContactUnlocks: asNumber(
+      record.remainingContactUnlocks ?? record.remaining_contact_unlocks,
+      0,
+    ),
+    reason: asNullableString(record.reason ?? record.message ?? record.detail) ?? undefined,
+    activePass: firstRecord(record.activePass, record.active_pass) ? mapDriverAccessPass(firstRecord(record.activePass, record.active_pass)) : null,
+    availableTariffs: availableTariffs.map(mapDriverTariff),
+    raw,
+  }
+}
+
 function normalizeTopUpPayload(payload: CreateDriverTopUpRequestPayload) {
   return {
     ...payload,
     method: normalizeTopUpMethod(payload.method),
   }
+}
+
+export async function getDriverTariffs() {
+  const response = await backendGet<unknown>('/ride/driver/tariffs')
+  const list = Array.isArray(response)
+    ? response
+    : isRecord(response)
+      ? [response].flatMap((value) => {
+          const nested =
+            value.tariffs ??
+            value.availableTariffs ??
+            value.available_tariffs ??
+            value.items ??
+            value.results ??
+            value.data
+          return Array.isArray(nested) ? nested : []
+        })
+      : []
+
+  return list.map(mapDriverTariff)
+}
+
+export async function getDriverAccess() {
+  return mapDriverAccessSummary(await backendGet<unknown>('/ride/driver/access'))
+}
+
+export async function purchaseDriverTariff(tariffId: string | number) {
+  return mapDriverAccessSummary(
+    await backendPost<unknown>(`/ride/driver/tariffs/${String(tariffId)}/purchase`),
+  )
 }
 
 export async function getDriverWallet(): Promise<DriverWallet> {

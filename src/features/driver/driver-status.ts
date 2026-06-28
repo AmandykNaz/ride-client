@@ -1,4 +1,5 @@
 import type { DriverApplicationDraft, DriverVerificationStatus, DriverWallet } from '../../types/domain'
+import type { DriverAccessSummary } from './api/driver-wallet.types'
 
 export type DriverAccessState =
   | 'NOT_STARTED'
@@ -39,6 +40,7 @@ export function getDriverWalletShortfall(wallet: Pick<DriverWallet, 'balance' | 
 export function getDriverAccessState(
   verificationStatus: DriverVerificationStatus,
   wallet: Pick<DriverWallet, 'balance' | 'minBalance' | 'isBlocked' | 'canGoOnline'> | null | undefined,
+  access?: Pick<DriverAccessSummary, 'hasAccess' | 'monetizationMode'> | null | undefined,
 ): DriverAccessState {
   if (verificationStatus === 'NOT_STARTED') return 'NOT_STARTED'
   if (verificationStatus === 'DRAFT') return 'DRAFT'
@@ -46,6 +48,14 @@ export function getDriverAccessState(
   if (verificationStatus === 'NEEDS_CHANGES') return 'NEEDS_CHANGES'
   if (verificationStatus === 'BLOCKED') return 'BLOCKED'
   if (verificationStatus === 'SUSPENDED') return 'SUSPENDED'
+
+  if (access?.monetizationMode === 'ACCESS_SUBSCRIPTION') {
+    return access.hasAccess ? 'APPROVED_READY' : 'APPROVED_LOW_BALANCE'
+  }
+
+  if (access?.monetizationMode === 'HYBRID') {
+    return access.hasAccess || canDriverGoOnline(wallet) ? 'APPROVED_READY' : 'APPROVED_LOW_BALANCE'
+  }
 
   return canDriverGoOnline(wallet) ? 'APPROVED_READY' : 'APPROVED_LOW_BALANCE'
 }
