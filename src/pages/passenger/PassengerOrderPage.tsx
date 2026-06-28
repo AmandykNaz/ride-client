@@ -1,9 +1,11 @@
-import { Minus, Plus } from 'lucide-react'
+import { ChevronRight } from 'lucide-react'
+import { useState } from 'react'
 
 import { useAppActions, useAppState } from '../../providers/AppStateProvider'
-import { formatKzt, formatRoute } from '../../lib/format'
+import { formatKzt, formatRideRequestWhenLabel, formatRoute } from '../../lib/format'
 import { cn } from '../../lib/cn'
 import { getPassengerCityDisplay, isPassengerProfileComplete } from '../../features/passenger/api/passenger.api'
+import { OverlaySheet } from '../../shared/ui/OverlaySheet'
 
 const typeOptions = [
   { value: 'shared' as const, label: 'С попутчиками' },
@@ -31,26 +33,35 @@ function buildLocationLabel(cityName?: string, address?: string) {
   return `${trimmedCity}, ${trimmedAddress}`
 }
 
-function LocationButton({
+function RowButton({
   label,
   value,
   onClick,
+  placeholder = 'Выбрать',
 }: {
   label: string
-  value: string
+  value?: string | null
   onClick: () => void
+  placeholder?: string
 }) {
+  const hasValue = Boolean(value?.trim())
+
   return (
     <button
       type="button"
       onClick={onClick}
       aria-haspopup="dialog"
-      className="block w-full rounded-2xl border border-border bg-surface-soft px-4 py-3 text-left outline-none transition hover:border-accent/30 focus:border-accent"
+      className="flex w-full items-center justify-between gap-3 rounded-[24px] border border-border bg-surface-soft px-4 py-4 text-left transition hover:border-accent/30 focus:border-accent"
     >
-      <span className="mb-1 block text-sm font-medium text-ink">{label}</span>
-      <span className={cn('block text-sm', value === 'Выберите город' ? 'text-muted' : 'text-ink')}>
-        {value}
+      <span className="min-w-0">
+        <span className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.24em] text-muted">
+          {label}
+        </span>
+        <span className={cn('block text-base font-semibold leading-6', hasValue ? 'text-ink' : 'text-muted')}>
+          {hasValue ? value : placeholder}
+        </span>
       </span>
+      <ChevronRight className="h-4 w-4 shrink-0 text-muted" />
     </button>
   )
 }
@@ -91,6 +102,7 @@ export default function PassengerOrderPage() {
   const isSubmitting = isRideRequestLoading
   const banner = getPassengerStatusMessage(passengerStatus, passengerProfile)
   const cityDisplay = getPassengerCityDisplay(passengerProfile)
+  const [openSheet, setOpenSheet] = useState<'schedule' | 'price' | 'comment' | null>(null)
 
   const handleSearch = () => {
     if (passengerStatus === 'GUEST') {
@@ -106,6 +118,11 @@ export default function PassengerOrderPage() {
   const hasPrice = rideDraft.price.trim().length > 0 && Number.isFinite(currentPrice) && currentPrice > 0
   const originLabel = buildLocationLabel(rideDraft.originCityName, rideDraft.originAddress)
   const destinationLabel = buildLocationLabel(rideDraft.destinationCityName, rideDraft.destinationAddress)
+  const timingLabel = formatRideRequestWhenLabel(rideDraft)
+
+  const openScheduleSheet = () => setOpenSheet('schedule')
+  const openPriceSheet = () => setOpenSheet('price')
+  const openCommentSheet = () => setOpenSheet('comment')
 
   return (
     <div className="space-y-4">
@@ -195,142 +212,92 @@ export default function PassengerOrderPage() {
       ) : null}
 
       <div className="rounded-[30px] border border-border bg-white p-4 shadow-sm">
-        <div className="grid gap-3">
-          <LocationButton
-            label="Откуда"
-            value={originLabel}
-            onClick={() => actions.openRideLocationSheet('origin')}
-          />
-          <LocationButton
-            label="Куда"
-            value={destinationLabel}
-            onClick={() => actions.openRideLocationSheet('destination')}
-          />
-          <div className="grid grid-cols-2 gap-3">
-            <label className="block">
-              <span className="mb-1 block text-sm font-medium text-ink">Дата</span>
-              <input
-                type="date"
-                value={rideDraft.date}
-                onChange={(event) => actions.updateRideDraft({ date: event.target.value })}
-                className="w-full rounded-2xl border border-border bg-surface-soft px-4 py-3 text-sm outline-none transition focus:border-accent"
-              />
-            </label>
-            <label className="block">
-              <span className="mb-1 block text-sm font-medium text-ink">Время</span>
-              <input
-                type="time"
-                value={rideDraft.time}
-                onChange={(event) => actions.updateRideDraft({ time: event.target.value })}
-                className="w-full rounded-2xl border border-border bg-surface-soft px-4 py-3 text-sm outline-none transition focus:border-accent"
-              />
-            </label>
-          </div>
-
+        <div className="mb-4 flex items-start justify-between gap-3">
           <div>
-            <p className="mb-2 text-sm font-medium text-ink">Тип поездки</p>
-            <div className="grid grid-cols-2 gap-2">
-              {typeOptions.map((option) => (
-                <button
-                  key={option.value}
-                  type="button"
-                  onClick={() => actions.updateRideDraft({ type: option.value })}
-                  className={cn(
-                    'rounded-2xl border px-3 py-3 text-sm font-semibold',
-                    rideDraft.type === option.value
-                      ? 'border-accent bg-accent/8 text-accent'
-                      : 'border-border bg-surface-soft text-ink',
-                  )}
-                >
-                  {option.label}
-                </button>
-              ))}
-            </div>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-muted">
+              Межгород
+            </p>
+            <h2 className="mt-1 text-[22px] font-semibold tracking-[-0.03em] text-ink">
+              Куда поедем?
+            </h2>
           </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <label className="block">
-              <span className="mb-1 block text-sm font-medium text-ink">Пассажиров</span>
-              <input
-                type="number"
-                min={1}
-                max={7}
-                value={rideDraft.passengersCount}
-                onChange={(event) =>
-                  actions.updateRideDraft({
-                    passengersCount: Number(event.target.value) || 1,
-                  })
-                }
-                className="w-full rounded-2xl border border-border bg-surface-soft px-4 py-3 text-sm outline-none transition focus:border-accent"
-              />
-            </label>
-            <label className="block">
-              <span className="mb-1 block text-sm font-medium text-ink">Цена</span>
-              <input
-                type="text"
-                inputMode="numeric"
-                placeholder="Введите цену"
-                value={rideDraft.price}
-                onChange={(event) =>
-                  actions.updateRideDraft({ price: normalizePriceInput(event.target.value) })
-                }
-                className="w-full rounded-2xl border border-border bg-surface-soft px-4 py-3 text-sm outline-none transition focus:border-accent"
-              />
-            </label>
+          <div className="rounded-full bg-accent/10 px-3 py-1 text-xs font-semibold text-accent">
+            AmanJol Ride
           </div>
+        </div>
 
-          <label className="block">
-            <span className="mb-1 block text-sm font-medium text-ink">Комментарий</span>
-            <textarea
-              value={rideDraft.comment}
-              onChange={(event) => actions.updateRideDraft({ comment: event.target.value })}
-              rows={3}
-              placeholder="Нужен багажник, детское кресло..."
-              className="w-full rounded-2xl border border-border bg-surface-soft px-4 py-3 text-sm outline-none transition focus:border-accent"
-            />
-          </label>
+        <div className="space-y-2">
+          <RowButton
+            label="Откуда"
+            value={originLabel === 'Выберите город' ? undefined : originLabel}
+            onClick={() => actions.openRideLocationSheet('origin')}
+            placeholder="Выберите город и адрес"
+          />
+          <RowButton
+            label="Куда"
+            value={destinationLabel === 'Выберите город' ? undefined : destinationLabel}
+            onClick={() => actions.openRideLocationSheet('destination')}
+            placeholder="Выберите город и адрес"
+          />
+          <RowButton
+            label="Дата и время"
+            value={timingLabel}
+            onClick={openScheduleSheet}
+            placeholder="Сегодня, как можно скорее"
+          />
+          <RowButton
+            label="Комментарий"
+            value={rideDraft.comment.trim() || undefined}
+            onClick={openCommentSheet}
+            placeholder="Добавьте комментарий"
+          />
+          <RowButton
+            label="Цена"
+            value={hasPrice ? formatKzt(currentPrice) : undefined}
+            onClick={openPriceSheet}
+            placeholder="Укажите цену"
+          />
+        </div>
 
-          <div className="grid grid-cols-[auto_1fr_auto] items-center gap-3">
+        <div className="mt-4">
+          <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.24em] text-muted">
+            Какая поездка вам нужна?
+          </p>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+            {typeOptions.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                onClick={() => actions.updateRideDraft({ type: option.value })}
+                className={cn(
+                  'rounded-[20px] border px-4 py-3 text-sm font-semibold transition',
+                  rideDraft.type === option.value
+                    ? 'border-accent bg-accent/8 text-accent'
+                    : 'border-border bg-surface-soft text-ink',
+                )}
+              >
+                {option.label}
+              </button>
+            ))}
             <button
               type="button"
-              onClick={() =>
-                actions.updateRideDraft({
-                  price: currentPrice > 500 ? String(currentPrice - 500) : '',
-                })
-              }
-              className="grid h-11 w-11 place-items-center rounded-2xl border border-border bg-white"
+              onClick={() => actions.setScreen('passengerParcels')}
+              className="rounded-[20px] border border-border bg-surface-soft px-4 py-3 text-sm font-semibold text-ink transition hover:border-accent/30"
             >
-              <Minus className="h-4 w-4 text-ink" />
-            </button>
-            <div className="rounded-2xl bg-surface-soft px-4 py-3 text-center">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">
-                Цена заявки
-              </p>
-              <p className="mt-1 text-base font-semibold text-ink">
-                {hasPrice ? formatKzt(currentPrice) : '—'}
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() =>
-                actions.updateRideDraft({
-                  price: String((Number.isFinite(currentPrice) ? currentPrice : 0) + 500),
-                })
-              }
-              className="grid h-11 w-11 place-items-center rounded-2xl border border-border bg-white"
-            >
-              <Plus className="h-4 w-4 text-ink" />
+              Отправить посылку
             </button>
           </div>
+        </div>
 
-          <div className="rounded-2xl bg-slate-50 px-4 py-3 text-sm text-muted">
-            Маршрут: {formatRoute(originLabel, destinationLabel)}
-          </div>
+        <div className="mt-4 rounded-[24px] border border-dashed border-border bg-slate-50 px-4 py-3 text-sm text-muted">
+          Маршрут: {formatRoute(originLabel, destinationLabel)}
+        </div>
 
+        <div className="sticky bottom-3 z-10 mt-4">
           <button
             type="button"
             onClick={handleSearch}
-            className="rounded-2xl bg-accent px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-accent/20"
+            className="w-full rounded-[22px] bg-accent px-4 py-4 text-base font-semibold text-white shadow-lg shadow-accent/20"
             disabled={
               passengerStatus === 'LIMITED' ||
               passengerStatus === 'BLOCKED' ||
@@ -341,6 +308,259 @@ export default function PassengerOrderPage() {
           </button>
         </div>
       </div>
+
+      {openSheet === 'schedule' ? (
+        <RideScheduleSheet
+          initialMode={rideDraft.timingMode}
+          initialDate={rideDraft.date}
+          initialTime={rideDraft.time}
+          onClose={() => setOpenSheet(null)}
+          onSave={(payload) => {
+            actions.updateRideDraft(payload)
+            setOpenSheet(null)
+          }}
+        />
+      ) : null}
+
+      {openSheet === 'price' ? (
+        <RidePriceSheet
+          initialPrice={rideDraft.price}
+          onClose={() => setOpenSheet(null)}
+          onSave={(price) => {
+            actions.updateRideDraft({ price })
+            setOpenSheet(null)
+          }}
+        />
+      ) : null}
+
+      {openSheet === 'comment' ? (
+        <RideCommentSheet
+          initialComment={rideDraft.comment}
+          onClose={() => setOpenSheet(null)}
+          onSave={(comment) => {
+            actions.updateRideDraft({ comment })
+            setOpenSheet(null)
+          }}
+        />
+      ) : null}
     </div>
+  )
+}
+
+function RideScheduleSheet({
+  initialMode,
+  initialDate,
+  initialTime,
+  onClose,
+  onSave,
+}: {
+  initialMode: 'immediate' | 'scheduled'
+  initialDate: string
+  initialTime: string
+  onClose: () => void
+  onSave: (payload: { timingMode: 'immediate' | 'scheduled'; date: string; time: string }) => void
+}) {
+  const [mode, setMode] = useState<'immediate' | 'scheduled'>(initialMode)
+  const [date, setDate] = useState(initialDate)
+  const [time, setTime] = useState(initialTime)
+  const [error, setError] = useState('')
+
+  const handleDone = () => {
+    if (mode === 'scheduled') {
+      if (!date || !time) {
+        setError('Для запланированной поездки выберите дату и время.')
+        return
+      }
+      onSave({ timingMode: 'scheduled', date, time })
+      return
+    }
+
+    onSave({ timingMode: 'immediate', date: '', time: '' })
+  }
+
+  const handleSkip = () => {
+    onSave({ timingMode: 'immediate', date: '', time: '' })
+  }
+
+  return (
+    <OverlaySheet open title="Дата и время" onClose={onClose} position="bottom">
+      <div className="space-y-4">
+        <div className="grid grid-cols-2 gap-2">
+          {[
+            { value: 'immediate' as const, label: 'Сейчас' },
+            { value: 'scheduled' as const, label: 'Запланировать' },
+          ].map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              onClick={() => {
+                setMode(option.value)
+                setError('')
+              }}
+              className={cn(
+                'rounded-[18px] border px-4 py-3 text-sm font-semibold transition',
+                mode === option.value
+                  ? 'border-accent bg-accent/8 text-accent'
+                  : 'border-border bg-surface-soft text-ink',
+              )}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="space-y-3">
+          <label className="block">
+            <span className="mb-1 block text-sm font-medium text-ink">Дата отправления</span>
+            <input
+              type="date"
+              value={date}
+              onChange={(event) => {
+                setDate(event.target.value)
+                setError('')
+              }}
+              className="w-full rounded-[18px] border border-border bg-white px-4 py-4 text-base outline-none transition focus:border-accent"
+            />
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-sm font-medium text-ink">Время отправления</span>
+            <input
+              type="time"
+              value={time}
+              onChange={(event) => {
+                setTime(event.target.value)
+                setError('')
+              }}
+              className="w-full rounded-[18px] border border-border bg-white px-4 py-4 text-base outline-none transition focus:border-accent"
+            />
+          </label>
+        </div>
+
+        {error ? (
+          <div className="rounded-[18px] border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {error}
+          </div>
+        ) : null}
+
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={handleSkip}
+            className="rounded-[18px] border border-border bg-white px-4 py-4 text-base font-semibold text-ink"
+          >
+            Пропустить
+          </button>
+          <button
+            type="button"
+            onClick={handleDone}
+            className="rounded-[18px] bg-accent px-4 py-4 text-base font-semibold text-white shadow-lg shadow-accent/20"
+          >
+            Готово
+          </button>
+        </div>
+      </div>
+    </OverlaySheet>
+  )
+}
+
+function RidePriceSheet({
+  initialPrice,
+  onClose,
+  onSave,
+}: {
+  initialPrice: string
+  onClose: () => void
+  onSave: (price: string) => void
+}) {
+  const [price, setPrice] = useState(initialPrice)
+  const [error, setError] = useState('')
+
+  const handleDone = () => {
+    const normalized = normalizePriceInput(price)
+    const numeric = Number(normalized)
+
+    if (!normalized || !Number.isFinite(numeric) || numeric <= 0) {
+      setError('Укажите цену больше нуля.')
+      return
+    }
+
+    onSave(normalized)
+  }
+
+  return (
+    <OverlaySheet open title="Предложите цену" onClose={onClose} position="bottom">
+      <div className="space-y-4">
+        <label className="block">
+          <span className="mb-1 block text-sm font-medium text-ink">Цена</span>
+          <div className="relative">
+            <input
+              type="text"
+              inputMode="numeric"
+              value={price}
+              onChange={(event) => {
+                setPrice(normalizePriceInput(event.target.value))
+                setError('')
+              }}
+              placeholder="9000"
+              className="w-full rounded-[22px] border border-border bg-white py-4 pl-4 pr-14 text-2xl font-semibold tracking-tight outline-none transition focus:border-accent"
+            />
+            <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-xl font-semibold text-muted">
+              ₸
+            </span>
+          </div>
+        </label>
+
+        {error ? (
+          <div className="rounded-[18px] border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {error}
+          </div>
+        ) : null}
+
+        <button
+          type="button"
+          onClick={handleDone}
+          className="w-full rounded-[18px] bg-accent px-4 py-4 text-base font-semibold text-white shadow-lg shadow-accent/20"
+        >
+          Готово
+        </button>
+      </div>
+    </OverlaySheet>
+  )
+}
+
+function RideCommentSheet({
+  initialComment,
+  onClose,
+  onSave,
+}: {
+  initialComment: string
+  onClose: () => void
+  onSave: (comment: string) => void
+}) {
+  const [comment, setComment] = useState(initialComment)
+
+  return (
+    <OverlaySheet open title="Комментарии" onClose={onClose} position="bottom">
+      <div className="space-y-4">
+        <label className="block">
+          <span className="mb-1 block text-sm font-medium text-ink">Комментарий</span>
+          <textarea
+            value={comment}
+            onChange={(event) => setComment(event.target.value)}
+            rows={6}
+            placeholder="Например: 2 человека с чемоданом"
+            className="w-full rounded-[22px] border border-border bg-white px-4 py-4 text-base outline-none transition focus:border-accent"
+          />
+        </label>
+
+        <button
+          type="button"
+          onClick={() => onSave(comment.trim())}
+          className="w-full rounded-[18px] bg-accent px-4 py-4 text-base font-semibold text-white shadow-lg shadow-accent/20"
+        >
+          Готово
+        </button>
+      </div>
+    </OverlaySheet>
   )
 }

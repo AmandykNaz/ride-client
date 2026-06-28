@@ -201,6 +201,9 @@ export function mapRideRequestToViewModel(raw: unknown): RideRequest {
   const createdAt = getFallbackDate(record.createdAt ?? record.created_at)
   const backendId = resolveRideRequestBackendId(isRecord(raw) ? raw : record)
   const localId = backendId ? undefined : `request-${Date.now()}`
+  const timingMode = asString(record.timingMode ?? record.timing_mode)
+  const scheduledDate = asString(record.scheduledDate ?? record.scheduled_date)
+  const scheduledTime = asString(record.scheduledTime ?? record.scheduled_time)
   const originCityName = asString(
     record.originCityName ?? record.origin_city_name ?? record.cityName ?? record.city_name,
   )
@@ -233,7 +236,13 @@ export function mapRideRequestToViewModel(raw: unknown): RideRequest {
     status: normalizeRideRequestStatus(record.status),
     serviceType: asString(record.serviceType ?? record.service_type, 'INTERCITY_RIDE'),
     rideType: asTripType(record.rideType ?? record.ride_type ?? record.type),
-    time: asString(record.time ?? record.requestTime ?? record.request_time, createdAt.slice(11, 16) || '08:00'),
+    timingMode: timingMode === 'scheduled' ? 'scheduled' : 'immediate',
+    scheduledDate: scheduledDate || undefined,
+    scheduledTime: scheduledTime || undefined,
+    time: asString(
+      record.time ?? scheduledTime ?? record.requestTime ?? record.request_time,
+      createdAt.slice(11, 16) || '08:00',
+    ),
     type: asTripType(record.type ?? record.rideType ?? record.ride_type) || 'shared',
     passengersCount: asNumber(record.passengersCount ?? record.passengers_count, 1),
     from,
@@ -246,7 +255,7 @@ export function mapRideRequestToViewModel(raw: unknown): RideRequest {
     destinationCityName,
     destinationRegionName: asString(record.destinationRegionName ?? record.destination_region_name) || undefined,
     destinationAddress: destinationAddress || undefined,
-    date: getFallbackDay(record.date ?? record.createdAt ?? record.created_at),
+    date: getFallbackDay(record.date ?? scheduledDate ?? record.createdAt ?? record.created_at),
     price: readRequestedPrice(record),
     originText: asString(
       record.originText ??

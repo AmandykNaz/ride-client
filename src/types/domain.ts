@@ -454,6 +454,7 @@ export type RideDraft = {
   destinationCityName?: string
   destinationRegionName?: string | null
   destinationAddress?: string
+  timingMode: 'immediate' | 'scheduled'
   date: string
   time: string
   type: TripType
@@ -522,6 +523,8 @@ export type RideRequest = RideDraft & {
   backendId?: string
   localId?: string
   status: RideRequestStatus
+  scheduledDate?: string
+  scheduledTime?: string
   selectedOfferId?: string
 }
 

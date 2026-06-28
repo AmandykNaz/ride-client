@@ -22,6 +22,9 @@ export type RideRequest = {
   status: RideRequestStatus
   serviceType: string
   rideType?: TripType | string
+  timingMode?: 'immediate' | 'scheduled'
+  scheduledDate?: string
+  scheduledTime?: string
   time: string
   type: TripType
   passengersCount: number

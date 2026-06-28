@@ -3,7 +3,13 @@ import { ChevronRight, MapPinned } from 'lucide-react'
 
 import { useAppActions, useAppState } from '../../providers/AppStateProvider'
 import { cn } from '../../lib/cn'
-import { formatKzt, formatRoute, formatRouteIfPresent, formatRideRequestStatusLabel } from '../../lib/format'
+import {
+  formatKzt,
+  formatRideRequestStatusLabel,
+  formatRideRequestWhenLabel,
+  formatRoute,
+  formatRouteIfPresent,
+} from '../../lib/format'
 import { OverlaySheet } from '../../shared/ui/OverlaySheet'
 
 function formatDateTime(value: string) {
@@ -72,7 +78,7 @@ export function PassengerHistoryTabs() {
           <div className="flex items-center justify-between gap-3">
             <div>
               <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">
-                Мои заявки
+                Поиск водителя
               </p>
               <p className="mt-1 text-sm font-semibold text-ink">
                 {passengerRideRequests.length} шт.
@@ -102,9 +108,11 @@ export function PassengerHistoryTabs() {
                     {formatRoute(request.from, request.to)}
                   </span>
                   <span className="mt-1 block text-xs text-muted">
-                    {formatRideRequestStatusLabel(request.status)} · {request.offersCount} предложений
+                    {formatRideRequestStatusLabel(request.status)} · Предложений: {request.offersCount}
                   </span>
-                  <span className="mt-1 block text-xs text-muted">{request.date}</span>
+                  <span className="mt-1 block text-xs text-muted">
+                    Когда: {formatRideRequestWhenLabel(request)}
+                  </span>
                 </span>
                 <ChevronRight className="mt-1 h-4 w-4 shrink-0 text-muted" />
               </button>
@@ -273,10 +281,10 @@ export function PassengerHistoryTabs() {
               </div>
               <div className="rounded-2xl bg-surface-soft p-4">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">
-                  Статус
+                  Когда
                 </p>
                 <p className="mt-2 text-sm font-semibold text-ink">
-                  {formatRideRequestStatusLabel(selectedRequest.status)}
+                  {formatRideRequestWhenLabel(selectedRequest)}
                 </p>
               </div>
               <div className="rounded-2xl bg-surface-soft p-4">
@@ -284,7 +292,15 @@ export function PassengerHistoryTabs() {
                   Предложения
                 </p>
                 <p className="mt-2 text-sm font-semibold text-ink">
-                  {selectedRequest.offersCount} предложений
+                  Предложений: {selectedRequest.offersCount}
+                </p>
+              </div>
+              <div className="rounded-2xl bg-surface-soft p-4">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">
+                  Статус
+                </p>
+                <p className="mt-2 text-sm font-semibold text-ink">
+                  {formatRideRequestStatusLabel(selectedRequest.status)}
                 </p>
               </div>
               <div className="rounded-2xl bg-surface-soft p-4">

@@ -500,6 +500,7 @@ function defaultRideDraft(): RideDraft {
     destinationCityName: '',
     destinationRegionName: '',
     destinationAddress: '',
+    timingMode: 'immediate',
     date: '',
     time: '',
     type: 'shared',
@@ -1018,6 +1019,51 @@ function buildRideRequestPayload(rideDraft: RideDraft): CreateRideRequestPayload
   }
 }
 
+type RideRequestClientMeta = Pick<PassengerRideRequest, 'timingMode' | 'scheduledDate' | 'scheduledTime'>
+
+function getRideRequestClientMeta(rideDraft: RideDraft): RideRequestClientMeta {
+  if (rideDraft.timingMode === 'scheduled') {
+    return {
+      timingMode: 'scheduled',
+      scheduledDate: rideDraft.date.trim() || undefined,
+      scheduledTime: rideDraft.time.trim() || undefined,
+    }
+  }
+
+  return { timingMode: 'immediate' }
+}
+
+function mergeRideRequestClientMeta(
+  request: PassengerRideRequest,
+  previous?: PassengerRideRequest | null,
+): PassengerRideRequest {
+  if (!previous) return request
+
+  return {
+    ...previous,
+    ...request,
+    timingMode: request.timingMode ?? previous.timingMode,
+    scheduledDate: request.scheduledDate ?? previous.scheduledDate,
+    scheduledTime: request.scheduledTime ?? previous.scheduledTime,
+  }
+}
+
+function mergeRideRequestCollections(
+  nextRequests: PassengerRideRequest[],
+  previousRequests: PassengerRideRequest[],
+) {
+  return nextRequests.map((request) => {
+    const previous = previousRequests.find(
+      (item) =>
+        item.id === request.id ||
+        (item.backendId && item.backendId === request.backendId) ||
+        (item.localId && item.localId === request.localId),
+    )
+
+    return mergeRideRequestClientMeta(request, previous)
+  })
+}
+
 function appReducer(state: AppState, action: AppAction): AppState {
   switch (action.type) {
     case 'openMenu':
@@ -1196,9 +1242,11 @@ function appReducer(state: AppState, action: AppAction): AppState {
     case 'setPassengerRideSnapshot':
       return {
         ...state,
-        passengerRideRequests: action.passengerRideRequests,
+        passengerRideRequests: mergeRideRequestCollections(action.passengerRideRequests, state.passengerRideRequests),
         passengerRideOrders: action.passengerRideOrders,
-        activeRideRequest: action.activeRideRequest,
+        activeRideRequest: action.activeRideRequest
+          ? mergeRideRequestClientMeta(action.activeRideRequest, state.activeRideRequest)
+          : action.activeRideRequest,
         driverOffers: action.driverOffers as DriverOffer[],
         activeRide: action.clearCurrentRide ? null : action.activeRide,
         activeRideEvents: action.activeRideEvents,
@@ -2039,6 +2087,7 @@ function appReducer(state: AppState, action: AppAction): AppState {
         destinationCityName: action.ride.to,
         destinationRegionName: '',
         destinationAddress: '',
+        timingMode: state.rideDraft.timingMode,
         date: state.rideDraft.date,
         time: state.rideDraft.time,
         type: 'shared',
@@ -2529,6 +2578,17 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       return
     }
 
+    if (
+      state.rideDraft.timingMode === 'scheduled' &&
+      (!state.rideDraft.date.trim() || !state.rideDraft.time.trim())
+    ) {
+      dispatch({
+        type: 'setRideFlowError',
+        error: 'Для запланированной поездки выберите дату и время.',
+      })
+      return
+    }
+
     const requestedPrice = Number(state.rideDraft.price)
     if (!Number.isFinite(requestedPrice) || requestedPrice <= 0) {
       dispatch({
@@ -2542,9 +2602,27 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     dispatch({ type: 'setRideFlowError', error: null })
 
     try {
-      await createRideRequest({
+      const createdRequest = await createRideRequest({
         ...buildRideRequestPayload(state.rideDraft),
         requestedPrice,
+      })
+      const createdRequestWithMeta = {
+        ...createdRequest,
+        ...getRideRequestClientMeta(state.rideDraft),
+      }
+
+      dispatch({
+        type: 'setPassengerRideSnapshot',
+        passengerRideRequests: [
+          createdRequestWithMeta,
+          ...state.passengerRideRequests.filter((item) => item.id !== createdRequestWithMeta.id),
+        ],
+        passengerRideOrders: state.passengerRideOrders,
+        activeRideRequest: createdRequestWithMeta,
+        driverOffers: [],
+        activeRide: state.activeRide,
+        activeRideEvents: state.activeRideEvents,
+        currentScreen: 'passengerOffers',
       })
       await refreshPassengerRideSnapshot()
     } catch (error) {

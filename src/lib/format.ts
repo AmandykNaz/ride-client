@@ -40,6 +40,29 @@ export function formatRouteIfPresent(from: string, to: string) {
   return `${fromLabel} → ${toLabel}`
 }
 
+function formatDateTimeParts(date: string, time: string) {
+  const normalizedDate = String(date ?? '').trim()
+  const normalizedTime = String(time ?? '').trim()
+
+  if (!normalizedDate && !normalizedTime) {
+    return '—'
+  }
+
+  if (!normalizedDate || !normalizedTime) {
+    return normalizedDate || normalizedTime
+  }
+
+  const combined = new Date(`${normalizedDate}T${normalizedTime}`)
+  if (Number.isNaN(combined.getTime())) {
+    return `${normalizedDate} ${normalizedTime}`.trim()
+  }
+
+  return new Intl.DateTimeFormat('ru-RU', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }).format(combined)
+}
+
 export const KZ_PLATE_REGION_CODES = [
   '01',
   '02',
@@ -200,6 +223,41 @@ export function formatRideOrderStatusLabel(status?: RideOrderStatus | string | n
     default:
       return 'Статус неизвестен'
   }
+}
+
+export function formatRideRequestWhenLabel(
+  request?:
+    | {
+        timingMode?: 'immediate' | 'scheduled'
+        date?: string
+        time?: string
+        scheduledDate?: string
+        scheduledTime?: string
+      }
+    | null,
+) {
+  if (!request) return 'Сегодня, как можно скорее'
+
+  const hasScheduledFields = Boolean(request.scheduledDate?.trim() || request.scheduledTime?.trim())
+
+  if (request.timingMode === 'scheduled' || (hasScheduledFields && request.timingMode !== 'immediate')) {
+    return (
+      formatDateTimeParts(
+        request.scheduledDate ?? request.date ?? '',
+        request.scheduledTime ?? request.time ?? '',
+      ) || 'Запланировано'
+    )
+  }
+
+  return 'Сегодня, как можно скорее'
+}
+
+export function formatCountdown(totalSeconds: number) {
+  const safeSeconds = Math.max(0, Math.floor(totalSeconds))
+  const minutes = Math.floor(safeSeconds / 60)
+  const seconds = safeSeconds % 60
+
+  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
 }
 
 export function formatTopUpMethodLabel(method?: TopUpRequestMethod | string | null) {
