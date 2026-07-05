@@ -1,7 +1,7 @@
 import { Clock3, MessageSquareQuote, Phone, Route, Sparkles, Truck } from 'lucide-react'
 
 import { cn } from '../../../lib/cn'
-import { formatKzt, formatParcelSizeLabel, formatRoute } from '../../../lib/format'
+import { formatKzt, formatParcelSizeLabel, formatRoute, formatShortDateTime, formatShortDateTimeParts } from '../../../lib/format'
 import type { DriverCallOutcome, DriverCounterOffer, DriverFeedOrder } from '../../../types/domain'
 
 function maskPhone(phone: string) {
@@ -42,19 +42,7 @@ function formatCallOutcomeLabel(outcome?: DriverCallOutcome) {
 }
 
 function formatCallOutcomeAt(value?: string) {
-  if (!value) return ''
-
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) {
-    return value
-  }
-
-  return date.toLocaleString('ru-RU', {
-    day: '2-digit',
-    month: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
+  return value ? formatShortDateTime(value) : ''
 }
 
 type DriverFeedOrderCardProps = {
@@ -113,7 +101,7 @@ export function DriverFeedOrderCard({
             {formatRoute(order.from, order.to)}
           </p>
           <p className="mt-1 text-sm text-muted">
-            {order.date} · {order.time}
+            {formatShortDateTimeParts(order.date, order.time)}
           </p>
         </div>
 
@@ -218,7 +206,7 @@ export function DriverFeedOrderCard({
                         disabled={isSavingCallOutcome}
                         className="rounded-2xl bg-accent px-4 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
                       >
-                        Договорились
+                        Подтвердить договорённость
                       </button>
                       <button
                         type="button"

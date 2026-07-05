@@ -2,7 +2,7 @@ import { useState } from 'react'
 
 import { Phone, ShieldAlert, XCircle } from 'lucide-react'
 
-import { formatKzt, formatRideOrderStatusLabel, formatRoute } from '../../lib/format'
+import { formatKzt, formatRideOrderStatusLabel, formatRoute, formatVehicleLabel } from '../../lib/format'
 import { useAppActions, useAppState } from '../../providers/AppStateProvider'
 import { PageCard } from '../../shared/ui/PageCard'
 
@@ -83,16 +83,8 @@ export default function PassengerActiveParcelPage() {
             <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">
               Авто
             </p>
-            <p className="mt-2 text-sm font-semibold text-ink">
-              {activeParcelOrder.carModel}
-            </p>
-            <p className="mt-1 text-sm text-muted">{activeParcelOrder.carColor}</p>
-          </div>
-          <div className="rounded-2xl bg-surface-soft p-4">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">
-              Госномер
-            </p>
-            <p className="mt-2 text-sm font-semibold text-ink">{activeParcelOrder.plate}</p>
+            <p className="mt-2 text-sm font-semibold text-ink">{formatVehicleLabel(activeParcelOrder)}</p>
+            {activeParcelOrder.carColor ? <p className="mt-1 text-sm text-muted">{activeParcelOrder.carColor}</p> : null}
           </div>
         </div>
       </PageCard>

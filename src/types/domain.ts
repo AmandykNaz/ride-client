@@ -516,6 +516,7 @@ export type DriverOffer = {
   backendId?: string
   status?: 'pending' | 'accepted' | 'rejected' | string
   driverName: string
+  driverAvatarUrl?: string
   rating: number
   tripsCount: number
   carModel: string
@@ -549,6 +550,7 @@ export type ActiveRide = {
   canCallPassenger?: boolean
   driverName: string
   driverPhone: string
+  driverAvatarUrl?: string
   driverRating: number
   carModel: string
   carColor: string

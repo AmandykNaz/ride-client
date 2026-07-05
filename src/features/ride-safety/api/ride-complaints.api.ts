@@ -1,4 +1,4 @@
-import { backendGet, backendPost } from '../../../shared/api/backend'
+import { BackendApiError, backendGet, backendPost } from '../../../shared/api/backend'
 import type {
   CreateRideComplaintPayload,
   CreateRideRequestComplaintPayload,
@@ -24,6 +24,33 @@ function requireNumericOrderId(context: string, value: string) {
   }
 
   return normalized
+}
+
+function requireNumericRequestId(context: string, value: string) {
+  const normalized = value.trim()
+  if (!/^\d+$/.test(normalized)) {
+    console.warn(`[ride] ${context}: numeric request id is required`, value)
+    return null
+  }
+
+  return normalized
+}
+
+function normalizeRideComplaintError(error: unknown) {
+  if (!(error instanceof BackendApiError)) {
+    return error
+  }
+
+  const message = error.message.trim()
+  if (message === 'Driver profile not found' || message === 'Passenger profile not found') {
+    return new Error('Не удалось определить профиль для жалобы. Обновите экран или войдите заново.')
+  }
+
+  if (message === 'Ride driver contact unlock not found for this request') {
+    return new Error('Не удалось определить открытый контакт по этой заявке.')
+  }
+
+  return error
 }
 
 function getList(value: unknown) {
@@ -108,19 +135,23 @@ async function createRideRequestComplaint(
   requestId: string,
   payload: CreateRideRequestComplaintPayload,
 ) {
-  const normalizedId = requireNumericOrderId('createRideRequestComplaint', requestId)
+  const normalizedId = requireNumericRequestId('createRideRequestComplaint', requestId)
   if (!normalizedId) {
     throw new Error('Не удалось определить numeric id заявки для жалобы.')
   }
 
   const message = typeof payload.message === 'string' ? payload.message.trim() : ''
   const contactUnlockId = typeof payload.contactUnlockId === 'string' ? payload.contactUnlockId.trim() : ''
-  const response = await backendPost<unknown>(`${endpoint}/${normalizedId}/complaints`, {
-    reasonCode: payload.reasonCode,
-    ...(message ? { message } : {}),
-    ...(contactUnlockId ? { contactUnlockId } : {}),
-  })
-  return mapComplaint(extractComplaintResponse(response))
+  try {
+    const response = await backendPost<unknown>(`${endpoint}/${normalizedId}/complaints`, {
+      reasonCode: payload.reasonCode,
+      ...(message ? { message } : {}),
+      ...(contactUnlockId ? { contactUnlockId } : {}),
+    })
+    return mapComplaint(extractComplaintResponse(response))
+  } catch (error) {
+    throw normalizeRideComplaintError(error)
+  }
 }
 
 export async function createPassengerRideRequestComplaint(requestId: string, payload: CreateRideRequestComplaintPayload) {

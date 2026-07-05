@@ -1,9 +1,10 @@
 import { useEffect, useRef } from 'react'
 import { Phone, ShieldAlert, XCircle } from 'lucide-react'
 
-import { formatKzt, formatRideOrderStatusLabel, formatRoute } from '../../lib/format'
+import { formatFullDateTime, formatKzt, formatRideOrderStatusLabel, formatRoute, formatVehicleParts } from '../../lib/format'
 import { useAppActions, useAppState } from '../../providers/AppStateProvider'
 import { PageCard } from '../../shared/ui/PageCard'
+import { DriverAvatar } from '../../shared/ui/DriverAvatar'
 
 export default function PassengerActiveRidePage() {
   const { activeRide, activeRideEvents, orderReviews, orderComplaints, rideFlowError, isRideActionLoading } = useAppState()
@@ -51,6 +52,7 @@ export default function PassengerActiveRidePage() {
   }
 
   const isCompleted = activeRide.status === 'COMPLETED'
+  const { vehicleName, plateNumber, colorName } = formatVehicleParts(activeRide)
 
   return (
     <div className="space-y-4">
@@ -70,10 +72,15 @@ export default function PassengerActiveRidePage() {
             <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">
               Водитель
             </p>
-            <p className="mt-2 text-sm font-semibold text-ink">{activeRide.driverName}</p>
-            <p className="mt-1 text-sm text-muted">
-              {activeRide.canCallDriver ? activeRide.driverPhone : 'Контакт скрыт до подтверждения заказа'}
-            </p>
+            <div className="mt-2 flex items-center gap-3">
+              <DriverAvatar name={activeRide.driverName} avatarUrl={activeRide.driverAvatarUrl} />
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-ink">{activeRide.driverName}</p>
+                <p className="mt-1 text-sm text-muted">
+                  {activeRide.canCallDriver ? activeRide.driverPhone : 'Контакт скрыт до подтверждения заказа'}
+                </p>
+              </div>
+            </div>
           </div>
           <div className="rounded-2xl bg-surface-soft p-4">
             <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">
@@ -87,14 +94,11 @@ export default function PassengerActiveRidePage() {
             <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">
               Авто
             </p>
-            <p className="mt-2 text-sm font-semibold text-ink">{activeRide.carModel}</p>
-            <p className="mt-1 text-sm text-muted">{activeRide.carColor}</p>
-          </div>
-          <div className="rounded-2xl bg-surface-soft p-4">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">
-              Госномер
-            </p>
-            <p className="mt-2 text-sm font-semibold text-ink">{activeRide.plate}</p>
+            <div className="mt-2 text-sm font-semibold text-ink">
+              <p>{vehicleName || plateNumber || 'Авто не указано'}</p>
+              {vehicleName && plateNumber ? <p className="mt-1">{plateNumber}</p> : null}
+            </div>
+            {colorName ? <p className="mt-1 text-sm text-muted">Цвет: {colorName}</p> : null}
           </div>
         </div>
       </PageCard>
@@ -171,7 +175,7 @@ export default function PassengerActiveRidePage() {
               <div key={event.id} className="rounded-2xl bg-surface-soft p-3">
                 <p className="text-sm font-semibold text-ink">{event.message}</p>
                 <p className="mt-1 text-xs text-muted">
-                  {event.status} · {event.createdAt.slice(0, 19).replace('T', ' ')}
+                  {formatRideOrderStatusLabel(event.status)} · {formatFullDateTime(event.createdAt)}
                 </p>
               </div>
             ))}
@@ -192,7 +196,7 @@ export default function PassengerActiveRidePage() {
                 <div key={review.id} className="rounded-2xl bg-surface-soft p-3">
                   <div className="flex items-center justify-between gap-3">
                     <p className="text-sm font-semibold text-ink">{review.rating} / 5</p>
-                    <p className="text-xs text-muted">{review.createdAt.slice(0, 10)}</p>
+                    <p className="text-xs text-muted">{formatFullDateTime(review.createdAt)}</p>
                   </div>
                   {review.comment ? <p className="mt-2 text-sm text-muted">{review.comment}</p> : null}
                 </div>

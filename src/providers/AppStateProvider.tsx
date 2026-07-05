@@ -153,6 +153,7 @@ type RideComplaintTarget =
   | {
       targetType: 'ORDER'
       orderId: string
+      reporterRole?: 'PASSENGER' | 'DRIVER'
       title?: string | null
       route?: string | null
     }
@@ -160,6 +161,7 @@ type RideComplaintTarget =
       targetType: 'REQUEST_CONTACT'
       requestId: string
       contactUnlockId?: string | null
+      reporterRole: 'PASSENGER' | 'DRIVER'
       title?: string | null
       route?: string | null
     }
@@ -227,6 +229,7 @@ type AppState = {
     orderId: string | null
     requestId: string | null
     contactUnlockId: string | null
+    reporterRole: 'PASSENGER' | 'DRIVER'
     title: string | null
     route: string | null
     category: string
@@ -891,6 +894,34 @@ function mapComplaintResponseToState(complaint: RideComplaintApi): RideComplaint
   }
 }
 
+function resolveRideComplaintErrorMessage(error: unknown) {
+  if (error instanceof BackendAuthError) {
+    return 'Войдите заново.'
+  }
+
+  if (error instanceof BackendApiError) {
+    const message = error.message.trim()
+
+    if (message === 'Driver profile not found' || message === 'Passenger profile not found') {
+      return 'Не удалось определить профиль для жалобы. Обновите экран или войдите заново.'
+    }
+
+    if (message === 'Ride driver contact unlock not found for this request') {
+      return 'Не удалось определить открытый контакт по этой заявке.'
+    }
+
+    if (message) {
+      return message
+    }
+  }
+
+  if (error instanceof Error && error.message.trim()) {
+    return error.message
+  }
+
+  return 'Не удалось отправить жалобу.'
+}
+
 function syncDriverProfileWithWallet(
   profile: DriverProfile | null,
   wallet: DriverWallet,
@@ -1469,6 +1500,7 @@ function appReducer(state: AppState, action: AppAction): AppState {
           orderId: action.target.targetType === 'ORDER' ? action.target.orderId : null,
           requestId: action.target.targetType === 'REQUEST_CONTACT' ? action.target.requestId : null,
           contactUnlockId: action.target.targetType === 'REQUEST_CONTACT' ? action.target.contactUnlockId ?? null : null,
+          reporterRole: action.target.reporterRole ?? (state.role === 'driver' ? 'DRIVER' : 'PASSENGER'),
           title: action.target.title?.trim() || null,
           route: action.target.route?.trim() || null,
           category: 'other',
@@ -1486,6 +1518,7 @@ function appReducer(state: AppState, action: AppAction): AppState {
           orderId: null,
           requestId: null,
           contactUnlockId: null,
+          reporterRole: state.role === 'driver' ? 'DRIVER' : 'PASSENGER',
           title: null,
           route: null,
           category: 'other',
@@ -2641,6 +2674,7 @@ function createInitialState(): AppState {
     orderId: null,
     requestId: null,
     contactUnlockId: null,
+    reporterRole: 'PASSENGER',
     title: null,
     route: null,
     category: 'other',
@@ -4679,8 +4713,9 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
           contactUnlockId: state.rideComplaintForm.contactUnlockId ?? undefined,
         } satisfies CreateRideRequestComplaintPayload
 
+        const reporterRole = state.rideComplaintForm.reporterRole
         complaint =
-          state.role === 'driver'
+          reporterRole === 'DRIVER'
             ? await createDriverRideRequestComplaintApi(requestId, payload)
             : await createPassengerRideRequestComplaintApi(requestId, payload)
       }
@@ -4698,7 +4733,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
       dispatch({
         type: 'setRideSafetyError',
-        error: error instanceof Error ? error.message : 'Не удалось отправить complaint.',
+        error: resolveRideComplaintErrorMessage(error),
       })
       throw error
     } finally {

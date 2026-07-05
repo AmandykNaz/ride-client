@@ -5,11 +5,15 @@ import {
   formatCountdown,
   formatKzt,
   formatRideRequestWhenLabel,
+  formatShortDateTime,
+  formatVehicleParts,
+  formatVehicleLabel,
 } from '../../lib/format'
 import { cn } from '../../lib/cn'
 import { useAppActions, useAppState } from '../../providers/AppStateProvider'
 import { PageCard } from '../../shared/ui/PageCard'
 import { OverlaySheet } from '../../shared/ui/OverlaySheet'
+import { DriverAvatar } from '../../shared/ui/DriverAvatar'
 import type { DriverCallOutcome } from '../../types/domain'
 
 function formatContactUnlockOutcomeLabel(outcome?: DriverCallOutcome) {
@@ -27,20 +31,51 @@ function formatContactUnlockOutcomeLabel(outcome?: DriverCallOutcome) {
   }
 }
 
-function formatContactUnlockDateTime(value?: string) {
-  if (!value) return ''
+function VehicleSummary({
+  vehicle,
+  fallback,
+}: {
+  vehicle?:
+    | {
+        vehicleName?: string | null
+        vehiclePlate?: string | null
+        vehiclePlateNumber?: string | null
+        vehicleColorName?: string | null
+        carModel?: string | null
+        carColor?: string | null
+        brand?: string | null
+        model?: string | null
+        color?: string | null
+        colorName?: string | null
+        plate?: string | null
+        plateNumber?: string | null
+      }
+    | null
+  fallback: string
+}) {
+  const { vehicleName, plateNumber, colorName } = formatVehicleParts(vehicle)
 
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) {
-    return value
+  if (vehicleName && plateNumber) {
+    return (
+      <>
+        <p>{vehicleName}</p>
+        <p>{plateNumber}</p>
+        {colorName ? <p>Цвет: {colorName}</p> : null}
+      </>
+    )
   }
 
-  return date.toLocaleString('ru-RU', {
-    day: '2-digit',
-    month: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
+  if (vehicleName || plateNumber || colorName) {
+    return (
+      <>
+        <p>{vehicleName || plateNumber || fallback}</p>
+        {vehicleName && plateNumber ? null : plateNumber && vehicleName !== plateNumber ? <p>{plateNumber}</p> : null}
+        {colorName ? <p>Цвет: {colorName}</p> : null}
+      </>
+    )
+  }
+
+  return <p>{fallback}</p>
 }
 
 const CANCEL_REASONS = [
@@ -274,9 +309,10 @@ export default function PassengerOffersPage() {
           </div>
 
           {contactUnlocks.map((unlock) => {
-            const vehicleLabel = [unlock.vehicleName, unlock.vehiclePlateNumber].filter(Boolean).join(' · ')
-            const openedAt = formatContactUnlockDateTime(unlock.openedAt)
-            const outcomeAt = formatContactUnlockDateTime(unlock.callOutcomeAt)
+            const vehicleLabel = formatVehicleLabel(unlock, '')
+            const { vehicleName, plateNumber, colorName } = formatVehicleParts(unlock)
+            const openedAt = formatShortDateTime(unlock.openedAt)
+            const outcomeAt = formatShortDateTime(unlock.callOutcomeAt)
 
             return (
               <article
@@ -284,11 +320,18 @@ export default function PassengerOffersPage() {
                 className="rounded-[24px] border border-border bg-white p-4 shadow-sm"
               >
                 <div className="flex items-start justify-between gap-3">
-                  <div>
+                  <div className="flex items-start gap-3">
+                    <DriverAvatar name={unlock.driverName} avatarUrl={unlock.driverAvatarUrl} className="h-11 w-11 rounded-2xl" />
+                    <div>
                     <p className="text-sm font-semibold text-ink">{unlock.driverName || 'Водитель'}</p>
                     {vehicleLabel ? (
-                      <p className="mt-1 text-xs text-muted">{vehicleLabel}</p>
+                      <div className="mt-1 text-xs text-muted">
+                        {vehicleName ? <p>{vehicleName}</p> : null}
+                        {plateNumber ? <p>{plateNumber}</p> : null}
+                        {colorName ? <p>Цвет: {colorName}</p> : null}
+                      </div>
                     ) : null}
+                    </div>
                   </div>
                   {openedAt ? (
                     <span className="text-[11px] font-semibold uppercase tracking-[0.2em] text-muted">
@@ -305,7 +348,11 @@ export default function PassengerOffersPage() {
                   {vehicleLabel ? (
                     <div className="flex items-center gap-2 text-muted">
                       <CarFront className="h-4 w-4" />
-                      <span>{vehicleLabel}</span>
+                      <div className="min-w-0">
+                        {vehicleName ? <p className="break-words">{vehicleName}</p> : null}
+                        {plateNumber ? <p className="break-words">{plateNumber}</p> : null}
+                        {colorName ? <p className="break-words">Цвет: {colorName}</p> : null}
+                      </div>
                     </div>
                   ) : null}
                 </div>
@@ -323,7 +370,7 @@ export default function PassengerOffersPage() {
                   disabled={isRideActionLoading || isClosingExternally}
                   className="mt-3 w-full rounded-2xl bg-accent px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-accent/20 disabled:opacity-60"
                 >
-                  {unlock.callOutcome === 'AGREED_OFFLINE' ? 'Договорились' : 'Закрыть с этим водителем'}
+                  {unlock.callOutcome === 'AGREED_OFFLINE' ? 'Закрыть заявку по договорённости' : 'Закрыть с этим водителем'}
                 </button>
 
                 {activeRideRequestBackendId ? (
@@ -334,6 +381,7 @@ export default function PassengerOffersPage() {
                         targetType: 'REQUEST_CONTACT',
                         requestId: activeRideRequestBackendId,
                         contactUnlockId: unlock.contactUnlockId,
+                        reporterRole: 'PASSENGER',
                         title: unlock.driverName || 'Водитель',
                         route: `${activeRideRequest.originText} → ${activeRideRequest.destinationText}`,
                       })
@@ -358,19 +406,31 @@ export default function PassengerOffersPage() {
           const isPendingOffer = offer.status === 'pending'
           const isRejectedOffer = offer.status === 'rejected'
           const isAcceptedOffer = offer.status === 'accepted'
+          const { vehicleName, plateNumber, colorName } = formatVehicleParts(offer)
 
           return (
             <article
               key={offer.id}
               className="rounded-[28px] border border-border bg-white p-4 shadow-sm"
             >
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-sm font-semibold text-ink">{offer.driverName}</p>
-                  <p className="mt-1 text-xs text-muted">
-                    {offer.carModel} · {offer.carColor} · {offer.plate}
-                  </p>
-                </div>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-start gap-3">
+                    <DriverAvatar name={offer.driverName} avatarUrl={offer.driverAvatarUrl} className="h-11 w-11 rounded-2xl" />
+                    <div>
+                    <p className="text-sm font-semibold text-ink">{offer.driverName}</p>
+                    <div className="mt-1 text-xs text-muted">
+                      {vehicleName && plateNumber ? (
+                        <>
+                          <p>{vehicleName}</p>
+                          <p>{plateNumber}</p>
+                          {colorName ? <p>Цвет: {colorName}</p> : null}
+                        </>
+                      ) : (
+                        <p>{formatVehicleLabel(offer, 'Авто не указано')}</p>
+                      )}
+                    </div>
+                    </div>
+                  </div>
                 <span className="rounded-full bg-accent/10 px-3 py-1 text-xs font-semibold text-accent">
                   {offer.rating}★ · {offer.tripsCount} поездок
                 </span>
@@ -508,9 +568,9 @@ export default function PassengerOffersPage() {
 
             <div className="rounded-2xl bg-surface-soft p-4 text-sm text-ink">
               <p className="font-semibold">{selectedContactUnlock.driverName || 'Водитель'}</p>
-              <p className="mt-1 text-muted">
-                {[selectedContactUnlock.vehicleName, selectedContactUnlock.vehiclePlateNumber].filter(Boolean).join(' · ') || 'Без данных об автомобиле'}
-              </p>
+              <div className="mt-1 text-muted">
+                <VehicleSummary vehicle={selectedContactUnlock} fallback="Без данных об автомобиле" />
+              </div>
               <p className="mt-1 text-muted">{selectedContactUnlock.driverPhone}</p>
             </div>
 

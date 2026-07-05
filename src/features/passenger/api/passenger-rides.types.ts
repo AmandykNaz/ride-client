@@ -30,8 +30,10 @@ export type RideRequest = {
     driverProfileId?: string
     driverName?: string
     driverPhone?: string
+    driverAvatarUrl?: string
     vehicleName?: string
     vehiclePlateNumber?: string
+    vehicleColorName?: string
   }
   serviceType: string
   rideType?: TripType | string
@@ -81,10 +83,12 @@ export type RideOffer = {
   status?: 'pending' | 'accepted' | 'rejected' | string
   currency?: string
   driverName: string
+  driverAvatarUrl?: string
   rating: number
   tripsCount: number
   carModel: string
   carColor: string
+  colorName?: string
   plate: string
   etaMinutes: number
   originalPrice: number
@@ -104,8 +108,10 @@ export type RidePassengerRequestContactUnlock = {
   driverProfileId?: string
   driverName: string
   driverPhone: string
+  driverAvatarUrl?: string
   vehicleName?: string
   vehiclePlateNumber?: string
+  vehicleColorName?: string
   openedAt: string
   callOutcome?: DriverCallOutcome
   callOutcomeAt?: string
@@ -132,8 +138,10 @@ export type CloseRideRequestExternallyResult = {
   driverProfileId?: string
   driverName?: string
   driverPhone?: string
+  driverAvatarUrl?: string
   vehicleName?: string
   vehiclePlateNumber?: string
+  vehicleColorName?: string
   note?: string
   raw: unknown
 }
@@ -192,6 +200,7 @@ export type RideOrder = {
   canCallDriver?: boolean
   driverName: string
   driverPhone: string
+  driverAvatarUrl?: string
   driverRating: number
   carModel: string
   carColor: string

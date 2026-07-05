@@ -1075,6 +1075,9 @@ function mapDriverRequestHistoryItem(raw: unknown): RideDriverRequestHistoryItem
     callOutcomeAt: asString(record.callOutcomeAt ?? record.call_outcome_at) || undefined,
     callOutcomeNote: asString(record.callOutcomeNote ?? record.call_outcome_note) || undefined,
     closedExternallyAt: asString(record.closedExternallyAt ?? record.closed_externally_at) || undefined,
+    vehicleName: asString(record.vehicleName ?? record.vehicle_name) || undefined,
+    vehiclePlateNumber: asString(record.vehiclePlateNumber ?? record.vehicle_plate_number) || undefined,
+    vehicleColorName: asString(record.vehicleColorName ?? record.vehicle_color_name ?? record.vehicleColor ?? record.vehicle_color) || undefined,
     raw,
   }
 }

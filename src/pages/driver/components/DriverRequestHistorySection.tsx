@@ -1,11 +1,17 @@
 import { ShieldAlert } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 
-import { formatKzt, formatRideRequestStatusLabel } from '../../../lib/format'
+import { formatKzt, formatRideRequestStatusLabel, formatShortDateTime, getVehicleDisplayParts } from '../../../lib/format'
 import { getDriverRequestHistory } from '../../../features/driver/api/driver.api'
 import type { RideDriverRequestHistoryItem } from '../../../features/driver/api/driver.types'
+import {
+  createDriverRideRequestReview,
+  getDriverMyRideRequestReview,
+} from '../../../features/ride-safety/api/ride-reviews.api'
+import type { RideReview } from '../../../features/ride-safety/api/ride-reviews.types'
 import { useAppActions } from '../../../providers/AppStateProvider'
 import { BackendApiError, BackendAuthError } from '../../../shared/api/backend'
+import { RideRequestReviewSheet } from '../../../features/ride-safety/components/RideRequestReviewSheet'
 
 type DriverRequestHistorySectionProps = {
   historyReloadKey?: number
@@ -27,6 +33,11 @@ export function DriverRequestHistorySection({
   const [historyStatus, setHistoryStatus] = useState<HistoryStatus>('loading')
   const [historyError, setHistoryError] = useState('')
   const [retryLoading, setRetryLoading] = useState(false)
+  const [reviewsByRequestId, setReviewsByRequestId] = useState<Record<string, RideReview | null>>({})
+  const [reviewSheetRequestId, setReviewSheetRequestId] = useState<string | null>(null)
+  const [reviewSubmitting, setReviewSubmitting] = useState(false)
+  const [reviewError, setReviewError] = useState<string | null>(null)
+  const [reviewSuccess, setReviewSuccess] = useState(false)
   const actions = useAppActions()
 
   useEffect(() => {
@@ -66,6 +77,82 @@ export function DriverRequestHistorySection({
       cancelled = true
     }
   }, [historyReloadKey, historySearch])
+
+  useEffect(() => {
+    const pendingItems = historyItems.filter((item) => reviewsByRequestId[item.requestId] === undefined)
+    if (pendingItems.length === 0) return
+
+    let cancelled = false
+
+    const load = async () => {
+      const entries = await Promise.all(
+        pendingItems.map(async (item) => {
+          try {
+            const result = await getDriverMyRideRequestReview(item.requestId)
+            return [item.requestId, result.review] as const
+          } catch {
+            return [item.requestId, null] as const
+          }
+        }),
+      )
+
+      if (!cancelled) {
+        setReviewsByRequestId((current) => {
+          const next = { ...current }
+          for (const [requestId, review] of entries) {
+            next[requestId] = review
+          }
+          return next
+        })
+      }
+    }
+
+    void load()
+
+    return () => {
+      cancelled = true
+    }
+  }, [historyItems, reviewsByRequestId])
+
+  const reviewSheetItem = historyItems.find((item) => item.requestId === reviewSheetRequestId) ?? null
+
+  const handleOpenReviewSheet = (requestId: string) => {
+    setReviewSheetRequestId(requestId)
+    setReviewError(null)
+    setReviewSuccess(false)
+  }
+
+  const handleCloseReviewSheet = () => {
+    setReviewSheetRequestId(null)
+    setReviewError(null)
+    setReviewSuccess(false)
+    setReviewSubmitting(false)
+  }
+
+  const handleSubmitReview = async ({ rating, comment }: { rating: number; comment?: string }) => {
+    if (!reviewSheetItem) return
+
+    setReviewSubmitting(true)
+    setReviewError(null)
+
+    try {
+      const created = await createDriverRideRequestReview(reviewSheetItem.requestId, {
+        rating,
+        comment,
+        contactUnlockId: reviewSheetItem.contactUnlockId,
+      })
+
+      setReviewsByRequestId((current) => ({
+        ...current,
+        [reviewSheetItem.requestId]: created,
+      }))
+      handleCloseReviewSheet()
+    } catch (error) {
+      setReviewError(resolveReviewErrorMessage(error))
+    } finally {
+      setReviewSubmitting(false)
+    }
+  }
 
   const handleRetry = async () => {
     if (!onRetry) return
@@ -157,6 +244,7 @@ export function DriverRequestHistorySection({
                 </div>
 
                 <div className="grid gap-3 sm:grid-cols-2">
+                  <HistoryField label="Авто" value={<VehicleHistoryValue vehicle={item} />} />
                   <HistoryField
                     label="Цена клиента"
                     value={typeof item.requestedPrice === 'number' ? formatKzt(item.requestedPrice) : 'Не указана'}
@@ -170,6 +258,7 @@ export function DriverRequestHistorySection({
                       targetType: 'REQUEST_CONTACT',
                       requestId: item.requestId,
                       contactUnlockId: item.contactUnlockId,
+                      reporterRole: 'DRIVER',
                       title: item.passengerName || 'Пассажир',
                       route: `${item.originText || 'Не указано'} → ${item.destinationText || 'Не указано'}`,
                     })
@@ -179,6 +268,20 @@ export function DriverRequestHistorySection({
                   <ShieldAlert className="h-4 w-4 text-accent" />
                   Пожаловаться
                 </button>
+
+                {reviewsByRequestId[item.requestId] ? (
+                  <div className="rounded-2xl bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-900">
+                    Ваша оценка: {reviewsByRequestId[item.requestId]?.rating ?? '—'}/5
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => handleOpenReviewSheet(item.requestId)}
+                    className="inline-flex items-center justify-center rounded-2xl bg-accent px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-accent/20"
+                  >
+                    Оценить пассажира
+                  </button>
+                )}
 
                 {item.callOutcomeNote ? (
                   <div className="rounded-2xl bg-surface-soft px-3 py-3">
@@ -191,8 +294,32 @@ export function DriverRequestHistorySection({
           ))}
         </div>
       )}
+
+      <RideRequestReviewSheet
+        key={reviewSheetItem?.requestId ?? 'closed'}
+        open={reviewSheetItem != null}
+        title="Оценить пассажира"
+        subjectName={reviewSheetItem?.passengerName ?? 'Пассажир'}
+        route={reviewSheetItem ? `${itemRoute(reviewSheetItem)}` : null}
+        priceLabel={
+          reviewSheetItem && typeof reviewSheetItem.requestedPrice === 'number'
+            ? formatKzt(reviewSheetItem.requestedPrice)
+            : null
+        }
+        submitLabel="Сохранить оценку"
+        submitting={reviewSubmitting}
+        error={reviewError}
+        success={reviewSuccess}
+        successMessage="Оценка сохранена."
+        onSubmit={handleSubmitReview}
+        onClose={handleCloseReviewSheet}
+      />
     </div>
   )
+}
+
+function itemRoute(item: RideDriverRequestHistoryItem) {
+  return `${item.originText || 'Не указано'} → ${item.destinationText || 'Не указано'}`
 }
 
 function getCallOutcomeLabel(outcome?: string | null) {
@@ -238,23 +365,70 @@ function resolveHistoryErrorMessage(error: unknown) {
   return 'Не удалось загрузить историю.'
 }
 
-function HistoryField({ label, value }: { label: string; value: string }) {
+function resolveReviewErrorMessage(error: unknown) {
+  if (error instanceof Error && error.message.trim()) {
+    return error.message
+  }
+
+  return 'Не удалось сохранить оценку.'
+}
+
+function VehicleHistoryValue({
+  vehicle,
+}: {
+  vehicle?:
+    | {
+        vehicleName?: string | null
+        vehiclePlate?: string | null
+        vehiclePlateNumber?: string | null
+        vehicleColorName?: string | null
+        carModel?: string | null
+        carColor?: string | null
+        brand?: string | null
+        model?: string | null
+        color?: string | null
+        colorName?: string | null
+        plate?: string | null
+        plateNumber?: string | null
+      }
+    | null
+}) {
+  const { vehicleName, plateNumber, colorName } = getVehicleDisplayParts(vehicle)
+
+  if (vehicleName && plateNumber) {
+    return (
+      <span className="block">
+        <span className="block">{vehicleName}</span>
+        <span className="mt-1 block">{plateNumber}</span>
+        {colorName ? <span className="mt-1 block">Цвет: {colorName}</span> : null}
+      </span>
+    )
+  }
+
+  if (vehicleName || plateNumber || colorName) {
+    return (
+      <span className="block">
+        <span className="block">{vehicleName || plateNumber || 'Авто не указано'}</span>
+        {vehicleName && plateNumber ? null : plateNumber && vehicleName !== plateNumber ? (
+          <span className="mt-1 block">{plateNumber}</span>
+        ) : null}
+        {colorName ? <span className="mt-1 block">Цвет: {colorName}</span> : null}
+      </span>
+    )
+  }
+
+  return <span>Авто не указано</span>
+}
+
+function HistoryField({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className="rounded-2xl bg-surface-soft px-3 py-3">
       <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted">{label}</p>
-      <p className="mt-1 break-words text-sm leading-6 text-ink">{value}</p>
+      <div className="mt-1 break-words text-sm leading-6 text-ink">{value}</div>
     </div>
   )
 }
 
 function formatHistoryDate(value?: string) {
-  if (!value) return 'Не указано'
-
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return 'Не указано'
-
-  return new Intl.DateTimeFormat('ru-RU', {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  }).format(date)
+  return formatShortDateTime(value)
 }

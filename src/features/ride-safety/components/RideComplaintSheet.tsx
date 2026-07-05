@@ -64,6 +64,30 @@ export function RideComplaintSheet() {
       title="Жалоба"
       onClose={actions.closeRideComplaintSheet}
       position="bottom"
+      footer={
+        <div className={cn('grid gap-2', isSubmitted ? 'grid-cols-1' : 'grid-cols-2')}>
+          <button
+            type="button"
+            onClick={actions.closeRideComplaintSheet}
+            className="rounded-2xl border border-border bg-white px-4 py-3 text-sm font-semibold text-ink"
+          >
+            {rideSafetyNotice ? 'Закрыть' : 'Отмена'}
+          </button>
+          {isSubmitted ? null : (
+            <button
+              type="button"
+              onClick={handleSubmit}
+              disabled={isRideComplaintSubmitting}
+              className={cn(
+                'rounded-2xl bg-accent px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-accent/20',
+                isRideComplaintSubmitting && 'cursor-not-allowed opacity-60',
+              )}
+            >
+              {isRideComplaintSubmitting ? 'Отправляем...' : 'Отправить жалобу'}
+            </button>
+          )}
+        </div>
+      }
     >
       <div className="space-y-4">
         <div className="rounded-2xl bg-surface-soft p-4">
@@ -129,29 +153,6 @@ export function RideComplaintSheet() {
             {localError}
           </div>
         ) : null}
-
-        <div className={cn('grid gap-2', isSubmitted ? 'grid-cols-1' : 'grid-cols-2')}>
-          <button
-            type="button"
-            onClick={actions.closeRideComplaintSheet}
-            className="rounded-2xl border border-border bg-white px-4 py-3 text-sm font-semibold text-ink"
-          >
-            {rideSafetyNotice ? 'Закрыть' : 'Отмена'}
-          </button>
-          {isSubmitted ? null : (
-            <button
-              type="button"
-              onClick={handleSubmit}
-              disabled={isRideComplaintSubmitting}
-              className={cn(
-                'rounded-2xl bg-accent px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-accent/20',
-                isRideComplaintSubmitting && 'cursor-not-allowed opacity-60',
-              )}
-            >
-              {isRideComplaintSubmitting ? 'Отправляем...' : 'Отправить жалобу'}
-            </button>
-          )}
-        </div>
       </div>
     </OverlaySheet>
   )

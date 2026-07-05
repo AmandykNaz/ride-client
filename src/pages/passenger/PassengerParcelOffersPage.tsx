@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Clock3, Package2, Sparkles } from 'lucide-react'
 
 import { cn } from '../../lib/cn'
-import { formatKzt, formatParcelSizeLabel, formatRoute } from '../../lib/format'
+import { formatKzt, formatParcelSizeLabel, formatRoute, formatVehicleLabel } from '../../lib/format'
 import { useAppActions, useAppState } from '../../providers/AppStateProvider'
 import { PageCard } from '../../shared/ui/PageCard'
 
@@ -126,7 +126,7 @@ export default function PassengerParcelOffersPage() {
               <div>
                 <p className="text-sm font-semibold text-ink">{offer.driverName}</p>
                 <p className="mt-1 text-xs text-muted">
-                  {offer.carModel} · {offer.carColor} · {offer.plate}
+                  {formatVehicleLabel(offer, 'Авто не указано')}
                 </p>
               </div>
               <span className="rounded-full bg-accent/10 px-3 py-1 text-xs font-semibold text-accent">

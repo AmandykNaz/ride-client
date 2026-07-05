@@ -357,6 +357,13 @@ export function mapRideRequestToViewModel(raw: unknown): RideRequest {
                 record.closedExternallyDriverPhone ??
                 record.closed_externally_driver_phone,
             ) || undefined,
+          driverAvatarUrl:
+            asString(
+              closedExternallySource?.driverAvatarUrl ??
+                closedExternallySource?.driver_avatar_url ??
+                record.closedExternallyDriverAvatarUrl ??
+                record.closed_externally_driver_avatar_url,
+            ) || undefined,
           vehicleName:
             asString(
               closedExternallySource?.vehicleName ??
@@ -368,6 +375,13 @@ export function mapRideRequestToViewModel(raw: unknown): RideRequest {
               closedExternallySource?.vehiclePlateNumber ??
                 record.closedExternallyVehiclePlateNumber ??
                 record.closed_externally_vehicle_plate_number,
+            ) || undefined,
+          vehicleColorName:
+            asString(
+              closedExternallySource?.vehicleColorName ??
+                closedExternallySource?.vehicle_color_name ??
+                record.closedExternallyVehicleColorName ??
+                record.closed_externally_vehicle_color_name,
             ) || undefined,
         }
       : undefined
@@ -455,6 +469,7 @@ export function mapRideOfferToViewModel(raw: unknown): RideOffer {
   const vehicle = isRecord(record.vehicle) ? record.vehicle : {}
   const driverVehicle = isRecord(driver.vehicle) ? driver.vehicle : {}
   const vehicleSource = vehicle.id ? vehicle : driverVehicle
+  const driverCustomer = isRecord(driver.customer) ? driver.customer : {}
   const backendId = readNumericId(record.id)
   const driverName = asString(
     record.driverName ??
@@ -477,6 +492,16 @@ export function mapRideOfferToViewModel(raw: unknown): RideOffer {
     status: normalizeOfferStatus(record.status),
     currency: asString(record.currency ?? record.requestCurrency ?? record.request_currency),
     driverName,
+    driverAvatarUrl: asString(
+      record.driverAvatarUrl ??
+        record.driver_avatar_url ??
+        driver.driverAvatarUrl ??
+        driver.driver_avatar_url ??
+        driver.avatarUrl ??
+        driver.avatar_url ??
+        driverCustomer.avatarUrl ??
+        driverCustomer.avatar_url,
+    ) || undefined,
     rating: asNumber(
       record.rating ??
         record.driverRating ??
@@ -493,6 +518,7 @@ export function mapRideOfferToViewModel(raw: unknown): RideOffer {
     carModel: asString(
       record.carModel ??
         record.car_model ??
+        vehicleSource.vehicleName ??
         vehicleSource.model ??
         vehicleSource.carModel ??
         driver.carModel ??
@@ -500,9 +526,24 @@ export function mapRideOfferToViewModel(raw: unknown): RideOffer {
       '',
     ),
     carColor: asString(
-      record.carColor ?? record.car_color ?? vehicleSource.color ?? driver.carColor ?? driver.car_color,
+      record.carColor ??
+        record.car_color ??
+        vehicleSource.colorName ??
+        vehicleSource.color_name ??
+        vehicleSource.color ??
+        driver.carColor ??
+        driver.car_color,
       '',
     ),
+    colorName: asString(
+      record.colorName ??
+        record.color_name ??
+        vehicleSource.colorName ??
+        vehicleSource.color_name ??
+        vehicleSource.color ??
+        driver.carColor ??
+        driver.car_color,
+    ) || undefined,
     plate: asString(
       record.plate ??
         record.carPlate ??
@@ -568,8 +609,10 @@ function mapPassengerRequestContactUnlock(raw: unknown): RidePassengerRequestCon
     driverProfileId: asIdString(record.driverProfileId ?? record.driver_profile_id) || undefined,
     driverName: asString(record.driverName ?? record.driver_name, 'Водитель'),
     driverPhone: asString(record.driverPhone ?? record.driver_phone),
+    driverAvatarUrl: asString(record.driverAvatarUrl ?? record.driver_avatar_url) || undefined,
     vehicleName: asString(record.vehicleName ?? record.vehicle_name) || undefined,
     vehiclePlateNumber: asString(record.vehiclePlateNumber ?? record.vehicle_plate_number) || undefined,
+    vehicleColorName: asString(record.vehicleColorName ?? record.vehicle_color_name) || undefined,
     openedAt: asString(record.openedAt ?? record.opened_at),
     callOutcome: normalizeDriverCallOutcome(record.callOutcome ?? record.call_outcome),
     callOutcomeAt: asString(record.callOutcomeAt ?? record.call_outcome_at) || undefined,
@@ -609,8 +652,10 @@ function mapCloseRideRequestExternallyResult(raw: unknown): CloseRideRequestExte
     driverProfileId: asIdString(record.driverProfileId ?? record.driver_profile_id) || undefined,
     driverName: asString(record.driverName ?? record.driver_name) || undefined,
     driverPhone: asString(record.driverPhone ?? record.driver_phone) || undefined,
+    driverAvatarUrl: asString(record.driverAvatarUrl ?? record.driver_avatar_url) || undefined,
     vehicleName: asString(record.vehicleName ?? record.vehicle_name) || undefined,
     vehiclePlateNumber: asString(record.vehiclePlateNumber ?? record.vehicle_plate_number) || undefined,
+    vehicleColorName: asString(record.vehicleColorName ?? record.vehicle_color_name) || undefined,
     note: asString(record.note) || undefined,
     raw,
   }
@@ -681,9 +726,20 @@ export function mapRideOrderToViewModel(raw: unknown): RideOrder {
       driver.mobile ??
       driverCustomer.phone,
   )
+  const driverAvatarUrl = asString(
+    record.driverAvatarUrl ??
+      record.driver_avatar_url ??
+      driver.avatarUrl ??
+      driver.avatar_url ??
+      driver.photoUrl ??
+      driver.photo_url ??
+      driverCustomer.avatarUrl ??
+      driverCustomer.avatar_url,
+  )
   const carModel = asString(
     record.carModel ??
       record.car_model ??
+      vehicle.vehicleName ??
       vehicle.model ??
       driver.carModel ??
       driver.car_model,
@@ -691,6 +747,8 @@ export function mapRideOrderToViewModel(raw: unknown): RideOrder {
   const carColor = asString(
     record.carColor ??
       record.car_color ??
+      vehicle.colorName ??
+      vehicle.color_name ??
       vehicle.color ??
       driver.carColor ??
       driver.car_color,
@@ -744,6 +802,7 @@ export function mapRideOrderToViewModel(raw: unknown): RideOrder {
     canCallDriver: Boolean(record.canCallDriver ?? record.can_call_driver ?? record.contactUnlocked ?? record.contact_unlocked),
     driverName,
     driverPhone,
+    driverAvatarUrl: driverAvatarUrl || undefined,
     driverRating: asNumber(record.driverRating ?? record.driver_rating ?? driver.rating ?? driver.ratingAvg, 5),
     carModel,
     carColor,
@@ -985,6 +1044,7 @@ export function mapRideOrderToActiveRideViewModel(order: RideOrder): ActiveRide 
     canCallPassenger: order.contactUnlocked ?? order.canCallDriver,
     driverName: order.driverName,
     driverPhone: order.driverPhone,
+    driverAvatarUrl: order.driverAvatarUrl,
     driverRating: order.driverRating,
     carModel: order.carModel,
     carColor: order.carColor,

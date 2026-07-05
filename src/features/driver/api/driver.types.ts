@@ -250,6 +250,9 @@ export type RideDriverRequestHistoryItem = {
   callOutcomeAt?: string
   callOutcomeNote?: string
   closedExternallyAt?: string
+  vehicleName?: string | null
+  vehiclePlateNumber?: string | null
+  vehicleColorName?: string | null
   raw?: unknown
 }
 

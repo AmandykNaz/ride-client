@@ -40,6 +40,67 @@ export function formatRouteIfPresent(from: string, to: string) {
   return `${fromLabel} → ${toLabel}`
 }
 
+export function formatVehicleLabel(
+  vehicle?: {
+    vehicleName?: string | null
+    vehiclePlate?: string | null
+    vehiclePlateNumber?: string | null
+    vehicleColorName?: string | null
+    carModel?: string | null
+    carColor?: string | null
+    brand?: string | null
+    model?: string | null
+    color?: string | null
+    colorName?: string | null
+    plate?: string | null
+    plateNumber?: string | null
+  } | null,
+  fallback = 'Авто не указано',
+) {
+  const { vehicleName, plateNumber } = formatVehicleParts(vehicle)
+  const parts = [vehicleName, plateNumber].filter(Boolean)
+
+  return parts.length > 0 ? parts.join(' · ') : fallback
+}
+
+export function formatVehicleParts(
+  vehicle?: {
+    vehicleName?: string | null
+    vehiclePlate?: string | null
+    vehiclePlateNumber?: string | null
+    vehicleColorName?: string | null
+    carModel?: string | null
+    carColor?: string | null
+    brand?: string | null
+    model?: string | null
+    color?: string | null
+    colorName?: string | null
+    plate?: string | null
+    plateNumber?: string | null
+  } | null,
+) {
+  const vehicleName =
+    String(vehicle?.vehicleName ?? '').trim() ||
+    String(vehicle?.carModel ?? '').trim() ||
+    [vehicle?.brand, vehicle?.model].filter(Boolean).join(' ').trim()
+  const plateNumber = formatKzPlateNumber(
+    vehicle?.vehiclePlateNumber ?? vehicle?.vehiclePlate ?? vehicle?.plateNumber ?? vehicle?.plate ?? null,
+  )
+  const colorName =
+    String(vehicle?.vehicleColorName ?? '').trim() ||
+    String(vehicle?.colorName ?? '').trim() ||
+    String(vehicle?.carColor ?? '').trim() ||
+    String(vehicle?.color ?? '').trim()
+
+  return {
+    vehicleName,
+    plateNumber,
+    colorName,
+  }
+}
+
+export const getVehicleDisplayParts = formatVehicleParts
+
 function formatDateTimeParts(date: string, time: string) {
   const normalizedDate = String(date ?? '').trim()
   const normalizedTime = String(time ?? '').trim()
@@ -61,6 +122,21 @@ function formatDateTimeParts(date: string, time: string) {
     dateStyle: 'medium',
     timeStyle: 'short',
   }).format(combined)
+}
+
+function formatDateTimeValue(
+  value: string,
+  options: Intl.DateTimeFormatOptions,
+) {
+  const normalized = String(value ?? '').trim()
+  if (!normalized) return ''
+
+  const date = new Date(normalized)
+  if (Number.isNaN(date.getTime())) {
+    return normalized
+  }
+
+  return new Intl.DateTimeFormat('ru-RU', options).format(date)
 }
 
 function isSameLocalDay(left: Date, right: Date) {
@@ -192,6 +268,9 @@ export function formatRideRequestStatusLabel(status?: RideRequestStatus | string
   const normalized = typeof status === 'string' ? status.trim().toUpperCase() : status
 
   switch (normalized) {
+    case 'ACTIVE':
+    case 'IN_PROGRESS':
+      return 'Активна'
     case 'SEARCHING':
       return 'Поиск водителя'
     case 'OFFERED':
@@ -204,8 +283,6 @@ export function formatRideRequestStatusLabel(status?: RideRequestStatus | string
       return 'Водитель в пути'
     case 'DRIVER_ARRIVED':
       return 'Водитель прибыл'
-    case 'IN_PROGRESS':
-      return 'В поездке'
     case 'COMPLETED':
       return 'Завершена'
     case 'CANCELLED':
@@ -243,15 +320,16 @@ export function formatPassengerRideRequestStatusLabel(request?: {
 }
 
 export function formatRideOrderStatusLabel(status?: RideOrderStatus | string | null) {
-  switch (status) {
+  switch (String(status ?? '').trim().toUpperCase()) {
+    case 'ACTIVE':
+    case 'IN_PROGRESS':
+      return 'Активна'
     case 'DRIVER_ASSIGNED':
       return 'Водитель назначен'
     case 'DRIVER_ON_WAY':
       return 'Водитель едет'
     case 'DRIVER_ARRIVED':
       return 'Водитель на месте'
-    case 'IN_PROGRESS':
-      return 'Поездка идёт'
     case 'COMPLETED':
       return 'Завершена'
     case 'CANCELLED':
@@ -261,6 +339,77 @@ export function formatRideOrderStatusLabel(status?: RideOrderStatus | string | n
     default:
       return 'Статус неизвестен'
   }
+}
+
+export function formatPassengerHistoryStatusLabel(status?: string | null) {
+  switch (String(status ?? '').trim().toUpperCase()) {
+    case 'COMPLETED':
+      return 'Завершена'
+    case 'CANCELLED':
+      return 'Отменена'
+    case 'CLOSED_EXTERNALLY':
+      return 'Закрыта по договорённости'
+    default:
+      return formatRideOrderStatusLabel(status)
+  }
+}
+
+export function formatShortDateTime(value?: string | null) {
+  if (!value) return 'Не указано'
+
+  return (
+    formatDateTimeValue(value, {
+      day: 'numeric',
+      month: 'short',
+      hour: '2-digit',
+      minute: '2-digit',
+    }) || 'Не указано'
+  )
+}
+
+export function formatShortDate(value?: string | null) {
+  if (!value) return 'Не указано'
+
+  return (
+    formatDateTimeValue(value, {
+      day: 'numeric',
+      month: 'short',
+    }) || 'Не указано'
+  )
+}
+
+export function formatFullDateTime(value?: string | null) {
+  if (!value) return 'Не указано'
+
+  return (
+    formatDateTimeValue(value, {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    }) || 'Не указано'
+  )
+}
+
+export function formatShortDateTimeParts(date?: string | null, time?: string | null) {
+  const normalizedDate = String(date ?? '').trim()
+  const normalizedTime = String(time ?? '').trim()
+
+  if (!normalizedDate && !normalizedTime) return 'Не указано'
+  if (!normalizedDate || !normalizedTime) return normalizedDate || normalizedTime
+
+  const combined = new Date(`${normalizedDate}T${normalizedTime}`)
+  if (Number.isNaN(combined.getTime())) {
+    return `${normalizedDate} ${normalizedTime}`.trim()
+  }
+
+  return new Intl.DateTimeFormat('ru-RU', {
+    day: 'numeric',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(combined)
 }
 
 export function formatRideRequestWhenLabel(
