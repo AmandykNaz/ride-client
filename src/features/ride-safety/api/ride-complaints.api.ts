@@ -1,6 +1,7 @@
 import { backendGet, backendPost } from '../../../shared/api/backend'
 import type {
   CreateRideComplaintPayload,
+  CreateRideRequestComplaintPayload,
   RideComplaint,
   RideComplaintsListResponse,
 } from './ride-complaints.types'
@@ -13,6 +14,16 @@ function isRecord(value: unknown): value is BackendRecord {
 
 function asString(value: unknown, fallback = '') {
   return typeof value === 'string' && value.trim() ? value : fallback
+}
+
+function requireNumericOrderId(context: string, value: string) {
+  const normalized = value.trim()
+  if (!/^\d+$/.test(normalized)) {
+    console.warn(`[ride] ${context}: numeric order id is required`, value)
+    return null
+  }
+
+  return normalized
 }
 
 function getList(value: unknown) {
@@ -45,8 +56,12 @@ function mapComplaint(raw: unknown): RideComplaint {
 
   return {
     id: asString(record.id, `complaint-${Date.now()}`),
+    targetType: asString(record.targetType ?? record.target_type, 'ORDER') as 'ORDER' | 'REQUEST_CONTACT',
     orderId: asString(record.orderId ?? record.order_id),
-    category: asString(record.category ?? record.type ?? record.reason, 'other'),
+    requestId: asString(record.requestId ?? record.request_id),
+    contactUnlockId: asString(record.contactUnlockId ?? record.contact_unlock_id),
+    complainantRole: asString(record.complainantRole ?? record.complainant_role) as 'PASSENGER' | 'DRIVER' | string,
+    category: asString(record.category ?? record.reasonCode ?? record.reason_code ?? record.type ?? record.reason, 'other'),
     message: asString(record.message ?? record.description ?? record.text),
     status: asString(record.status, 'PENDING_REVIEW'),
     createdAt: asString(record.createdAt ?? record.created_at, new Date().toISOString()),
@@ -75,12 +90,54 @@ function mapListResponse(raw: unknown): RideComplaintsListResponse {
 }
 
 export async function createRideOrderComplaint(orderId: string, payload: CreateRideComplaintPayload) {
-  const response = await backendPost<unknown>(`/ride/orders/${orderId}/complaints`, payload)
+  const normalizedId = requireNumericOrderId('createRideOrderComplaint', orderId)
+  if (!normalizedId) {
+    throw new Error('Не удалось определить numeric id заказа для жалобы.')
+  }
+
+  const description = typeof payload.message === 'string' ? payload.message.trim() : ''
+  const response = await backendPost<unknown>(`/ride/orders/${normalizedId}/complaints`, {
+    reason: payload.category,
+    ...(description ? { description } : {}),
+  })
   return mapComplaint(extractComplaintResponse(response))
 }
 
+async function createRideRequestComplaint(
+  endpoint: string,
+  requestId: string,
+  payload: CreateRideRequestComplaintPayload,
+) {
+  const normalizedId = requireNumericOrderId('createRideRequestComplaint', requestId)
+  if (!normalizedId) {
+    throw new Error('Не удалось определить numeric id заявки для жалобы.')
+  }
+
+  const message = typeof payload.message === 'string' ? payload.message.trim() : ''
+  const contactUnlockId = typeof payload.contactUnlockId === 'string' ? payload.contactUnlockId.trim() : ''
+  const response = await backendPost<unknown>(`${endpoint}/${normalizedId}/complaints`, {
+    reasonCode: payload.reasonCode,
+    ...(message ? { message } : {}),
+    ...(contactUnlockId ? { contactUnlockId } : {}),
+  })
+  return mapComplaint(extractComplaintResponse(response))
+}
+
+export async function createPassengerRideRequestComplaint(requestId: string, payload: CreateRideRequestComplaintPayload) {
+  return createRideRequestComplaint('/ride/passenger/requests', requestId, payload)
+}
+
+export async function createDriverRideRequestComplaint(requestId: string, payload: CreateRideRequestComplaintPayload) {
+  return createRideRequestComplaint('/ride/driver/requests', requestId, payload)
+}
+
 export async function getRideOrderComplaints(orderId: string) {
-  const response = await backendGet<unknown>(`/ride/orders/${orderId}/complaints`)
+  const normalizedId = requireNumericOrderId('getRideOrderComplaints', orderId)
+  if (!normalizedId) {
+    throw new Error('Не удалось определить numeric id заказа для жалоб.')
+  }
+
+  const response = await backendGet<unknown>(`/ride/orders/${normalizedId}/complaints`)
   return mapListResponse(response)
 }
 

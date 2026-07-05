@@ -79,6 +79,30 @@ function getErrorMessage(value: unknown, fallback: string): string {
   return fallback
 }
 
+function getErrorCode(value: unknown): string | undefined {
+  if (typeof value === 'string') return undefined
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const code = getErrorCode(item)
+      if (code) return code
+    }
+    return undefined
+  }
+
+  if (isPlainObject(value)) {
+    const directCode = value.code ?? value.errorCode ?? value.error_code
+    if (typeof directCode === 'string' && directCode.trim()) {
+      return directCode.trim()
+    }
+
+    const nested = value.error ?? value.detail ?? value.data ?? value.message ?? value.messages
+    return getErrorCode(nested)
+  }
+
+  return undefined
+}
+
 async function parseResponseBody(response: Response) {
   const text = await response.text()
 
@@ -203,8 +227,18 @@ async function requestBackend<T>(
       body: body === undefined ? undefined : isFormData ? body : JSON.stringify(body),
     })
   } catch (error) {
+    if (error instanceof TypeError) {
+      throw new BackendApiError(
+        'Backend недоступен. Проверьте VITE_API_BASE_URL и запущен ли backend.',
+        undefined,
+        'NETWORK_ERROR',
+      )
+    }
+
     throw new BackendApiError(
-      'Backend недоступен. Проверьте VITE_API_BASE_URL и запущен ли backend.',
+      error instanceof Error && error.message.trim()
+        ? error.message
+        : 'Не удалось выполнить запрос к backend.',
       undefined,
       error instanceof Error ? error.name : undefined,
     )
@@ -242,6 +276,7 @@ async function requestBackend<T>(
         `Request failed with status ${response.status}`,
       ),
       response.status,
+      getErrorCode(parsed),
     )
   }
 
@@ -255,7 +290,7 @@ async function requestBackend<T>(
         throw new BackendAuthError(message)
       }
 
-      throw new BackendApiError(message, response.status)
+      throw new BackendApiError(message, response.status, getErrorCode(parsed))
     }
 
     if (parsed.data === undefined) {

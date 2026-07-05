@@ -1,4 +1,5 @@
 import type {
+  DriverCallOutcome,
   DriverActiveOrder,
   DriverApplicationDraft,
   DriverApplicationHistoryItem,
@@ -203,6 +204,11 @@ export type RideDriverFeedRequest = {
   receiverPhone?: string
   clientName?: string
   clientPhone?: string
+  contactUnlocked?: boolean
+  canCallPassenger?: boolean
+  callOutcome?: DriverCallOutcome | string
+  callOutcomeAt?: string
+  callOutcomeNote?: string
   comment?: string
   createdAt?: string
   createdMinutesAgo?: number
@@ -226,6 +232,26 @@ export type RideDriverOffer = {
 export type RideDriverOrderStatus =
   | RideOrderStatus
   | string
+
+export type RideDriverRequestHistoryItem = {
+  requestId: string
+  orderId?: string
+  contactUnlockId?: string
+  status?: string
+  originText?: string
+  destinationText?: string
+  requestedPrice?: number
+  createdAt?: string
+  scheduledAt?: string
+  passengerName?: string | null
+  passengerPhone?: string | null
+  contactOpenedAt?: string
+  callOutcome?: DriverCallOutcome | string
+  callOutcomeAt?: string
+  callOutcomeNote?: string
+  closedExternallyAt?: string
+  raw?: unknown
+}
 
 export type RideDriverOrder = {
   id?: string
@@ -301,13 +327,35 @@ export type DriverApplicationPayload = {
 }
 
 export type DriverCounterOfferPayload = {
-  price: number
-  offeredPrice?: number
+  price: string
   comment?: string
 }
 
 export type DriverOrderStatusPayload = {
   status: RideDriverOrderStatus
+}
+
+export type RideRequestContactUnlockResult = {
+  requestId: string
+  passengerName: string | null
+  phone: string
+  remainingContacts: number
+  alreadyUnlocked: boolean
+}
+
+export type RideRequestContactOutcomePayload = {
+  outcome: DriverCallOutcome
+  note?: string
+}
+
+export type RideRequestContactOutcomeResult = {
+  requestId: string
+  contactUnlockId?: string
+  callOutcome: DriverCallOutcome
+  callOutcomeAt?: string
+  callOutcomeNote?: string
+  passengerName: string | null
+  phone: string
 }
 
 export type DriverMeViewModel = {

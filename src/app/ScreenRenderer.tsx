@@ -6,6 +6,7 @@ import DriverBalancePage from '../pages/driver/DriverBalancePage'
 import DriverDashboardPage from '../pages/driver/DriverDashboardPage'
 import DriverActiveOrderPage from '../pages/driver/DriverActiveOrderPage'
 import DriverFeedPage from '../pages/driver/DriverFeedPage'
+import DriverMyOrdersPage from '../pages/driver/DriverMyOrdersPage'
 import DriverRegistrationPage from '../pages/driver/DriverRegistrationPage'
 import DriverProfilePage from '../pages/driver/DriverProfilePage'
 import PassengerActiveRidePage from '../pages/passenger/PassengerActiveRidePage'
@@ -33,6 +34,7 @@ const screenComponents: Record<AppScreen, ComponentType> = {
   driverDashboard: DriverDashboardPage,
   driverFeed: DriverFeedPage,
   driverOrders: DriverActiveOrderPage,
+  driverMyOrders: DriverMyOrdersPage,
   driverBalance: DriverBalancePage,
   driverProfile: DriverProfilePage,
   safety: SafetyPage,

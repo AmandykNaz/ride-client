@@ -1,17 +1,23 @@
 import { backendGet, backendPatch, backendPost } from '../../../shared/api/backend'
 import type {
   ActiveRide,
+  DriverCallOutcome,
   RideOrderStatus,
   RideRequestStatus,
 } from '../../../types/domain'
 import type {
   CancelRideRequestPayload,
   AcceptRideOfferResponse,
+  AcceptRideOfferResult,
+  CloseRideRequestExternallyPayload,
+  CloseRideRequestExternallyResult,
   CreateRideRequestPayload,
   RideOffer,
   RideOfferListResponse,
   RideOrder,
   RideOrderEvent,
+  RidePassengerRequestContactUnlock,
+  RidePassengerRequestContactUnlocksResponse,
   PassengerRideOrdersResponse,
   RideOrderEventsResponse,
   RideRequest,
@@ -28,6 +34,27 @@ function asString(value: unknown, fallback = '') {
   return typeof value === 'string' && value.trim() ? value : fallback
 }
 
+function normalizeOfferStatus(value: unknown): 'pending' | 'accepted' | 'rejected' | string {
+  const normalized = asString(value, 'pending').trim().toLowerCase()
+
+  if (normalized === 'pending' || normalized === 'accepted' || normalized === 'rejected') {
+    return normalized
+  }
+
+  return normalized || 'pending'
+}
+
+function normalizeDriverCallOutcome(value: unknown): DriverCallOutcome | undefined {
+  const normalized = asString(value).trim().toUpperCase()
+
+  if (normalized === 'AGREED_OFFLINE') return 'AGREED_OFFLINE'
+  if (normalized === 'NO_ANSWER') return 'NO_ANSWER'
+  if (normalized === 'DECLINED') return 'DECLINED'
+  if (normalized === 'OTHER') return 'OTHER'
+
+  return undefined
+}
+
 function asNumber(value: unknown, fallback = 0) {
   return typeof value === 'number' && Number.isFinite(value) ? value : fallback
 }
@@ -38,6 +65,7 @@ function normalizeRideRequestStatus(value: unknown): RideRequestStatus {
     normalized === 'SEARCHING' ||
     normalized === 'OFFERED' ||
     normalized === 'ACCEPTED' ||
+    normalized === 'CLOSED_EXTERNALLY' ||
     normalized === 'CANCELLED' ||
     normalized === 'EXPIRED' ||
     normalized === 'CONVERTED_TO_ORDER'
@@ -78,6 +106,21 @@ function readNumericId(value: unknown) {
   }
 
   return undefined
+}
+
+function asIdString(value: unknown, fallback = '') {
+  const numericId = readNumericId(value)
+  if (numericId) return numericId
+
+  if (typeof value === 'string' && value.trim()) {
+    return value.trim()
+  }
+
+  return fallback
+}
+
+function readNumericOrderId(value: unknown) {
+  return readNumericId(value)
 }
 
 function asTripType(value: unknown) {
@@ -129,6 +172,43 @@ function getRideRequestSource(raw: unknown): BackendRecord {
   if (isRecord(raw.rideRequest)) return raw.rideRequest
 
   return raw
+}
+
+function getRideOrderEnvelope(raw: unknown) {
+  const envelope = isRecord(raw) ? raw : {}
+  const order =
+    (isRecord(envelope.order) && envelope.order) ||
+    (isRecord(envelope.rideOrder) && envelope.rideOrder) ||
+    envelope
+  const request =
+    (isRecord(envelope.request) && envelope.request) ||
+    (isRecord(envelope.rideRequest) && envelope.rideRequest) ||
+    (isRecord(order.request) && order.request) ||
+    {}
+  const offer =
+    (isRecord(envelope.offer) && envelope.offer) ||
+    (isRecord(envelope.rideOffer) && envelope.rideOffer) ||
+    (isRecord(order.offer) && order.offer) ||
+    {}
+  const driverContainer =
+    (isRecord(envelope.driver) && envelope.driver) ||
+    (isRecord(order.driver) && order.driver) ||
+    {}
+  const driver =
+    (isRecord(driverContainer.driverProfile) && driverContainer.driverProfile) ||
+    (isRecord(order.driverProfile) && order.driverProfile) ||
+    driverContainer
+  const driverCustomer =
+    (isRecord(driverContainer.customer) && driverContainer.customer) ||
+    (isRecord(driver.customer) && driver.customer) ||
+    {}
+  const vehicle =
+    (isRecord(envelope.vehicle) && envelope.vehicle) ||
+    (isRecord(order.vehicle) && order.vehicle) ||
+    (isRecord(driver.vehicle) && driver.vehicle) ||
+    {}
+
+  return { envelope, order, request, offer, driver, driverCustomer, vehicle }
 }
 
 function isBackendEnvelope(value: unknown): value is BackendRecord {
@@ -213,6 +293,11 @@ export function mapRideRequestToViewModel(raw: unknown): RideRequest {
   const scheduledAt = asString(record.scheduledAt ?? record.scheduled_at)
   const scheduledDate = asString(record.scheduledDate ?? record.scheduled_date)
   const scheduledTime = asString(record.scheduledTime ?? record.scheduled_time)
+  const cancelledAt = asString(record.cancelledAt ?? record.cancelled_at)
+  const cancelledBy = asString(record.cancelledBy ?? record.cancelled_by)
+  const cancelReasonCode = asString(record.cancelReasonCode ?? record.cancel_reason_code)
+  const cancelReasonText = asString(record.cancelReasonText ?? record.cancel_reason_text)
+  const cancelReasonLabel = asString(record.cancelReasonLabel ?? record.cancel_reason_label)
   const originCityName = asString(
     record.originCityName ?? record.origin_city_name ?? record.cityName ?? record.city_name,
   )
@@ -237,18 +322,68 @@ export function mapRideRequestToViewModel(raw: unknown): RideRequest {
       record.dropoff_address,
     buildLocationText(destinationCityName, destinationAddress) || '',
   )
+  const closedExternallySource = isRecord(record.closedExternally ?? record.closed_externally)
+    ? ((record.closedExternally ?? record.closed_externally) as BackendRecord)
+    : null
+  const closedExternally =
+    closedExternallySource ||
+    asString(record.closedExternallyAt ?? record.closed_externally_at) ||
+    asString(record.closedExternallyNote ?? record.closed_externally_note) ||
+    asString(record.closedExternallyDriverName ?? record.closed_externally_driver_name)
+      ? {
+          at: asString(closedExternallySource?.at ?? record.closedExternallyAt ?? record.closed_externally_at) || undefined,
+          note: asString(closedExternallySource?.note ?? record.closedExternallyNote ?? record.closed_externally_note) || undefined,
+          contactUnlockId:
+            asIdString(
+              closedExternallySource?.contactUnlockId ??
+                record.closedExternallyContactUnlockId ??
+                record.closed_externally_contact_unlock_id,
+            ) || undefined,
+          driverProfileId:
+            asIdString(
+              closedExternallySource?.driverProfileId ??
+                record.closedExternallyDriverProfileId ??
+                record.closed_externally_driver_profile_id,
+            ) || undefined,
+          driverName:
+            asString(
+              closedExternallySource?.driverName ??
+                record.closedExternallyDriverName ??
+                record.closed_externally_driver_name,
+            ) || undefined,
+          driverPhone:
+            asString(
+              closedExternallySource?.driverPhone ??
+                record.closedExternallyDriverPhone ??
+                record.closed_externally_driver_phone,
+            ) || undefined,
+          vehicleName:
+            asString(
+              closedExternallySource?.vehicleName ??
+                record.closedExternallyVehicleName ??
+                record.closed_externally_vehicle_name,
+            ) || undefined,
+          vehiclePlateNumber:
+            asString(
+              closedExternallySource?.vehiclePlateNumber ??
+                record.closedExternallyVehiclePlateNumber ??
+                record.closed_externally_vehicle_plate_number,
+            ) || undefined,
+        }
+      : undefined
 
   return {
     id: backendId ?? localId ?? `request-${Date.now()}`,
     backendId,
     localId,
     status: normalizeRideRequestStatus(record.status),
+    closedExternally,
     serviceType: asString(record.serviceType ?? record.service_type, 'INTERCITY_RIDE'),
     rideType: asTripType(record.rideType ?? record.ride_type ?? record.type),
     timingMode,
-    scheduledAt: scheduledAt || undefined,
-    scheduledDate: scheduledDate || undefined,
-    scheduledTime: scheduledTime || undefined,
+    scheduledAt: timingMode === 'NOW' ? undefined : scheduledAt || undefined,
+    scheduledDate: timingMode === 'NOW' ? undefined : scheduledDate || undefined,
+    scheduledTime: timingMode === 'NOW' ? undefined : scheduledTime || undefined,
     time: asString(
       record.time ?? scheduledTime ?? record.requestTime ?? record.request_time,
       createdAt.slice(11, 16) || '08:00',
@@ -286,6 +421,11 @@ export function mapRideRequestToViewModel(raw: unknown): RideRequest {
     comment: asString(record.comment),
     createdAt,
     priceUpdatedAt: asString(record.priceUpdatedAt ?? record.price_updated_at) || undefined,
+    cancelledAt: cancelledAt || undefined,
+    cancelledBy: cancelledBy || undefined,
+    cancelReasonCode: cancelReasonCode || undefined,
+    cancelReasonText: cancelReasonText || undefined,
+    cancelReasonLabel: cancelReasonLabel || undefined,
     searchRemainingSeconds:
       typeof record.searchRemainingSeconds === 'number' && Number.isFinite(record.searchRemainingSeconds)
         ? Math.max(0, Math.trunc(record.searchRemainingSeconds))
@@ -315,6 +455,7 @@ export function mapRideOfferToViewModel(raw: unknown): RideOffer {
   const vehicle = isRecord(record.vehicle) ? record.vehicle : {}
   const driverVehicle = isRecord(driver.vehicle) ? driver.vehicle : {}
   const vehicleSource = vehicle.id ? vehicle : driverVehicle
+  const backendId = readNumericId(record.id)
   const driverName = asString(
     record.driverName ??
       record.driver_name ??
@@ -329,10 +470,11 @@ export function mapRideOfferToViewModel(raw: unknown): RideOffer {
   )
 
   return {
-    id: asString(record.id, `offer-${Date.now()}`),
-    requestId: asString(record.requestId ?? record.request_id),
-    driverId: asString(record.driverId ?? record.driver_id ?? record.driverProfileId ?? record.driver_profile_id ?? driver.id),
-    status: asString(record.status, 'pending'),
+    id: backendId ?? asIdString(record.id, `offer-${Date.now()}`),
+    backendId,
+    requestId: asIdString(record.requestId ?? record.request_id),
+    driverId: asIdString(record.driverId ?? record.driver_id ?? record.driverProfileId ?? record.driver_profile_id ?? driver.id),
+    status: normalizeOfferStatus(record.status),
     currency: asString(record.currency ?? record.requestCurrency ?? record.request_currency),
     driverName,
     rating: asNumber(
@@ -418,70 +560,194 @@ export async function getPassengerRideRequestOffers(requestId: number | string):
   }
 }
 
-export function mapRideOrderToViewModel(raw: unknown): RideOrder {
+function mapPassengerRequestContactUnlock(raw: unknown): RidePassengerRequestContactUnlock {
   const record = isRecord(raw) ? raw : {}
-  const driver = isRecord(record.driver) ? record.driver : {}
+
+  return {
+    contactUnlockId: asIdString(record.contactUnlockId ?? record.contact_unlock_id, `contact-unlock-${Date.now()}`),
+    driverProfileId: asIdString(record.driverProfileId ?? record.driver_profile_id) || undefined,
+    driverName: asString(record.driverName ?? record.driver_name, 'Водитель'),
+    driverPhone: asString(record.driverPhone ?? record.driver_phone),
+    vehicleName: asString(record.vehicleName ?? record.vehicle_name) || undefined,
+    vehiclePlateNumber: asString(record.vehiclePlateNumber ?? record.vehicle_plate_number) || undefined,
+    openedAt: asString(record.openedAt ?? record.opened_at),
+    callOutcome: normalizeDriverCallOutcome(record.callOutcome ?? record.call_outcome),
+    callOutcomeAt: asString(record.callOutcomeAt ?? record.call_outcome_at) || undefined,
+    callOutcomeNote: asString(record.callOutcomeNote ?? record.call_outcome_note) || null,
+    raw,
+  }
+}
+
+export async function getPassengerRequestContactUnlocks(
+  requestId: number | string,
+): Promise<RidePassengerRequestContactUnlocksResponse> {
+  const normalizedId = requireNumericRideRequestId('getPassengerRequestContactUnlocks', requestId)
+  if (!normalizedId) {
+    return { requestId: '', items: [], raw: null }
+  }
+
+  const raw = await backendGet(`/ride/passenger/requests/${normalizedId}/contact-unlocks`)
+  const record = isRecord(raw) ? raw : {}
+
+  return {
+    requestId: asIdString(record.requestId ?? record.request_id ?? normalizedId, normalizedId),
+    items: extractList(raw).map(mapPassengerRequestContactUnlock),
+    raw,
+  }
+}
+
+function mapCloseRideRequestExternallyResult(raw: unknown): CloseRideRequestExternallyResult {
+  const record = isRecord(raw)
+    ? (isRecord(raw.data) ? raw.data : raw)
+    : {}
+
+  return {
+    requestId: asIdString(record.requestId ?? record.request_id ?? record.id),
+    status: normalizeRideRequestStatus(record.status ?? 'CLOSED_EXTERNALLY'),
+    closedExternallyAt: asString(record.closedExternallyAt ?? record.closed_externally_at) || undefined,
+    contactUnlockId: asIdString(record.contactUnlockId ?? record.contact_unlock_id) || undefined,
+    driverProfileId: asIdString(record.driverProfileId ?? record.driver_profile_id) || undefined,
+    driverName: asString(record.driverName ?? record.driver_name) || undefined,
+    driverPhone: asString(record.driverPhone ?? record.driver_phone) || undefined,
+    vehicleName: asString(record.vehicleName ?? record.vehicle_name) || undefined,
+    vehiclePlateNumber: asString(record.vehiclePlateNumber ?? record.vehicle_plate_number) || undefined,
+    note: asString(record.note) || undefined,
+    raw,
+  }
+}
+
+export function mapRideOrderToViewModel(raw: unknown): RideOrder {
+  const { order: record, request, offer, driver, driverCustomer, vehicle } = getRideOrderEnvelope(raw)
   const originCityName = asString(
-    record.originCityName ?? record.origin_city_name ?? record.cityName ?? record.city_name,
+    record.originCityName ?? record.origin_city_name ?? request.originCityName ?? request.origin_city_name ?? record.cityName ?? record.city_name,
   )
   const destinationCityName = asString(
-    record.destinationCityName ?? record.destination_city_name ?? record.toCityName ?? record.to_city_name,
+    record.destinationCityName ?? record.destination_city_name ?? request.destinationCityName ?? request.destination_city_name ?? record.toCityName ?? record.to_city_name,
   )
-  const originAddress = asString(record.originAddress ?? record.origin_address)
-  const destinationAddress = asString(record.destinationAddress ?? record.destination_address)
+  const originAddress = asString(record.originAddress ?? record.origin_address ?? request.originAddress ?? request.origin_address)
+  const destinationAddress = asString(record.destinationAddress ?? record.destination_address ?? request.destinationAddress ?? request.destination_address)
   const from = asString(
-    record.from ?? record.originText ?? record.origin_text ?? record.pickupAddress ?? record.pickup_address,
+    record.from ??
+      record.originText ??
+      record.origin_text ??
+      request.originText ??
+      request.origin_text ??
+      record.pickupAddress ??
+      record.pickup_address,
     buildLocationText(originCityName, originAddress) || '',
   )
   const to = asString(
     record.to ??
       record.destinationText ??
       record.destination_text ??
+      request.destinationText ??
+      request.destination_text ??
       record.dropoffAddress ??
       record.dropoff_address,
     buildLocationText(destinationCityName, destinationAddress) || '',
   )
+  const orderId = asIdString(record.id)
+  const requestId = asIdString(record.requestId ?? record.request_id ?? request.id)
+  const offerId = asIdString(record.offerId ?? record.offer_id ?? offer.id)
+  const agreedPrice = asNumber(
+    record.finalPrice ??
+      record.final_price ??
+      record.agreedPrice ??
+      record.agreed_price ??
+      record.price ??
+      offer.offeredPrice ??
+      offer.offered_price ??
+      offer.price ??
+      offer.amount ??
+      request.requestedPrice ??
+      request.requested_price,
+    0,
+  )
+  const driverName = asString(
+    record.driverName ??
+      record.driver_name ??
+      driver.fullName ??
+      driver.full_name ??
+      driver.name ??
+      driverCustomer.fullName ??
+      driverCustomer.full_name ??
+      driverCustomer.name,
+    'Водитель',
+  )
+  const driverPhone = asString(
+    record.driverPhone ??
+      record.driver_phone ??
+      driver.phone ??
+      driver.mobile ??
+      driverCustomer.phone,
+  )
+  const carModel = asString(
+    record.carModel ??
+      record.car_model ??
+      vehicle.model ??
+      driver.carModel ??
+      driver.car_model,
+  )
+  const carColor = asString(
+    record.carColor ??
+      record.car_color ??
+      vehicle.color ??
+      driver.carColor ??
+      driver.car_color,
+  )
+  const plate = asString(
+    record.plate ??
+      record.carPlate ??
+      record.car_plate ??
+      vehicle.plate ??
+      vehicle.plateNumber ??
+      driver.plate,
+  )
 
   return {
-    id: asString(record.id, `order-${Date.now()}`),
-    requestId: asString(record.requestId ?? record.request_id),
+    id: orderId,
+    offerId: offerId || undefined,
+    requestId: requestId || undefined,
     status: normalizeRideOrderStatus(record.status),
-    serviceType: asString(record.serviceType ?? record.service_type, 'ride'),
-    rideType: asTripType(record.rideType ?? record.ride_type ?? record.type),
+    serviceType: asString(record.serviceType ?? record.service_type ?? request.serviceType ?? request.service_type, 'ride'),
+    currency: asString(record.currency ?? request.currency, 'KZT'),
+    rideType: asTripType(record.rideType ?? record.ride_type ?? request.rideType ?? request.ride_type ?? record.type),
     from,
     to,
-    originCityId: readOptionalNumericId(record.originCityId ?? record.origin_city_id),
+    originCityId: readOptionalNumericId(record.originCityId ?? record.origin_city_id ?? request.originCityId ?? request.origin_city_id),
     originCityName,
     originRegionName: asString(record.originRegionName ?? record.origin_region_name) || undefined,
     originAddress: originAddress || undefined,
-    destinationCityId: readOptionalNumericId(record.destinationCityId ?? record.destination_city_id),
+    destinationCityId: readOptionalNumericId(record.destinationCityId ?? record.destination_city_id ?? request.destinationCityId ?? request.destination_city_id),
     destinationCityName,
     destinationRegionName: asString(record.destinationRegionName ?? record.destination_region_name) || undefined,
     destinationAddress: destinationAddress || undefined,
-    date: getFallbackDay(record.date ?? record.createdAt ?? record.created_at),
-    price: asNumber(record.price ?? record.agreedPrice ?? record.agreed_price, 0),
+    date: getFallbackDay(record.date ?? request.date ?? request.createdAt ?? record.createdAt ?? record.created_at),
+    price: agreedPrice,
     originText: asString(
-      record.originText ?? record.origin_text ?? buildLocationText(originCityName, originAddress) ?? from,
+      record.originText ?? record.origin_text ?? request.originText ?? request.origin_text ?? buildLocationText(originCityName, originAddress) ?? from,
       from,
     ),
     destinationText: asString(
       record.destinationText ??
         record.destination_text ??
+        request.destinationText ??
+        request.destination_text ??
         buildLocationText(destinationCityName, destinationAddress) ??
         to,
       to,
     ),
-    pickupAddress: asString(record.pickupAddress ?? record.pickup_address),
-    dropoffAddress: asString(record.dropoffAddress ?? record.dropoff_address),
-    agreedPrice: asNumber(record.agreedPrice ?? record.agreed_price ?? record.price, 0),
+    pickupAddress: asString(record.pickupAddress ?? record.pickup_address ?? request.pickupAddress ?? request.pickup_address),
+    dropoffAddress: asString(record.dropoffAddress ?? record.dropoff_address ?? request.dropoffAddress ?? request.dropoff_address),
+    agreedPrice,
     contactUnlocked: Boolean(record.contactUnlocked ?? record.contact_unlocked),
     canCallDriver: Boolean(record.canCallDriver ?? record.can_call_driver ?? record.contactUnlocked ?? record.contact_unlocked),
-    driverName: asString(record.driverName ?? record.driver_name ?? driver.name ?? driver.fullName ?? driver.full_name, 'Водитель'),
-    driverPhone: asString(record.driverPhone ?? record.driver_phone ?? driver.phone ?? driver.mobile, ''),
-    driverRating: asNumber(record.driverRating ?? record.driver_rating ?? driver.rating, 5),
-    carModel: asString(record.carModel ?? record.car_model ?? driver.carModel ?? driver.car_model, ''),
-    carColor: asString(record.carColor ?? record.car_color ?? driver.carColor ?? driver.car_color, ''),
-    plate: asString(record.plate ?? record.carPlate ?? record.car_plate ?? driver.plate, ''),
+    driverName,
+    driverPhone,
+    driverRating: asNumber(record.driverRating ?? record.driver_rating ?? driver.rating ?? driver.ratingAvg, 5),
+    carModel,
+    carColor,
+    plate,
     createdAt: getFallbackDate(record.createdAt ?? record.created_at),
     updatedAt: asString(record.updatedAt ?? record.updated_at),
     raw,
@@ -492,8 +758,8 @@ export function mapRideOrderEventToViewModel(raw: unknown): RideOrderEvent {
   const record = isRecord(raw) ? raw : {}
 
   return {
-    id: asString(record.id, `event-${Date.now()}`),
-    orderId: asString(record.orderId ?? record.order_id),
+    id: asIdString(record.id, `event-${Date.now()}`),
+    orderId: asIdString(record.orderId ?? record.order_id),
     status: asString(record.status, ''),
     message: asString(record.message ?? record.title ?? record.name, asString(record.status, 'Событие')),
     createdAt: getFallbackDate(record.createdAt ?? record.created_at),
@@ -504,6 +770,16 @@ export function mapRideOrderEventToViewModel(raw: unknown): RideOrderEvent {
 function normalizeResponse<T>(value: unknown, mapper: (item: unknown) => T): { items: T[]; raw: unknown } {
   const items = extractList(value).map(mapper)
   return { items, raw: value }
+}
+
+function requireNumericRideOrderId(context: string, value: string | number) {
+  const normalized = readNumericOrderId(value)
+  if (!normalized) {
+    console.warn(`[ride] ${context}: numeric order id is required`, value)
+    return null
+  }
+
+  return normalized
 }
 
 export async function createRideRequest(payload: CreateRideRequestPayload) {
@@ -535,7 +811,7 @@ export async function getRideRequest(id: string | number) {
     throw new Error('Ride request id must be numeric.')
   }
 
-  return mapRideRequestToViewModel(await backendGet(`/ride/passenger/requests/${normalizedId}`))
+  return mapRideRequestToViewModel(await backendGet(`/ride/requests/${normalizedId}`))
 }
 
 export async function cancelPassengerRideRequest(
@@ -558,6 +834,45 @@ export async function cancelPassengerRideRequest(
 
     throw error
   }
+}
+
+export async function cancelPassengerRideOrder(
+  orderId: string | number,
+  payload?: CancelRideRequestPayload,
+) {
+  const normalizedId = requireNumericRideOrderId('cancelPassengerRideOrder', orderId)
+  if (!normalizedId) {
+    throw new Error('Ride order id must be numeric.')
+  }
+
+  try {
+    return mapRideOrderToViewModel(
+      await backendPost(`/ride/orders/${normalizedId}/cancel`, payload ?? {}),
+    )
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('Cannot POST')) {
+      throw new Error('Не удалось отменить поездку. Попробуйте ещё раз.', { cause: error })
+    }
+
+    throw error
+  }
+}
+
+export async function closeRideRequestExternally(
+  requestId: string | number,
+  payload: CloseRideRequestExternallyPayload,
+) {
+  const normalizedId = requireNumericRideRequestId('closeRideRequestExternally', requestId)
+  if (!normalizedId) {
+    throw new Error('Ride request id must be numeric.')
+  }
+
+  return mapCloseRideRequestExternallyResult(
+    await backendPost(`/ride/passenger/requests/${normalizedId}/close`, {
+      contactUnlockId: String(payload.contactUnlockId ?? '').trim(),
+      ...(payload.note?.trim() ? { note: payload.note.trim() } : {}),
+    }),
+  )
 }
 
 export async function cancelRideRequest(id: string | number, payload?: CancelRideRequestPayload) {
@@ -600,14 +915,17 @@ export async function rejectRideOffer(offerId: number | string) {
 }
 
 function extractAcceptedRideOrder(response: AcceptRideOfferResponse | unknown) {
-  if (isRecord(response)) {
-    if (response.order) return mapRideOrderToViewModel(response.order)
-    if (response.rideOrder) return mapRideOrderToViewModel(response.rideOrder)
-    if (response.request && !response.order) return mapRideOrderToViewModel(response.request)
-    if (response.rideRequest) return mapRideOrderToViewModel(response.rideRequest)
-  }
+  const record = isRecord(response) ? response : {}
+  const orderSource = record.order ?? record.rideOrder ?? response
+  const requestSource = record.request ?? record.rideRequest
+  const offerSource = record.offer ?? record.rideOffer
 
-  return mapRideOrderToViewModel(response)
+  return {
+    order: mapRideOrderToViewModel(orderSource),
+    request: requestSource ? mapRideRequestToViewModel(requestSource) : null,
+    offer: offerSource ? mapRideOfferToViewModel(offerSource) : null,
+    raw: response,
+  } satisfies AcceptRideOfferResult
 }
 
 export async function acceptRideOffer(offerId: number | string) {
@@ -635,12 +953,22 @@ export async function getPassengerOrders(
 }
 
 export async function getRideOrder(orderId: number | string) {
-  return mapRideOrderToViewModel(await backendGet(`/ride/orders/${String(orderId)}`))
+  const normalizedId = requireNumericRideOrderId('getRideOrder', orderId)
+  if (!normalizedId) {
+    throw new Error('Ride order id must be numeric.')
+  }
+
+  return mapRideOrderToViewModel(await backendGet(`/ride/orders/${normalizedId}`))
 }
 
 export async function getRideOrderEvents(orderId: number | string): Promise<RideOrderEventsResponse> {
+  const normalizedId = requireNumericRideOrderId('getRideOrderEvents', orderId)
+  if (!normalizedId) {
+    throw new Error('Ride order id must be numeric.')
+  }
+
   return normalizeResponse<RideOrderEvent>(
-    await backendGet(`/ride/orders/${String(orderId)}/events`),
+    await backendGet(`/ride/orders/${normalizedId}/events`),
     mapRideOrderEventToViewModel,
   )
 }
@@ -648,7 +976,9 @@ export async function getRideOrderEvents(orderId: number | string): Promise<Ride
 export function mapRideOrderToActiveRideViewModel(order: RideOrder): ActiveRide {
   return {
     id: order.id,
+    orderId: order.id,
     requestId: order.requestId ?? order.id,
+    offerId: order.offerId,
     status: normalizeRideOrderStatus(order.status),
     contactUnlocked: order.contactUnlocked,
     canCallDriver: order.canCallDriver,

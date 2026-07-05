@@ -1,13 +1,14 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { CircleGauge, Lock, Sparkles } from 'lucide-react'
 
 import { cn } from '../../lib/cn'
-import { formatKzt } from '../../lib/format'
+import { formatKzt, formatRoute } from '../../lib/format'
 import { useAppActions, useAppState } from '../../providers/AppStateProvider'
 import { PageCard } from '../../shared/ui/PageCard'
+import { OverlaySheet } from '../../shared/ui/OverlaySheet'
 import { DriverCounterOfferSheet } from '../../features/driver/components/DriverCounterOfferSheet'
 import { DriverFeedOrderCard } from '../../features/driver/components/DriverFeedOrderCard'
-import type { DriverCounterOffer, DriverFeedOrder } from '../../types/domain'
+import type { DriverCallOutcome, DriverCounterOffer, DriverFeedOrder } from '../../types/domain'
 import { getDriverAccessState, getDriverWalletShortfall } from '../../features/driver/driver-status'
 import { DriverBlockedStateCard } from './components/DriverBlockedStateCard'
 import { DriverRecheckCard } from './components/DriverRecheckCard'
@@ -28,6 +29,21 @@ function matchesFilter(order: DriverFeedOrder, filter: FeedFilter) {
   return order.category === 'ride' && order.rideType === 'full'
 }
 
+function getCallOutcomeLabel(outcome: DriverCallOutcome) {
+  switch (outcome) {
+    case 'AGREED_OFFLINE':
+      return 'Договорились'
+    case 'NO_ANSWER':
+      return 'Не дозвонился'
+    case 'DECLINED':
+      return 'Неактуально'
+    case 'OTHER':
+      return 'Другое'
+    default:
+      return 'Результат звонка'
+  }
+}
+
 export default function DriverFeedPage() {
   const {
     driverVerificationStatus,
@@ -44,6 +60,18 @@ export default function DriverFeedPage() {
   } = useAppState()
   const actions = useAppActions()
   const [feedFilter, setFeedFilter] = useState<FeedFilter>('all')
+  const [unlockingRequestId, setUnlockingRequestId] = useState<string | null>(null)
+  const [counterOfferNotice, setCounterOfferNotice] = useState<{ kind: 'success' | 'warning'; text: string } | null>(null)
+  const [selectedCounterOfferRequest, setSelectedCounterOfferRequest] = useState<DriverFeedOrder | null>(null)
+  const [counterOfferDraft, setCounterOfferDraft] = useState<{ price: string; comment: string }>({ price: '', comment: '' })
+  const [callOutcomeSheet, setCallOutcomeSheet] = useState<{
+    request: DriverFeedOrder
+    outcome: DriverCallOutcome
+    note: string
+  } | null>(null)
+  const [savingCallOutcomeRequestId, setSavingCallOutcomeRequestId] = useState<string | null>(null)
+  const [callOutcomeSheetError, setCallOutcomeSheetError] = useState('')
+  const counterOfferNoticeTimerRef = useRef<number | null>(null)
   const accessState = getDriverAccessState(driverVerificationStatus, driverWallet, driverAccess)
   const walletShortfall = getDriverWalletShortfall(driverWallet)
   const blockedReason =
@@ -61,11 +89,146 @@ export default function DriverFeedPage() {
   )
 
   const counterOffersByOrderId = useMemo(() => {
-    return driverCounterOffers.reduce<Record<string, DriverCounterOffer>>((accumulator, offer) => {
-      accumulator[offer.orderId] = offer
+    return driverCounterOffers.reduce<Record<string, DriverCounterOffer[]>>((accumulator, offer) => {
+      if (!accumulator[offer.orderId]) {
+        accumulator[offer.orderId] = []
+      }
+      accumulator[offer.orderId].push(offer)
       return accumulator
     }, {})
   }, [driverCounterOffers])
+
+  useEffect(() => {
+    return () => {
+      if (counterOfferNoticeTimerRef.current) {
+        window.clearTimeout(counterOfferNoticeTimerRef.current)
+      }
+    }
+  }, [])
+
+  const handleCounterOfferSuccess = ({ order, offer }: { order: DriverFeedOrder; offer: DriverCounterOffer }) => {
+    const message = `${formatRoute(order.from, order.to)} · ${formatKzt(offer.offeredPrice)}`
+    setSelectedCounterOfferRequest(null)
+    setCounterOfferDraft({ price: '', comment: '' })
+    setCounterOfferNotice({ kind: 'success', text: message })
+
+    if (counterOfferNoticeTimerRef.current) {
+      window.clearTimeout(counterOfferNoticeTimerRef.current)
+    }
+
+    counterOfferNoticeTimerRef.current = window.setTimeout(() => {
+      setCounterOfferNotice(null)
+      counterOfferNoticeTimerRef.current = null
+    }, 3000)
+  }
+
+  const handleCounterOfferUnavailable = () => {
+    setSelectedCounterOfferRequest(null)
+    setCounterOfferDraft({ price: '', comment: '' })
+    setCounterOfferNotice({
+      kind: 'warning',
+      text: 'Заявка уже недоступна. Обновили ленту.',
+    })
+
+    if (counterOfferNoticeTimerRef.current) {
+      window.clearTimeout(counterOfferNoticeTimerRef.current)
+    }
+
+    counterOfferNoticeTimerRef.current = window.setTimeout(() => {
+      setCounterOfferNotice(null)
+      counterOfferNoticeTimerRef.current = null
+    }, 3000)
+  }
+
+  const handleOpenCounterOffer = (request: DriverFeedOrder) => {
+    setSelectedCounterOfferRequest({ ...request })
+    setCounterOfferDraft({ price: String(request.requestedPrice), comment: '' })
+    actions.openDriverCounterOfferSheet(request.id)
+  }
+
+  const handleCloseCounterOffer = () => {
+    setSelectedCounterOfferRequest(null)
+    setCounterOfferDraft({ price: '', comment: '' })
+    actions.closeDriverCounterOfferSheet()
+  }
+
+  const handleUnlockContact = async (request: DriverFeedOrder) => {
+    setUnlockingRequestId(request.id)
+
+    try {
+      await actions.unlockDriverRequestContact(request.id)
+    } catch {
+      // Error is already normalized and stored in app state.
+    } finally {
+      setUnlockingRequestId(null)
+    }
+  }
+
+  const handleCallPassenger = (request: DriverFeedOrder) => {
+    const phone = request.clientPhone?.replace(/\s+/g, '') || ''
+    if (!phone) return
+
+    window.open(`tel:${phone}`, '_self')
+  }
+
+  const handleSaveCallOutcome = async (
+    request: DriverFeedOrder,
+    outcome: DriverCallOutcome,
+    note?: string,
+  ) => {
+    setSavingCallOutcomeRequestId(request.id)
+    setCallOutcomeSheetError('')
+
+    try {
+      await actions.setDriverRequestContactOutcome(request.id, outcome, note)
+      setCallOutcomeSheet(null)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Не удалось сохранить результат звонка.'
+      setCallOutcomeSheetError(message)
+      throw error
+    } finally {
+      setSavingCallOutcomeRequestId((current) => (current === request.id ? null : current))
+    }
+  }
+
+  const handleQuickCallOutcome = async (request: DriverFeedOrder, outcome: DriverCallOutcome) => {
+    try {
+      await handleSaveCallOutcome(request, outcome)
+    } catch {
+      // Error is already shown in app state.
+    }
+  }
+
+  const handleOpenCallOutcomeSheet = (request: DriverFeedOrder, outcome: DriverCallOutcome = 'OTHER') => {
+    setCallOutcomeSheet({
+      request,
+      outcome,
+      note: outcome === 'DECLINED' ? request.callOutcomeNote ?? '' : request.callOutcome === outcome ? request.callOutcomeNote ?? '' : '',
+    })
+    setCallOutcomeSheetError('')
+  }
+
+  const handleSubmitCallOutcomeSheet = async () => {
+    if (!callOutcomeSheet) return
+
+    const requiresNote =
+      callOutcomeSheet.outcome === 'DECLINED' || callOutcomeSheet.outcome === 'OTHER'
+
+    if (requiresNote && !callOutcomeSheet.note.trim()) {
+      setCallOutcomeSheetError('Добавьте короткий комментарий.')
+      return
+    }
+
+    try {
+      await handleSaveCallOutcome(
+        callOutcomeSheet.request,
+        callOutcomeSheet.outcome,
+        callOutcomeSheet.note.trim() || undefined,
+      )
+    } catch {
+      // Error is already surfaced above.
+    }
+  }
 
   if (
     accessState === 'NOT_STARTED' ||
@@ -209,6 +372,20 @@ export default function DriverFeedPage() {
         title="Лента заказов"
         description="Показываем доступные заказы и предварительный расчет комиссии."
       >
+        {counterOfferNotice ? (
+          <div
+            className={cn(
+              'rounded-2xl px-4 py-3 text-sm font-semibold',
+              counterOfferNotice.kind === 'success'
+                ? 'border border-emerald-200 bg-emerald-50 text-emerald-800'
+                : 'border border-amber-200 bg-amber-50 text-amber-800',
+            )}
+          >
+            {counterOfferNotice.kind === 'success' ? 'Предложение отправлено: ' : ''}
+            {counterOfferNotice.text}
+          </div>
+        ) : null}
+
         {driverFlowError ? (
           <div className="rounded-2xl bg-red-50 px-4 py-3 text-sm text-red-700">
             {driverFlowError}
@@ -320,9 +497,19 @@ export default function DriverFeedPage() {
           <DriverFeedOrderCard
             key={order.id}
             order={order}
-            counterOffer={counterOffersByOrderId[order.id]}
-            onAccept={() => actions.acceptDriverFeedOrder(order.id)}
-            onOpenCounterOffer={() => actions.openDriverCounterOfferSheet(order.id)}
+            counterOffers={counterOffersByOrderId[order.id]}
+            isUnlocking={unlockingRequestId === order.id}
+            isSavingCallOutcome={savingCallOutcomeRequestId === order.id}
+            unlockUnavailableReason={
+              !order.canCallPassenger && (driverAccess?.remainingContactUnlocks ?? 0) <= 0
+                ? 'Контакты закончились. Купите тариф.'
+                : null
+            }
+            onUnlock={() => void handleUnlockContact(order)}
+            onCall={() => handleCallPassenger(order)}
+            onOpenCounterOffer={() => handleOpenCounterOffer(order)}
+            onSetCallOutcome={(outcome) => void handleQuickCallOutcome(order, outcome)}
+            onOpenCallOutcomeModal={(outcome) => handleOpenCallOutcomeSheet(order, outcome)}
           />
         ))}
         </div>
@@ -345,7 +532,108 @@ export default function DriverFeedPage() {
         </PageCard>
       ) : null}
 
-      <DriverCounterOfferSheet />
+      <DriverCounterOfferSheet
+        selectedRequest={selectedCounterOfferRequest}
+        draftPrice={counterOfferDraft.price}
+        draftComment={counterOfferDraft.comment}
+        onDraftChange={setCounterOfferDraft}
+        onClose={handleCloseCounterOffer}
+        onSuccess={handleCounterOfferSuccess}
+        onUnavailable={handleCounterOfferUnavailable}
+        onRefreshFeed={() => actions.refreshDriverFeed()}
+      />
+
+      <OverlaySheet
+        open={Boolean(callOutcomeSheet)}
+        title={callOutcomeSheet ? getCallOutcomeLabel(callOutcomeSheet.outcome) : 'Результат звонка'}
+        onClose={() => {
+          setCallOutcomeSheet(null)
+          setCallOutcomeSheetError('')
+        }}
+        position="bottom"
+      >
+        {callOutcomeSheet ? (
+          <div className="space-y-4">
+            <div className="rounded-2xl bg-surface-soft p-4 text-sm text-ink">
+              <p className="font-semibold">{formatRoute(callOutcomeSheet.request.from, callOutcomeSheet.request.to)}</p>
+              <p className="mt-1 text-muted">
+                {callOutcomeSheet.request.clientName || 'Пассажир'}
+                {callOutcomeSheet.request.clientPhone ? ` · ${callOutcomeSheet.request.clientPhone}` : ''}
+              </p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              {(['AGREED_OFFLINE', 'NO_ANSWER', 'DECLINED', 'OTHER'] as const).map((outcome) => {
+                const isActive = callOutcomeSheet.outcome === outcome
+
+                return (
+                  <button
+                    key={outcome}
+                    type="button"
+                    onClick={() => {
+                      setCallOutcomeSheet((current) => (current ? { ...current, outcome } : current))
+                      setCallOutcomeSheetError('')
+                    }}
+                    className={cn(
+                      'rounded-2xl px-3 py-3 text-sm font-semibold transition',
+                      isActive ? 'bg-accent text-white shadow-lg shadow-accent/20' : 'bg-surface-soft text-ink',
+                    )}
+                  >
+                    {getCallOutcomeLabel(outcome)}
+                  </button>
+                )
+              })}
+            </div>
+
+            <label className="block">
+              <span className="mb-1 block text-sm font-medium text-ink">
+                Комментарий
+              </span>
+              <textarea
+                value={callOutcomeSheet.note}
+                onChange={(event) => {
+                  const note = event.target.value
+                  setCallOutcomeSheet((current) => (current ? { ...current, note } : current))
+                  setCallOutcomeSheetError('')
+                }}
+                rows={4}
+                placeholder="Например: Договорились на 08:00"
+                className="w-full rounded-2xl border border-border bg-surface-soft px-4 py-3 text-sm outline-none transition focus:border-accent"
+              />
+            </label>
+
+            {callOutcomeSheetError ? (
+              <div className="rounded-2xl bg-red-50 px-4 py-3 text-sm text-red-700">
+                {callOutcomeSheetError}
+              </div>
+            ) : null}
+
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setCallOutcomeSheet(null)
+                  setCallOutcomeSheetError('')
+                }}
+                className="rounded-2xl border border-border bg-white px-4 py-3 text-sm font-semibold text-ink"
+              >
+                Отмена
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleSubmitCallOutcomeSheet()}
+                disabled={savingCallOutcomeRequestId === callOutcomeSheet.request.id}
+                className={cn(
+                  'rounded-2xl bg-accent px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-accent/20',
+                  savingCallOutcomeRequestId === callOutcomeSheet.request.id && 'cursor-not-allowed opacity-60',
+                )}
+              >
+                {savingCallOutcomeRequestId === callOutcomeSheet.request.id ? 'Сохраняем...' : 'Сохранить'}
+              </button>
+            </div>
+          </div>
+        ) : null}
+      </OverlaySheet>
     </div>
   )
 }

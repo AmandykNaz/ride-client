@@ -1,6 +1,7 @@
 import { backendGet, backendPatch, backendPost } from '../../../shared/api/backend'
 import { getKzPlateValidationError, normalizeKzPlateInput } from '../../../lib/format'
 import type {
+  DriverCallOutcome,
   DriverApplicationDocument,
   DriverActiveOrder,
   DriverApplicationDraft,
@@ -36,6 +37,10 @@ import type {
   RideVehicleBrandOption,
   RideVehicleColorOption,
   RideVehicleModelOption,
+  RideRequestContactOutcomePayload,
+  RideRequestContactOutcomeResult,
+  RideRequestContactUnlockResult,
+  RideDriverRequestHistoryItem,
 } from './driver.types'
 export type { RideCity } from './driver.types'
 
@@ -76,6 +81,23 @@ function asOptionalNumericId(value: unknown) {
   return undefined
 }
 
+function asIdString(value: unknown, fallback = '') {
+  if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
+    return String(Math.trunc(value))
+  }
+
+  if (typeof value === 'string' && value.trim()) {
+    return value.trim()
+  }
+
+  return fallback
+}
+
+function asNumericIdString(value: unknown, fallback = '') {
+  const numericId = asOptionalNumericId(value)
+  return numericId ? String(numericId) : fallback
+}
+
 function firstRecord(...values: unknown[]) {
   return values.find(isRecord) as BackendRecord | undefined
 }
@@ -108,6 +130,25 @@ function normalizeParcelSize(value: unknown): ParcelSize {
   }
 
   return 'SMALL'
+}
+
+function normalizeDriverOrderCategory(value: unknown): DriverFeedOrder['category'] {
+  const normalized = asString(value, 'ride').trim().toUpperCase()
+
+  if (normalized === 'PARCEL') {
+    return 'parcel'
+  }
+
+  if (
+    normalized === 'RIDE' ||
+    normalized === 'INTERCITY_RIDE' ||
+    normalized === 'INTERCITY' ||
+    normalized === 'TRIP'
+  ) {
+    return 'ride'
+  }
+
+  return 'ride'
 }
 
 function unwrapRecord(value: unknown, keys: string[]) {
@@ -641,11 +682,22 @@ function mapFeedStatus(status: unknown): DriverFeedOrder['status'] {
 }
 
 function mapOfferStatus(status: unknown): DriverCounterOffer['status'] {
-  const normalized = asString(status).toUpperCase()
+  const normalized = asString(status).trim().toLowerCase()
 
-  if (normalized === 'ACCEPTED') return 'accepted'
-  if (normalized === 'REJECTED' || normalized === 'WITHDRAWN' || normalized === 'CANCELLED') return 'rejected'
+  if (normalized === 'accepted') return 'accepted'
+  if (normalized === 'rejected' || normalized === 'withdrawn' || normalized === 'cancelled') return 'rejected'
   return 'pending'
+}
+
+function mapCallOutcome(value: unknown): DriverCallOutcome | undefined {
+  const normalized = asString(value).trim().toUpperCase()
+
+  if (normalized === 'AGREED_OFFLINE') return 'AGREED_OFFLINE'
+  if (normalized === 'NO_ANSWER') return 'NO_ANSWER'
+  if (normalized === 'DECLINED') return 'DECLINED'
+  if (normalized === 'OTHER') return 'OTHER'
+
+  return undefined
 }
 
 function getRouteValue(record: BackendRecord, keys: string[], fallback = '') {
@@ -659,7 +711,8 @@ function getRouteValue(record: BackendRecord, keys: string[], fallback = '') {
 
 function mapFeedRequest(raw: unknown): DriverFeedOrder {
   const record = isRecord(raw) ? raw : {}
-  const category = asString(record.category ?? record.type ?? record.serviceType ?? record.service_type, 'ride') as DriverFeedOrder['category']
+  const request = firstRecord(record.request, record.rideRequest, record.ride_request)
+  const category = normalizeDriverOrderCategory(record.category ?? record.type ?? record.serviceType ?? record.service_type)
   const from = getRouteValue(
     record,
     ['from', 'originText', 'origin_text', 'pickupAddress', 'pickup_address'],
@@ -681,6 +734,12 @@ function mapFeedRequest(raw: unknown): DriverFeedOrder {
     0,
   )
   const comment = asString(record.comment ?? record.note ?? record.message)
+  const contactUnlocked = asBoolean(
+    record.contactUnlocked ?? record.contact_unlocked ?? record.contactUnlockedAt ?? record.contact_unlocked_at,
+  )
+  const canCallPassenger = asBoolean(
+    record.canCallPassenger ?? record.can_call_passenger ?? contactUnlocked,
+  )
   const clientName = asString(
     record.clientName ??
       record.client_name ??
@@ -703,9 +762,19 @@ function mapFeedRequest(raw: unknown): DriverFeedOrder {
       record.sender_phone,
     '',
   )
+  const callOutcome = mapCallOutcome(record.callOutcome ?? record.call_outcome)
+  const callOutcomeAt = asString(record.callOutcomeAt ?? record.call_outcome_at) || undefined
+  const callOutcomeNote = asString(record.callOutcomeNote ?? record.call_outcome_note ?? record.note) || undefined
 
   return {
-    id: asString(record.id, `feed-${Date.now()}`),
+    id: asNumericIdString(
+      record.id ??
+      record.requestId ??
+      record.request_id ??
+      record.backendId ??
+      record.backend_id ??
+      request?.id,
+    ),
     category,
     title: asString(record.title, `${from} → ${to}`),
     from,
@@ -720,8 +789,13 @@ function mapFeedRequest(raw: unknown): DriverFeedOrder {
     senderName: asString(record.senderName ?? record.sender_name),
     receiverName: asString(record.receiverName ?? record.receiver_name),
     receiverPhone: asString(record.receiverPhone ?? record.receiver_phone),
-    clientName,
-    clientPhone,
+    contactUnlocked,
+    canCallPassenger,
+    callOutcome,
+    callOutcomeAt,
+    callOutcomeNote,
+    clientName: clientName || null,
+    clientPhone: clientPhone || null,
     comment,
     createdMinutesAgo: asNumber(record.createdMinutesAgo ?? record.created_minutes_ago, diffMinutes(record.createdAt ?? record.created_at)),
     status: mapFeedStatus(record.status),
@@ -737,8 +811,10 @@ function mapDriverOffer(raw: unknown): DriverCounterOffer {
   const originalPrice = asNumber(record.originalPrice ?? record.original_price ?? record.requestedPrice ?? record.requested_price, offeredPrice)
 
   return {
-    id: asString(record.id, `driver-offer-${Date.now()}`),
-    orderId: asString(record.orderId ?? record.order_id ?? record.requestId ?? record.request_id ?? request?.id),
+    id: asIdString(record.id, `driver-offer-${Date.now()}`),
+    orderId: asIdString(
+      record.orderId ?? record.order_id ?? record.requestId ?? record.request_id ?? request?.id,
+    ),
     driverName,
     offeredPrice,
     originalPrice,
@@ -750,7 +826,7 @@ function mapDriverOffer(raw: unknown): DriverCounterOffer {
 function mapDriverOrder(raw: unknown): DriverActiveOrder {
   const envelope = isRecord(raw) ? raw : {}
   const record = firstRecord(envelope.order, envelope.rideOrder, envelope.ride_order, envelope.data) ?? envelope
-  const category = asString(record.category ?? record.type ?? record.serviceType ?? record.service_type, 'ride') as DriverActiveOrder['category']
+  const category = normalizeDriverOrderCategory(record.category ?? record.type ?? record.serviceType ?? record.service_type)
   const request = firstRecord(record.request, envelope.request, envelope.rideRequest, envelope.ride_request)
   const requestRecord = (request ?? {}) as BackendRecord
   const from = getRouteValue(
@@ -788,8 +864,11 @@ function mapDriverOrder(raw: unknown): DriverActiveOrder {
   const canCallDriver = asBoolean(record.canCallDriver ?? record.can_call_driver, false)
 
   return {
-    id: asString(record.id, `driver-order-${Date.now()}`),
-    sourceOrderId: asString(record.sourceOrderId ?? record.source_order_id ?? record.requestId ?? record.request_id, asString(record.id, '')),
+    id: asIdString(record.id, `driver-order-${Date.now()}`),
+    sourceOrderId: asIdString(
+      record.sourceOrderId ?? record.source_order_id ?? record.requestId ?? record.request_id,
+      asIdString(record.id, ''),
+    ),
     category,
     status,
     from,
@@ -886,6 +965,117 @@ function normalizeResponse<T>(value: unknown, mapper: (item: unknown) => T) {
   return {
     items: extractList(value).map(mapper),
     raw: value,
+  }
+}
+
+function mapRideRequestContactUnlockResult(raw: unknown): RideRequestContactUnlockResult {
+  const record = unwrapRecord(raw, ['contactUnlock', 'contact_unlock', 'result', 'data'])
+
+  if (!isRecord(record)) {
+    throw new Error('Backend вернул некорректный ответ при открытии контакта.')
+  }
+
+  const requestId = asNumericIdString(
+    record.requestId ?? record.request_id ?? record.id ?? record.rideRequestId ?? record.ride_request_id,
+  )
+
+  if (!requestId) {
+    throw new Error('Backend не вернул корректный номер заявки для открытого контакта.')
+  }
+
+  const phone = asString(record.phone ?? record.clientPhone ?? record.client_phone ?? record.passengerPhone ?? record.passenger_phone)
+  if (!phone) {
+    throw new Error('Backend не вернул телефон пассажира после открытия контакта.')
+  }
+
+  return {
+    requestId,
+    passengerName:
+      asString(
+        record.passengerName ??
+          record.passenger_name ??
+          record.clientName ??
+          record.client_name,
+      ) || null,
+    phone,
+    remainingContacts: asNumber(
+      record.remainingContacts ?? record.remaining_contacts ?? record.remainingContactUnlocks ?? record.remaining_contact_unlocks,
+      0,
+    ),
+    alreadyUnlocked: asBoolean(record.alreadyUnlocked ?? record.already_unlocked),
+  }
+}
+
+function mapRideRequestContactOutcomeResult(raw: unknown): RideRequestContactOutcomeResult {
+  const record = unwrapRecord(raw, ['contactOutcome', 'contact_outcome', 'result', 'data'])
+
+  if (!isRecord(record)) {
+    throw new Error('Backend вернул некорректный ответ при сохранении результата звонка.')
+  }
+
+  const requestId = asNumericIdString(
+    record.requestId ?? record.request_id ?? record.id ?? record.rideRequestId ?? record.ride_request_id,
+  )
+
+  if (!requestId) {
+    throw new Error('Backend не вернул корректный номер заявки для результата звонка.')
+  }
+
+  const callOutcome = mapCallOutcome(record.callOutcome ?? record.call_outcome)
+  if (!callOutcome) {
+    throw new Error('Backend не вернул корректный результат звонка.')
+  }
+
+  const phone = asString(
+    record.phone ?? record.clientPhone ?? record.client_phone ?? record.passengerPhone ?? record.passenger_phone,
+  )
+
+  return {
+    requestId,
+    contactUnlockId: asString(record.contactUnlockId ?? record.contact_unlock_id) || undefined,
+    callOutcome,
+    callOutcomeAt: asString(record.callOutcomeAt ?? record.call_outcome_at) || undefined,
+    callOutcomeNote: asString(record.callOutcomeNote ?? record.call_outcome_note ?? record.note) || undefined,
+    passengerName:
+      asString(
+        record.passengerName ??
+          record.passenger_name ??
+          record.clientName ??
+          record.client_name,
+      ) || null,
+    phone,
+  }
+}
+
+function mapDriverRequestHistoryItem(raw: unknown): RideDriverRequestHistoryItem {
+  const record = unwrapRecord(raw, ['item', 'request', 'historyItem', 'data'])
+
+  if (!isRecord(record)) {
+    throw new Error('Backend вернул некорректную запись истории водителя.')
+  }
+
+  const requestId = asNumericIdString(record.requestId ?? record.request_id ?? record.id)
+  if (!requestId) {
+    throw new Error('Backend не вернул requestId в истории водителя.')
+  }
+
+  return {
+    requestId,
+    orderId: asNumericIdString(record.orderId ?? record.order_id) || undefined,
+    status: asString(record.status),
+    originText: asString(record.originText ?? record.origin_text),
+    destinationText: asString(record.destinationText ?? record.destination_text),
+    requestedPrice: asOptionalNumber(record.requestedPrice ?? record.requested_price),
+    createdAt: asString(record.createdAt ?? record.created_at) || undefined,
+    scheduledAt: asString(record.scheduledAt ?? record.scheduled_at) || undefined,
+    passengerName: asString(record.passengerName ?? record.passenger_name) || null,
+    passengerPhone: asString(record.passengerPhone ?? record.passenger_phone) || null,
+    contactOpenedAt: asString(record.contactOpenedAt ?? record.contact_opened_at) || undefined,
+    callOutcome: mapCallOutcome(record.callOutcome ?? record.call_outcome) ?? undefined,
+    callOutcomeAt: asString(record.callOutcomeAt ?? record.call_outcome_at) || undefined,
+    callOutcomeNote: asString(record.callOutcomeNote ?? record.call_outcome_note) || undefined,
+    closedExternallyAt: asString(record.closedExternallyAt ?? record.closed_externally_at) || undefined,
+    raw,
   }
 }
 
@@ -1174,10 +1364,14 @@ export async function setDriverOnline(isOnline: boolean) {
 }
 
 export async function getDriverFeed(params?: Record<string, string | number | boolean | undefined>) {
-  return normalizeResponse<DriverFeedViewModel>(
-    await backendGet(`/ride/driver/feed${buildQuery(params)}`),
-    mapDriverFeedRequestToViewModel,
-  )
+  const raw = await backendGet(`/ride/driver/feed${buildQuery(params)}`)
+
+  return {
+    items: extractList(raw)
+      .map(mapDriverFeedRequestToViewModel)
+      .filter((item) => item.id),
+    raw,
+  }
 }
 
 export async function acceptRideRequestPrice(requestId: number | string) {
@@ -1189,17 +1383,48 @@ export async function acceptRideRequestPrice(requestId: number | string) {
   )
 }
 
+export async function unlockRideRequestContact(requestId: number | string) {
+  const normalizedRequestId = asNumericIdString(requestId)
+
+  if (!normalizedRequestId) {
+    throw new Error('Не удалось открыть контакт: некорректный номер заявки.')
+  }
+
+  return mapRideRequestContactUnlockResult(
+    await backendPost(`/ride/driver/requests/${normalizedRequestId}/contact-unlock`),
+  )
+}
+
+export async function setRideRequestContactOutcome(
+  requestId: number | string,
+  payload: RideRequestContactOutcomePayload,
+) {
+  const normalizedRequestId = asNumericIdString(requestId)
+
+  if (!normalizedRequestId) {
+    throw new Error('Не удалось сохранить результат звонка: некорректный номер заявки.')
+  }
+
+  return mapRideRequestContactOutcomeResult(
+    await backendPost(`/ride/driver/requests/${normalizedRequestId}/contact-outcome`, {
+      outcome: payload.outcome,
+      ...(payload.note?.trim() ? { note: payload.note.trim() } : {}),
+    }),
+  )
+}
+
 export async function counterOfferRideRequest(
   requestId: number | string,
   payload: DriverCounterOfferPayload,
 ) {
+  const body = {
+    price: String(payload.price ?? '').trim().replace(/\s+/g, '').replace(/₸/g, ''),
+    ...(payload.comment ? { comment: payload.comment } : {}),
+  }
+
   return mapDriverOfferToViewModel(
     unwrapRecord(
-      await backendPost(`/ride/driver/requests/${String(requestId)}/counter-offer`, {
-        price: payload.price,
-        offeredPrice: payload.offeredPrice ?? payload.price,
-        comment: payload.comment,
-      }),
+      await backendPost(`/ride/driver/requests/${String(requestId)}/counter-offer`, body),
       ['offer', 'driverOffer', 'data'],
     ),
   )
@@ -1230,6 +1455,32 @@ export async function getDriverOrders(
     await backendGet(`/ride/driver/orders${buildQuery(params)}`),
     mapDriverOrderToViewModel,
   )
+}
+
+export async function getDriverRequestHistory(
+  params?: Record<string, string | number | boolean | undefined>,
+) {
+  const raw = await backendGet(`/ride/driver/requests/history${buildQuery(params)}`)
+  const record = unwrapRecord(raw, ['result', 'history', 'requestHistory', 'data'])
+  const itemsSource =
+    isRecord(record) && Array.isArray(record.items)
+      ? record.items
+      : isRecord(record) && isRecord(record.data) && Array.isArray(record.data.items)
+        ? record.data.items
+        : raw
+  const items = extractList(itemsSource)
+    .map(mapDriverRequestHistoryItem)
+    .filter((item) => item.requestId)
+  const totalSource =
+    isRecord(record) && (record.total ?? (isRecord(record.data) ? record.data.total : undefined))
+      ? (record.total ?? (isRecord(record.data) ? record.data.total : undefined))
+      : items.length
+
+  return {
+    items,
+    total: asNumber(totalSource, items.length),
+    raw,
+  }
 }
 
 export async function getActiveDriverOrder(): Promise<DriverOrderViewModel | null> {

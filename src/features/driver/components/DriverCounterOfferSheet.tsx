@@ -1,54 +1,65 @@
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 
 import { formatKzt, formatRoute } from '../../../lib/format'
+import { BackendApiError } from '../../../shared/api/backend'
 import { useAppActions, useAppState } from '../../../providers/AppStateProvider'
 import { OverlaySheet } from '../../../shared/ui/OverlaySheet'
 import type { DriverCounterOffer, DriverFeedOrder } from '../../../types/domain'
 
-export function DriverCounterOfferSheet() {
-  const {
-    driverFeedOrders,
-    driverCounterOffers,
-    isDriverCounterOfferSheetOpen,
-    driverCounterOfferOrderId,
-    isDriverActionLoading,
-  } = useAppState()
+export function DriverCounterOfferSheet({
+  selectedRequest,
+  draftPrice,
+  draftComment,
+  onDraftChange,
+  onClose,
+  onSuccess,
+  onUnavailable,
+  onRefreshFeed,
+}: {
+  selectedRequest: DriverFeedOrder | null
+  draftPrice: string
+  draftComment: string
+  onDraftChange: (next: { price: string; comment: string }) => void
+  onClose: () => void
+  onSuccess?: (payload: { order: DriverFeedOrder; offer: DriverCounterOffer }) => void
+  onUnavailable?: () => void
+  onRefreshFeed: () => Promise<void>
+}) {
+  const { driverCounterOffers, isDriverCounterOfferSheetOpen, isDriverActionLoading } = useAppState()
   const actions = useAppActions()
-  const selectedOrder = useMemo(
-    () => driverFeedOrders.find((item) => item.id === driverCounterOfferOrderId) ?? null,
-    [driverCounterOfferOrderId, driverFeedOrders],
-  )
-  const selectedCounterOffer = useMemo(
-    () => driverCounterOffers.find((item) => item.orderId === driverCounterOfferOrderId) ?? null,
-    [driverCounterOfferOrderId, driverCounterOffers],
-  )
 
-  if (!selectedOrder) return null
+  const selectedCounterOffer = selectedRequest
+    ? driverCounterOffers.find((item) => item.orderId === selectedRequest.id) ?? null
+    : null
+
+  if (!selectedRequest) return null
 
   return (
     <OverlaySheet
       open={isDriverCounterOfferSheetOpen}
       title="Предложить цену"
-      onClose={actions.closeDriverCounterOfferSheet}
+      onClose={onClose}
       position="bottom"
     >
       <CounterOfferForm
-        key={`${selectedOrder.id}:${selectedCounterOffer?.offeredPrice ?? selectedOrder.requestedPrice}:${selectedCounterOffer?.comment ?? ''}`}
-        selectedOrder={selectedOrder}
+        key={selectedRequest.id}
+        selectedRequest={selectedRequest}
         selectedCounterOffer={selectedCounterOffer}
+        draftPrice={draftPrice}
+        draftComment={draftComment}
+        onDraftChange={onDraftChange}
         isDriverActionLoading={isDriverActionLoading}
-        onClose={actions.closeDriverCounterOfferSheet}
+        onClose={onClose}
+        onUnavailable={onUnavailable}
+        onRefreshFeed={onRefreshFeed}
         onWithdrawOffer={(offerId) => actions.withdrawDriverOffer(offerId)}
-        onSubmit={(price, comment, setError) => {
-          const numericPrice = Number(price)
-
-          if (!Number.isFinite(numericPrice) || numericPrice <= 0) {
-            setError('Введите корректную цену.')
-            return
-          }
-
+        onSubmit={async (price, comment, setError) => {
           setError('')
-          actions.sendDriverCounterOffer(numericPrice, comment.trim())
+          return actions.sendDriverCounterOffer(price, comment.trim())
+        }}
+        onSuccess={(offer) => {
+          onSuccess?.({ order: selectedRequest, offer })
+          onClose()
         }}
       />
     </OverlaySheet>
@@ -56,27 +67,42 @@ export function DriverCounterOfferSheet() {
 }
 
 function CounterOfferForm({
-  selectedOrder,
+  selectedRequest,
   selectedCounterOffer,
+  draftPrice,
+  draftComment,
+  onDraftChange,
   isDriverActionLoading,
   onClose,
+  onUnavailable,
+  onRefreshFeed,
   onWithdrawOffer,
   onSubmit,
+  onSuccess,
 }: {
-  selectedOrder: DriverFeedOrder
+  selectedRequest: DriverFeedOrder
   selectedCounterOffer: DriverCounterOffer | null
+  draftPrice: string
+  draftComment: string
+  onDraftChange: (next: { price: string; comment: string }) => void
   isDriverActionLoading: boolean
   onClose: () => void
+  onUnavailable?: () => void
+  onRefreshFeed: () => Promise<void>
   onWithdrawOffer: (offerId: string) => Promise<void>
-  onSubmit: (price: string, comment: string, setError: (value: string) => void) => void
+  onSubmit: (price: string, comment: string, setError: (value: string) => void) => Promise<DriverCounterOffer>
+  onSuccess: (offer: DriverCounterOffer) => void
 }) {
-  const [price, setPrice] = useState(
-    selectedCounterOffer?.offeredPrice
-      ? String(selectedCounterOffer.offeredPrice)
-      : String(selectedOrder.requestedPrice),
-  )
-  const [comment, setComment] = useState(selectedCounterOffer?.comment ?? '')
   const [error, setError] = useState('')
+
+  const normalizePrice = (value: string) => {
+    const trimmed = value.trim().replace(/[\s₸]+/g, '')
+    if (!/^[1-9]\d*$/.test(trimmed)) {
+      return null
+    }
+
+    return trimmed
+  }
 
   return (
     <div className="space-y-4">
@@ -85,22 +111,20 @@ function CounterOfferForm({
           Маршрут
         </p>
         <p className="mt-2 text-sm font-semibold text-ink">
-          {formatRoute(selectedOrder.from, selectedOrder.to)}
+          {formatRoute(selectedRequest.from, selectedRequest.to)}
         </p>
         <p className="mt-1 text-sm text-muted">
-          Цена клиента: {formatKzt(selectedOrder.requestedPrice)}
+          Цена клиента: {formatKzt(selectedRequest.requestedPrice)}
         </p>
       </div>
 
       <label className="block">
         <span className="mb-1 block text-sm font-medium text-ink">Ваша цена</span>
         <input
-          type="number"
+          type="text"
           inputMode="numeric"
-          min="0"
-          step="100"
-          value={price}
-          onChange={(event) => setPrice(event.target.value)}
+          value={draftPrice}
+          onChange={(event) => onDraftChange({ price: event.target.value, comment: draftComment })}
           placeholder="Например 12000"
           className="w-full rounded-2xl border border-border bg-surface-soft px-4 py-3 text-sm outline-none transition focus:border-accent"
         />
@@ -109,8 +133,8 @@ function CounterOfferForm({
       <label className="block">
         <span className="mb-1 block text-sm font-medium text-ink">Комментарий пассажиру</span>
         <textarea
-          value={comment}
-          onChange={(event) => setComment(event.target.value)}
+          value={draftComment}
+          onChange={(event) => onDraftChange({ price: draftPrice, comment: event.target.value })}
           placeholder="Напишите короткое пояснение"
           rows={4}
           className="w-full resize-none rounded-2xl border border-border bg-surface-soft px-4 py-3 text-sm outline-none transition focus:border-accent"
@@ -125,8 +149,16 @@ function CounterOfferForm({
             type="button"
             disabled={isDriverActionLoading}
             onClick={async () => {
-              await onWithdrawOffer(selectedCounterOffer.id)
-              onClose()
+              try {
+                await onWithdrawOffer(selectedCounterOffer.id)
+                onClose()
+              } catch (error) {
+                if (error instanceof Error && error.message) {
+                  setError(error.message)
+                } else {
+                  setError('Не удалось отозвать предложение.')
+                }
+              }
             }}
             className="w-full rounded-2xl border border-border bg-white px-4 py-3 text-sm font-semibold text-ink disabled:cursor-not-allowed disabled:opacity-60"
           >
@@ -145,7 +177,38 @@ function CounterOfferForm({
         </button>
         <button
           type="button"
-          onClick={() => onSubmit(price, comment, setError)}
+          onClick={async () => {
+            try {
+              const normalizedPrice = normalizePrice(draftPrice)
+
+              if (!normalizedPrice) {
+                setError('Укажите корректную цену.')
+                return
+              }
+
+              const offer = await onSubmit(normalizedPrice, draftComment, setError)
+              onSuccess(offer)
+            } catch (error) {
+              if (error instanceof BackendApiError && [404, 409, 410].includes(error.status ?? 0)) {
+                setError('Заявка уже недоступна. Обновили ленту.')
+                onUnavailable?.()
+                onClose()
+                void onRefreshFeed()
+                return
+              }
+
+              if (error instanceof BackendApiError && [400, 422].includes(error.status ?? 0)) {
+                setError('Не удалось отправить предложение. Проверьте цену.')
+                return
+              }
+
+              if (error instanceof Error && error.message) {
+                setError(error.message)
+              } else {
+                setError('Не удалось отправить предложение.')
+              }
+            }
+          }}
           className="rounded-2xl bg-accent px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-accent/20"
         >
           Отправить предложение

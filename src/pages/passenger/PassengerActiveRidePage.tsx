@@ -6,7 +6,7 @@ import { useAppActions, useAppState } from '../../providers/AppStateProvider'
 import { PageCard } from '../../shared/ui/PageCard'
 
 export default function PassengerActiveRidePage() {
-  const { activeRide, activeRideEvents, orderReviews, orderComplaints, rideFlowError } = useAppState()
+  const { activeRide, activeRideEvents, orderReviews, orderComplaints, rideFlowError, isRideActionLoading } = useAppState()
   const actions = useAppActions()
   const refreshActiveRideDetailsRef = useRef(actions.refreshActiveRideDetails)
   const refreshOrderReviewsRef = useRef(actions.refreshOrderReviews)
@@ -22,15 +22,15 @@ export default function PassengerActiveRidePage() {
   }, [actions.refreshOrderReviews, actions.refreshOrderComplaints])
 
   useEffect(() => {
-    if (!activeRide?.id) return
-    void refreshActiveRideDetailsRef.current(activeRide.id)
-  }, [activeRide?.id])
+    if (!activeRide?.orderId) return
+    void refreshActiveRideDetailsRef.current(activeRide.orderId)
+  }, [activeRide?.orderId])
 
   useEffect(() => {
-    if (!activeRide?.id) return
-    void refreshOrderReviewsRef.current(activeRide.id)
-    void refreshOrderComplaintsRef.current(activeRide.id)
-  }, [activeRide?.id])
+    if (!activeRide?.orderId) return
+    void refreshOrderReviewsRef.current(activeRide.orderId)
+    void refreshOrderComplaintsRef.current(activeRide.orderId)
+  }, [activeRide?.orderId])
 
   if (!activeRide) {
     return (
@@ -122,12 +122,13 @@ export default function PassengerActiveRidePage() {
           </a>
         ) : (
           <div className="flex items-center justify-center rounded-2xl border border-border bg-white px-3 py-3 text-sm font-semibold text-muted">
-            Контакт откроется после подтверждения заказа
+            Контакты доступны по правилам заказа и тарифа.
           </div>
         )}
         <button
           type="button"
           onClick={() => void actions.cancelActiveRide()}
+          disabled={isRideActionLoading}
           className="flex items-center justify-center gap-2 rounded-2xl border border-border bg-white px-3 py-3 text-sm font-semibold text-ink"
         >
           <XCircle className="h-4 w-4 text-accent" />
@@ -135,7 +136,14 @@ export default function PassengerActiveRidePage() {
         </button>
         <button
           type="button"
-          onClick={() => actions.openRideComplaintSheet(activeRide.id)}
+          onClick={() =>
+            actions.openRideComplaintSheet({
+              targetType: 'ORDER',
+              orderId: activeRide.orderId,
+              title: activeRide.driverName,
+              route: `${activeRide.from} → ${activeRide.to}`,
+            })
+          }
           className="flex items-center justify-center gap-2 rounded-2xl border border-border bg-white px-3 py-3 text-sm font-semibold text-ink"
         >
           <ShieldAlert className="h-4 w-4 text-accent" />

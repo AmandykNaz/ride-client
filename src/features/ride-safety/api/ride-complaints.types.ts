@@ -1,6 +1,10 @@
 export type RideComplaint = {
   id: string
+  targetType?: 'ORDER' | 'REQUEST_CONTACT'
   orderId?: string
+  requestId?: string
+  contactUnlockId?: string
+  complainantRole?: 'PASSENGER' | 'DRIVER' | string
   category: string
   message: string
   status: string
@@ -12,7 +16,13 @@ export type RideComplaint = {
 
 export type CreateRideComplaintPayload = {
   category: string
-  message: string
+  message?: string
+}
+
+export type CreateRideRequestComplaintPayload = {
+  reasonCode: string
+  message?: string
+  contactUnlockId?: string
 }
 
 export type RideComplaintsListResponse = {

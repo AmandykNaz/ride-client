@@ -63,6 +63,21 @@ function formatDateTimeParts(date: string, time: string) {
   }).format(combined)
 }
 
+function isSameLocalDay(left: Date, right: Date) {
+  return (
+    left.getFullYear() === right.getFullYear() &&
+    left.getMonth() === right.getMonth() &&
+    left.getDate() === right.getDate()
+  )
+}
+
+function formatShortTime(date: Date) {
+  return new Intl.DateTimeFormat('ru-RU', {
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date)
+}
+
 export const KZ_PLATE_REGION_CODES = [
   '01',
   '02',
@@ -195,6 +210,8 @@ export function formatRideRequestStatusLabel(status?: RideRequestStatus | string
       return 'Завершена'
     case 'CANCELLED':
       return 'Отменена'
+    case 'CLOSED_EXTERNALLY':
+      return 'Закрыта по договорённости'
     case 'CONVERTED_TO_ORDER':
       return 'Водитель назначен'
     case 'EXPIRED':
@@ -202,6 +219,27 @@ export function formatRideRequestStatusLabel(status?: RideRequestStatus | string
     default:
       return 'Статус неизвестен'
   }
+}
+
+export function formatPassengerRideRequestStatusLabel(request?: {
+  status?: RideRequestStatus | string | null
+  cancelledBy?: string | null
+}) {
+  const normalizedStatus = String(request?.status ?? '').trim().toUpperCase()
+
+  if (normalizedStatus === 'CANCELLED') {
+    if (String(request?.cancelledBy ?? '').trim().toUpperCase() === 'PASSENGER') {
+      return 'Отменена пассажиром'
+    }
+
+    return 'Отменена'
+  }
+
+  if (normalizedStatus === 'CLOSED_EXTERNALLY' || normalizedStatus === 'CLOSED_EXTERNALLY'.toLowerCase().toUpperCase()) {
+    return 'Закрыта по договорённости'
+  }
+
+  return formatRideRequestStatusLabel(request?.status ?? null)
 }
 
 export function formatRideOrderStatusLabel(status?: RideOrderStatus | string | null) {
@@ -242,6 +280,10 @@ export function formatRideRequestWhenLabel(
   if (request.scheduledAt?.trim()) {
     const scheduledAt = new Date(request.scheduledAt)
     if (!Number.isNaN(scheduledAt.getTime())) {
+      if (isSameLocalDay(scheduledAt, new Date())) {
+        return `Сегодня, ${formatShortTime(scheduledAt)}`
+      }
+
       return new Intl.DateTimeFormat('ru-RU', {
         dateStyle: 'medium',
         timeStyle: 'short',

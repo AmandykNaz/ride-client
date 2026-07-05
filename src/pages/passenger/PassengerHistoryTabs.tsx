@@ -6,7 +6,7 @@ import { cn } from '../../lib/cn'
 import {
   formatCountdown,
   formatKzt,
-  formatRideRequestStatusLabel,
+  formatPassengerRideRequestStatusLabel,
   formatRideRequestWhenLabel,
   formatRoute,
   formatRouteIfPresent,
@@ -41,6 +41,14 @@ export function PassengerHistoryTabs() {
 
   const rideHistory = passengerHistory.filter((item) => item.category === 'ride')
   const parcelHistory = passengerHistory.filter((item) => item.category === 'parcel')
+  const closedExternallyRideRequests = useMemo(
+    () =>
+      passengerRideRequests.filter(
+        (request) => String(request.status).toUpperCase() === 'CLOSED_EXTERNALLY',
+      ),
+    [passengerRideRequests],
+  )
+  const hasRideHistory = rideHistory.length > 0 || closedExternallyRideRequests.length > 0
   const selectedRequest = useMemo(
     () => passengerRideRequests.find((request) => request.id === selectedRequestId) ?? null,
     [passengerRideRequests, selectedRequestId],
@@ -109,8 +117,22 @@ export function PassengerHistoryTabs() {
                     {formatRoute(request.from, request.to)}
                   </span>
                   <span className="mt-1 block text-xs text-muted">
-                    {formatRideRequestStatusLabel(request.status)} · Предложений: {request.offersCount}
+                    {formatPassengerRideRequestStatusLabel(request)} · Предложений: {request.offersCount}
                   </span>
+                  {String(request.status).toUpperCase() === 'CLOSED_EXTERNALLY' ? (
+                    <>
+                      {request.closedExternally?.driverName ? (
+                        <span className="mt-1 block text-xs text-muted">
+                          Водитель: {request.closedExternally.driverName}
+                        </span>
+                      ) : null}
+                      {[request.closedExternally?.vehicleName, request.closedExternally?.vehiclePlateNumber].filter(Boolean).length > 0 ? (
+                        <span className="mt-1 block text-xs text-muted">
+                          Авто: {[request.closedExternally?.vehicleName, request.closedExternally?.vehiclePlateNumber].filter(Boolean).join(' ')}
+                        </span>
+                      ) : null}
+                    </>
+                  ) : null}
                   <span className="mt-1 block text-xs text-muted">
                     Когда: {formatRideRequestWhenLabel(request)}
                   </span>
@@ -170,8 +192,42 @@ export function PassengerHistoryTabs() {
       </div>
 
       {passengerOrdersTab === 'rides' ? (
-        rideHistory.length > 0 ? (
+        hasRideHistory ? (
           <div className="space-y-3">
+            {closedExternallyRideRequests.map((request) => (
+              <article
+                key={request.id}
+                className="rounded-[28px] border border-emerald-200 bg-emerald-50/60 p-4 shadow-sm"
+              >
+                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-emerald-700">
+                  {request.closedExternally?.at ? formatDateTime(request.closedExternally.at) : request.date}
+                </p>
+                <p className="mt-2 text-base font-semibold text-ink">
+                  {formatRoute(request.from, request.to)}
+                </p>
+                <p className="mt-2 text-sm text-emerald-900">
+                  Договорённость с водителем
+                </p>
+                <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                  <Field label="Цена" value={formatKzt(request.price)} />
+                  <Field label="Водитель" value={request.closedExternally?.driverName ?? 'Не указано'} />
+                  <Field label="Телефон" value={request.closedExternally?.driverPhone ?? 'Не указано'} />
+                  <Field
+                    label="Авто / госномер"
+                    value={
+                      [request.closedExternally?.vehicleName, request.closedExternally?.vehiclePlateNumber]
+                        .filter(Boolean)
+                        .join(' ') || 'Не указано'
+                    }
+                  />
+                  <Field
+                    label="Время договорённости"
+                    value={request.closedExternally?.at ? formatDateTime(request.closedExternally.at) : 'Не указано'}
+                  />
+                  <Field label="Комментарий" value={request.closedExternally?.note ?? 'Не указано'} />
+                </div>
+              </article>
+            ))}
             {rideHistory.map((item) => (
               <article
                 key={item.id}
@@ -184,7 +240,7 @@ export function PassengerHistoryTabs() {
                   {formatRoute(item.from, item.to)}
                 </p>
                 <p className="mt-2 text-sm text-muted">
-                  {item.driverName ?? 'Водитель'} · {formatRideRequestStatusLabel(item.status)}
+                  {item.driverName ?? 'Водитель'} · {formatPassengerRideRequestStatusLabel(item)}
                 </p>
                 <div className="mt-3 flex items-center justify-between gap-3">
                   <p className="text-sm font-semibold text-accent">{formatKzt(item.price)}</p>
@@ -293,7 +349,11 @@ export function PassengerHistoryTabs() {
                   Поиск
                 </p>
                 <p className="mt-2 text-sm font-semibold text-ink">
-                  {selectedRequest.status === 'EXPIRED'
+                  {selectedRequest.status === 'CLOSED_EXTERNALLY'
+                    ? selectedRequest.closedExternally?.at
+                      ? `Закрыта: ${formatDateTime(selectedRequest.closedExternally.at)}`
+                      : 'Поиск завершён'
+                    : selectedRequest.status === 'EXPIRED'
                     ? 'Время поиска истекло'
                     : typeof selectedRequest.searchRemainingSeconds === 'number'
                       ? `Поиск активен ещё ${formatCountdown(selectedRequest.searchRemainingSeconds)}`
@@ -315,7 +375,9 @@ export function PassengerHistoryTabs() {
                   Статус
                 </p>
                 <p className="mt-2 text-sm font-semibold text-ink">
-                  {formatRideRequestStatusLabel(selectedRequest.status)}
+                  {selectedRequest.status === 'CLOSED_EXTERNALLY'
+                    ? 'Закрыта по договорённости'
+                    : formatPassengerRideRequestStatusLabel(selectedRequest)}
                 </p>
               </div>
               <div className="rounded-2xl bg-surface-soft p-4">
@@ -337,7 +399,59 @@ export function PassengerHistoryTabs() {
               </div>
             ) : null}
 
+            {selectedRequest.status === 'CLOSED_EXTERNALLY' || selectedRequest.closedExternally ? (
+              <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-emerald-700">
+                  Договорённость
+                </p>
+                <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                  <Field label="Водитель" value={selectedRequest.closedExternally?.driverName ?? 'Не указано'} />
+                  <Field label="Телефон" value={selectedRequest.closedExternally?.driverPhone ?? 'Не указано'} />
+                  <Field
+                    label="Авто / госномер"
+                    value={
+                      [selectedRequest.closedExternally?.vehicleName, selectedRequest.closedExternally?.vehiclePlateNumber]
+                        .filter(Boolean)
+                        .join(' ') || 'Не указано'
+                    }
+                  />
+                  <Field
+                    label="Время закрытия"
+                    value={selectedRequest.closedExternally?.at ? formatDateTime(selectedRequest.closedExternally.at) : 'Не указано'}
+                  />
+                  <Field label="Комментарий" value={selectedRequest.closedExternally?.note ?? 'Не указано'} />
+                </div>
+              </div>
+            ) : null}
+
             <div className="grid gap-2">
+              {(() => {
+                const requestNumericId =
+                  selectedRequest.backendId && /^\d+$/.test(selectedRequest.backendId.trim())
+                    ? selectedRequest.backendId.trim()
+                    : /^\d+$/.test(selectedRequest.id.trim())
+                      ? selectedRequest.id.trim()
+                      : null
+
+                return requestNumericId ? (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      actions.openRideComplaintSheet({
+                        targetType: 'REQUEST_CONTACT',
+                        requestId: requestNumericId,
+                        contactUnlockId: selectedRequest.closedExternally?.contactUnlockId ?? undefined,
+                        title: selectedRequest.closedExternally?.driverName || 'Заявка',
+                        route: selectedRequestRoute ?? `${selectedRequest.originText} → ${selectedRequest.destinationText}`,
+                      })
+                    }
+                    className="rounded-2xl border border-border bg-white px-4 py-3 text-sm font-semibold text-ink"
+                  >
+                    Пожаловаться
+                  </button>
+                ) : null
+              })()}
+
               {isActiveRideRequestStatus(selectedRequest.status) ? (
                 <button
                   type="button"
@@ -368,6 +482,19 @@ export function PassengerHistoryTabs() {
           </div>
         ) : null}
       </OverlaySheet>
+    </div>
+  )
+}
+
+function Field({ label, value }: { label: string; value: string | number | null | undefined }) {
+  return (
+    <div>
+      <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">
+        {label}
+      </p>
+      <p className="mt-2 text-sm font-semibold text-ink">
+        {value ?? 'Не указано'}
+      </p>
     </div>
   )
 }

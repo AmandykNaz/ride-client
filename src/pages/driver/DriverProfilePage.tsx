@@ -66,7 +66,6 @@ export default function DriverProfilePage() {
         return [label, status, document?.filePath ?? ''] as const
       })
     : []
-
   const logoutButton = (
     <button
       type="button"
@@ -352,6 +351,19 @@ export default function DriverProfilePage() {
                 <p className="mt-3 text-xs text-muted">Загруженные документы не найдены.</p>
               )}
             </div>
+          </div>
+          <div className="rounded-2xl bg-surface-soft p-4">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">История заявок</p>
+            <p className="mt-1 text-sm text-muted">
+              История открытых контактов доступна в разделе “Мои заказы”.
+            </p>
+            <button
+              type="button"
+              onClick={() => actions.setScreen('driverMyOrders')}
+              className="mt-4 rounded-2xl border border-border bg-white px-4 py-3 text-sm font-semibold text-ink"
+            >
+              Открыть мои заказы
+            </button>
           </div>
           {logoutButton}
         </PageCard>

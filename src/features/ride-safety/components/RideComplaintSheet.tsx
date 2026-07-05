@@ -17,36 +17,42 @@ export function RideComplaintSheet() {
     isRideComplaintOpen,
     rideComplaintForm,
     rideSafetyError,
+    rideSafetyNotice,
     isRideComplaintSubmitting,
-    activeRide,
-    driverActiveOrder,
   } = useAppState()
   const actions = useAppActions()
   const [localError, setLocalError] = useState('')
-  const currentOrder = activeRide ?? driverActiveOrder
-  const currentOrderId = currentOrder?.id
-  const currentTitle = activeRide ? activeRide.driverName : driverActiveOrder?.clientName
-  const currentRoute = currentOrder ? `${currentOrder.from} → ${currentOrder.to}` : ''
+  const currentTargetId = rideComplaintForm.targetType === 'ORDER' ? rideComplaintForm.orderId : rideComplaintForm.requestId
+  const currentTitle = rideComplaintForm.title
+  const currentRoute = rideComplaintForm.route
+  const targetLabel = rideComplaintForm.targetType === 'ORDER' ? 'ID заказа' : 'ID заявки'
+  const isSubmitted = Boolean(rideSafetyNotice)
+  const isLocked = isRideComplaintSubmitting || isSubmitted
 
   const handleSubmit = async () => {
-    if (!currentOrderId) {
-      setLocalError('Не удалось определить заказ для жалобы.')
+    if (isSubmitted) {
       return
     }
 
-    if (!rideComplaintForm.message.trim()) {
-      setLocalError('Напишите сообщение.')
+    if (!currentTargetId) {
+      setLocalError(
+        rideComplaintForm.targetType === 'ORDER'
+          ? 'Не удалось определить заказ для жалобы.'
+          : 'Не удалось определить заявку для жалобы.',
+      )
+      return
+    }
+
+    if (!rideComplaintForm.category.trim()) {
+      setLocalError('Выберите причину.')
       return
     }
 
     setLocalError('')
 
     try {
-      await actions.createOrderComplaint(currentOrderId, {
-        category: rideComplaintForm.category,
-        message: rideComplaintForm.message.trim(),
-      })
-      actions.updateRideComplaintForm({ category: 'other', message: '' })
+      await actions.submitRideComplaint()
+      actions.updateRideComplaintForm({ category: 'other' })
     } catch {
       setLocalError('Не удалось отправить жалобу.')
     }
@@ -62,11 +68,11 @@ export function RideComplaintSheet() {
       <div className="space-y-4">
         <div className="rounded-2xl bg-surface-soft p-4">
           <p className="text-sm font-semibold text-ink">
-            {currentTitle || 'Текущий заказ'}
+            {currentTitle || (rideComplaintForm.targetType === 'ORDER' ? 'Текущий заказ' : 'Текущая заявка')}
           </p>
           {currentRoute ? <p className="mt-1 text-sm text-muted">{currentRoute}</p> : null}
-          {currentOrderId ? (
-            <p className="mt-2 text-xs text-muted">ID заказа: {currentOrderId}</p>
+          {currentTargetId ? (
+            <p className="mt-2 text-xs text-muted">{targetLabel}: {currentTargetId}</p>
           ) : null}
         </div>
 
@@ -79,8 +85,10 @@ export function RideComplaintSheet() {
                 key={category.id}
                 type="button"
                 onClick={() => actions.updateRideComplaintForm({ category: category.id })}
+                disabled={isLocked}
                 className={cn(
                   'rounded-2xl px-3 py-3 text-xs font-semibold transition',
+                  isLocked && 'cursor-not-allowed opacity-60',
                   isActive
                     ? 'bg-accent text-white shadow-lg shadow-accent/20'
                     : 'bg-surface-soft text-ink',
@@ -93,13 +101,14 @@ export function RideComplaintSheet() {
         </div>
 
         <label className="block">
-          <span className="mb-1 block text-sm font-medium text-ink">Сообщение</span>
+          <span className="mb-1 block text-sm font-medium text-ink">Комментарий</span>
           <textarea
             value={rideComplaintForm.message}
             onChange={(event) => actions.updateRideComplaintForm({ message: event.target.value })}
             rows={4}
+            disabled={isLocked}
             className="w-full rounded-2xl border border-border bg-surface-soft px-4 py-3 text-sm outline-none transition focus:border-accent"
-            placeholder="Опишите проблему"
+            placeholder="Опишите проблему, если хотите"
           />
         </label>
 
@@ -109,31 +118,39 @@ export function RideComplaintSheet() {
           </div>
         ) : null}
 
+        {rideSafetyNotice ? (
+          <div className="rounded-2xl bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+            {rideSafetyNotice}
+          </div>
+        ) : null}
+
         {localError ? (
           <div className="rounded-2xl bg-red-50 px-4 py-3 text-sm text-red-700">
             {localError}
           </div>
         ) : null}
 
-        <div className="grid grid-cols-2 gap-2">
+        <div className={cn('grid gap-2', isSubmitted ? 'grid-cols-1' : 'grid-cols-2')}>
           <button
             type="button"
             onClick={actions.closeRideComplaintSheet}
             className="rounded-2xl border border-border bg-white px-4 py-3 text-sm font-semibold text-ink"
           >
-            Отмена
+            {rideSafetyNotice ? 'Закрыть' : 'Отмена'}
           </button>
-          <button
-            type="button"
-            onClick={handleSubmit}
-            disabled={isRideComplaintSubmitting}
-            className={cn(
-              'rounded-2xl bg-accent px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-accent/20',
-              isRideComplaintSubmitting && 'cursor-not-allowed opacity-60',
-            )}
-          >
-            {isRideComplaintSubmitting ? 'Отправляем...' : 'Отправить жалобу'}
-          </button>
+          {isSubmitted ? null : (
+            <button
+              type="button"
+              onClick={handleSubmit}
+              disabled={isRideComplaintSubmitting}
+              className={cn(
+                'rounded-2xl bg-accent px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-accent/20',
+                isRideComplaintSubmitting && 'cursor-not-allowed opacity-60',
+              )}
+            >
+              {isRideComplaintSubmitting ? 'Отправляем...' : 'Отправить жалобу'}
+            </button>
+          )}
         </div>
       </div>
     </OverlaySheet>

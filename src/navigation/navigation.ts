@@ -82,6 +82,10 @@ export const screenMeta = {
     title: 'Активный заказ',
     subtitle: 'Текущий статус выполнения',
   },
+  driverMyOrders: {
+    title: 'Мои заказы',
+    subtitle: 'История открытых контактов и заявок',
+  },
   driverBalance: {
     title: 'Баланс',
     subtitle: 'Доход и выплаты',
@@ -144,7 +148,7 @@ export const passengerDrawerItems: DrawerItem[] = [
 export const driverDrawerItems: DrawerItem[] = [
   { label: 'Кабинет водителя', screen: 'driverDashboard', icon: CircleGauge },
   { label: 'Лента заказов', screen: 'driverFeed', icon: Sparkles },
-  { label: 'Мои заказы', screen: 'passengerOrders', icon: History },
+  { label: 'Мои заказы', screen: 'driverMyOrders', icon: History },
   { label: 'Баланс', screen: 'driverBalance', icon: Banknote },
   { label: 'Профиль', screen: 'driverProfile', icon: User },
   { label: 'Безопасность', screen: 'safety', icon: ShieldCheck },

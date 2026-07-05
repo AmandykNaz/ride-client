@@ -1,4 +1,4 @@
-import type { RideOrderStatus, RideRequestStatus, TripType } from '../../../types/domain'
+import type { DriverCallOutcome, RideOrderStatus, RideRequestStatus, TripType } from '../../../types/domain'
 
 export type RideServiceType = 'INTERCITY_RIDE' | 'PARCEL'
 export type RideType = 'SHARED' | 'FULL'
@@ -23,6 +23,16 @@ export type RideRequest = {
   backendId?: string
   localId?: string
   status: RideRequestStatus
+  closedExternally?: {
+    at?: string
+    note?: string
+    contactUnlockId?: string
+    driverProfileId?: string
+    driverName?: string
+    driverPhone?: string
+    vehicleName?: string
+    vehiclePlateNumber?: string
+  }
   serviceType: string
   rideType?: TripType | string
   timingMode?: RideRequestTimingMode
@@ -51,6 +61,11 @@ export type RideRequest = {
   comment: string
   createdAt: string
   priceUpdatedAt?: string
+  cancelledAt?: string | null
+  cancelledBy?: string | null
+  cancelReasonCode?: string | null
+  cancelReasonText?: string | null
+  cancelReasonLabel?: string | null
   searchRemainingSeconds?: number
   expiresAt?: string
   offersCount: number
@@ -60,6 +75,7 @@ export type RideRequest = {
 
 export type RideOffer = {
   id: string
+  backendId?: string
   requestId?: string
   driverId?: string
   status?: 'pending' | 'accepted' | 'rejected' | string
@@ -83,16 +99,56 @@ export type RideOfferListResponse = {
   raw: unknown
 }
 
+export type RidePassengerRequestContactUnlock = {
+  contactUnlockId: string
+  driverProfileId?: string
+  driverName: string
+  driverPhone: string
+  vehicleName?: string
+  vehiclePlateNumber?: string
+  openedAt: string
+  callOutcome?: DriverCallOutcome
+  callOutcomeAt?: string
+  callOutcomeNote?: string | null
+  raw: unknown
+}
+
+export type RidePassengerRequestContactUnlocksResponse = {
+  requestId: string
+  items: RidePassengerRequestContactUnlock[]
+  raw: unknown
+}
+
+export type CloseRideRequestExternallyPayload = {
+  contactUnlockId: string
+  note?: string
+}
+
+export type CloseRideRequestExternallyResult = {
+  requestId: string
+  status: RideRequestStatus | string
+  closedExternallyAt?: string
+  contactUnlockId?: string
+  driverProfileId?: string
+  driverName?: string
+  driverPhone?: string
+  vehicleName?: string
+  vehiclePlateNumber?: string
+  note?: string
+  raw: unknown
+}
+
 export type CancelRideRequestPayload = {
   reasonCode?: string | null
   reasonText?: string | null
 }
 
 export type AcceptRideOfferResponse =
-  | RideOrder
   | {
       order?: unknown
       rideOrder?: unknown
+      offer?: unknown
+      rideOffer?: unknown
       request?: unknown
       rideRequest?: unknown
       raw?: unknown
@@ -109,9 +165,11 @@ export type RideOrderEvent = {
 
 export type RideOrder = {
   id: string
+  offerId?: string
   requestId?: string
   status: RideOrderStatus | string
   serviceType: string
+  currency?: string
   rideType?: TripType | string
   from: string
   to: string
@@ -140,6 +198,13 @@ export type RideOrder = {
   plate: string
   createdAt: string
   updatedAt?: string
+  raw: unknown
+}
+
+export type AcceptRideOfferResult = {
+  order: RideOrder
+  request: RideRequest | null
+  offer: RideOffer | null
   raw: unknown
 }
 

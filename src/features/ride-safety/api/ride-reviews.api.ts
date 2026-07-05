@@ -20,6 +20,16 @@ function asNumber(value: unknown, fallback = 0) {
   return typeof value === 'number' && Number.isFinite(value) ? value : fallback
 }
 
+function requireNumericOrderId(context: string, value: string) {
+  const normalized = value.trim()
+  if (!/^\d+$/.test(normalized)) {
+    console.warn(`[ride] ${context}: numeric order id is required`, value)
+    return null
+  }
+
+  return normalized
+}
+
 function getList(value: unknown) {
   if (Array.isArray(value)) return value
   if (!isRecord(value)) return []
@@ -89,12 +99,22 @@ function mapListResponse(raw: unknown): RideReviewsListResponse {
 }
 
 export async function createRideOrderReview(orderId: string, payload: CreateRideReviewPayload) {
-  const response = await backendPost<unknown>(`/ride/orders/${orderId}/reviews`, payload)
+  const normalizedId = requireNumericOrderId('createRideOrderReview', orderId)
+  if (!normalizedId) {
+    throw new Error('Не удалось определить numeric id заказа для отзыва.')
+  }
+
+  const response = await backendPost<unknown>(`/ride/orders/${normalizedId}/reviews`, payload)
   return mapReview(response)
 }
 
 export async function getRideOrderReviews(orderId: string) {
-  const response = await backendGet<unknown>(`/ride/orders/${orderId}/reviews`)
+  const normalizedId = requireNumericOrderId('getRideOrderReviews', orderId)
+  if (!normalizedId) {
+    throw new Error('Не удалось определить numeric id заказа для отзывов.')
+  }
+
+  const response = await backendGet<unknown>(`/ride/orders/${normalizedId}/reviews`)
   return mapListResponse(response)
 }
 

@@ -19,6 +19,7 @@ export type RideRequestStatus =
   | 'SEARCHING'
   | 'OFFERED'
   | 'ACCEPTED'
+  | 'CLOSED_EXTERNALLY'
   | 'CANCELLED'
   | 'EXPIRED'
   | 'CONVERTED_TO_ORDER'
@@ -129,7 +130,7 @@ export type TripType = 'shared' | 'full'
 
 export type RideHistoryCategory = 'ride' | 'parcel' | 'bus'
 
-export type RideHistoryStatus = 'completed' | 'cancelled'
+export type RideHistoryStatus = 'completed' | 'cancelled' | 'closed_externally'
 
 export type PassengerProfile = {
   id?: string
@@ -374,6 +375,8 @@ export type DriverFeedOrderCategory = 'ride' | 'parcel'
 
 export type DriverFeedOrderStatus = 'available' | 'offered' | 'accepted' | 'cancelled'
 
+export type DriverCallOutcome = 'AGREED_OFFLINE' | 'NO_ANSWER' | 'DECLINED' | 'OTHER'
+
 export type DriverFeedOrder = {
   id: string
   category: DriverFeedOrderCategory
@@ -390,8 +393,13 @@ export type DriverFeedOrder = {
   senderName?: string
   receiverName?: string
   receiverPhone?: string
-  clientName: string
-  clientPhone: string
+  contactUnlocked?: boolean
+  canCallPassenger?: boolean
+  callOutcome?: DriverCallOutcome
+  callOutcomeAt?: string
+  callOutcomeNote?: string
+  clientName: string | null
+  clientPhone?: string | null
   comment?: string
   createdMinutesAgo: number
   status: DriverFeedOrderStatus
@@ -505,6 +513,8 @@ export type ParcelOrder = {
 
 export type DriverOffer = {
   id: string
+  backendId?: string
+  status?: 'pending' | 'accepted' | 'rejected' | string
   driverName: string
   rating: number
   tripsCount: number
@@ -530,7 +540,9 @@ export type RideRequest = RideDraft & {
 
 export type ActiveRide = {
   id: string
+  orderId: string
   requestId: string
+  offerId?: string
   status: ActiveRideStatus
   contactUnlocked?: boolean
   canCallDriver?: boolean
@@ -581,6 +593,7 @@ export type AppScreen =
   | 'driverDashboard'
   | 'driverFeed'
   | 'driverOrders'
+  | 'driverMyOrders'
   | 'driverBalance'
   | 'driverProfile'
   | 'safety'

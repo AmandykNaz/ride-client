@@ -1,10 +1,15 @@
 import { ChevronRight } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
 import { useAppActions, useAppState } from '../../providers/AppStateProvider'
 import { formatKzt, formatRideRequestWhenLabel, formatRoute } from '../../lib/format'
 import { cn } from '../../lib/cn'
-import { getPassengerCityDisplay, isPassengerProfileComplete } from '../../features/passenger/api/passenger.api'
+import {
+  getLocalDateInputValue,
+  getRideScheduleMinTime,
+  buildScheduledAt,
+  isScheduledInFuture,
+} from '../../features/passenger/ride-schedule'
 import { OverlaySheet } from '../../shared/ui/OverlaySheet'
 
 const typeOptions = [
@@ -66,44 +71,33 @@ function RowButton({
   )
 }
 
-function getPassengerStatusMessage(
-  status: string,
-  passengerProfile: { name?: string; cityId?: number | null; cityName?: string; cityRegionName?: string | null; city?: string } | null,
-) {
-  if (status === 'LIMITED') {
-    return 'Создание заявок временно ограничено.'
-  }
-
-  if (status === 'BLOCKED') {
-    return 'Аккаунт заблокирован.'
-  }
-
-  if (status === 'PHONE_VERIFIED') {
-    return isPassengerProfileComplete(passengerProfile)
-      ? 'Телефон подтверждён.'
-      : 'Профиль не заполнен.'
-  }
-
-  return ''
-}
-
 export default function PassengerOrderPage() {
   const {
     passengerStatus,
-    passengerProfile,
     activeRide,
     rideDraft,
     isRideRequestLoading,
     rideFlowError,
+    rideFlowNotice,
   } = useAppState()
   const actions = useAppActions()
-  const isProfileComplete = isPassengerProfileComplete(passengerProfile)
-  const profileActionLabel = isProfileComplete ? 'Редактировать профиль' : 'Заполнить профиль'
   const isSubmitting = isRideRequestLoading
-  const banner = getPassengerStatusMessage(passengerStatus, passengerProfile)
-  const cityDisplay = getPassengerCityDisplay(passengerProfile)
+  const [phoneVerifiedBannerVisible, setPhoneVerifiedBannerVisible] = useState(false)
   const [openSheet, setOpenSheet] = useState<'schedule' | 'price' | 'comment' | null>(null)
   const [parcelInfoMessage, setParcelInfoMessage] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (passengerStatus !== 'PHONE_VERIFIED') {
+      return undefined
+    }
+
+    const showTimer = window.setTimeout(() => setPhoneVerifiedBannerVisible(true), 0)
+    const timer = window.setTimeout(() => setPhoneVerifiedBannerVisible(false), 3000)
+    return () => {
+      window.clearTimeout(showTimer)
+      window.clearTimeout(timer)
+    }
+  }, [passengerStatus])
 
   const handleSearch = () => {
     if (passengerStatus === 'GUEST') {
@@ -123,16 +117,19 @@ export default function PassengerOrderPage() {
   const hasPrice = rideDraft.price.trim().length > 0 && Number.isFinite(currentPrice) && currentPrice > 0
   const needsScheduledTime = rideDraft.timingMode === 'scheduled'
   const isScheduledFieldsValid =
-    !needsScheduledTime || (Boolean(rideDraft.date.trim()) && Boolean(rideDraft.time.trim()))
+    !needsScheduledTime ||
+    (Boolean(rideDraft.date.trim()) &&
+      Boolean(rideDraft.time.trim()) &&
+      isScheduledInFuture(rideDraft.date, rideDraft.time))
   const validationError = !hasOrigin
     ? 'Выберите город и адрес отправления.'
     : !hasDestination
       ? 'Выберите город и адрес прибытия.'
-      : !hasPrice
-        ? 'Укажите цену поездки.'
-        : !isScheduledFieldsValid
-          ? 'Для запланированной поездки выберите дату и время.'
-          : ''
+          : !hasPrice
+            ? 'Укажите цену поездки.'
+            : !isScheduledFieldsValid
+              ? 'Выберите будущее время поездки.'
+              : ''
   const canSearch = !isSubmitting && passengerStatus !== 'LIMITED' && passengerStatus !== 'BLOCKED' && !validationError
   const originLabel = buildLocationLabel(rideDraft.originCityName, rideDraft.originAddress)
   const destinationLabel = buildLocationLabel(rideDraft.destinationCityName, rideDraft.destinationAddress)
@@ -170,62 +167,20 @@ export default function PassengerOrderPage() {
         </div>
       ) : null}
 
-      {banner ? (
-        <div
-          className={cn(
-            'rounded-[24px] border px-4 py-3 text-sm font-medium',
-            passengerStatus === 'BLOCKED'
-              ? 'border-red-200 bg-red-50 text-red-700'
-              : passengerStatus === 'PHONE_VERIFIED' && !isProfileComplete
-                ? 'border-amber-200 bg-amber-50 text-amber-900'
-                : 'border-emerald-200 bg-emerald-50 text-emerald-900',
-          )}
-        >
-          <div className="flex items-center justify-between gap-3">
-            <span>{banner}</span>
-            {passengerStatus === 'PHONE_VERIFIED' && !isProfileComplete ? (
-              <button
-                type="button"
-                onClick={() => actions.openPassengerOnboarding()}
-                className="shrink-0 rounded-full border border-amber-300 bg-white px-3 py-1 text-xs font-semibold text-amber-900"
-              >
-                Заполнить профиль
-              </button>
-            ) : null}
-          </div>
+      {rideFlowNotice ? (
+        <div className="rounded-[24px] border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+          {rideFlowNotice}
         </div>
       ) : null}
 
-      {passengerProfile ? (
-        <div className="rounded-[28px] border border-border bg-white p-4 shadow-sm">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">
-            Мини-профиль
-          </p>
-          <div className="mt-3 grid gap-3 sm:grid-cols-3">
-            <div>
-              <p className="text-sm font-semibold text-ink">
-                {passengerProfile.name || 'Имя не указано'}
-              </p>
-              <p className="text-sm text-muted">{passengerProfile.phone}</p>
-            </div>
-            <div>
-              <p className="text-sm font-semibold text-ink">
-                {cityDisplay || 'Город не указан'}
-              </p>
-              <p className="text-sm text-muted">Город</p>
-            </div>
-            <div>
-              <p className="text-sm font-semibold text-ink">{passengerProfile.tripsCount}</p>
-              <p className="text-sm text-muted">Поездок</p>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={() => actions.openPassengerOnboarding()}
-            className="inline-flex items-center gap-2 rounded-2xl border border-border bg-white px-4 py-3 text-sm font-semibold text-ink"
-          >
-            {profileActionLabel}
-          </button>
+      {phoneVerifiedBannerVisible && passengerStatus === 'PHONE_VERIFIED' ? (
+        <div
+          className={cn(
+            'rounded-[24px] border px-4 py-3 text-sm font-medium',
+            'border-emerald-200 bg-emerald-50 text-emerald-900',
+          )}
+        >
+          Телефон подтверждён.
         </div>
       ) : null}
 
@@ -385,16 +340,31 @@ function RideScheduleSheet({
   onSave: (payload: { timingMode: 'immediate' | 'scheduled'; date: string; time: string }) => void
 }) {
   const [mode, setMode] = useState<'immediate' | 'scheduled'>(initialMode)
-  const [date, setDate] = useState(initialDate)
-  const [time, setTime] = useState(initialTime)
+  const [date, setDate] = useState(initialMode === 'scheduled' ? initialDate : '')
+  const [time, setTime] = useState(initialMode === 'scheduled' ? initialTime : '')
   const [error, setError] = useState('')
+  const today = getLocalDateInputValue()
+  const timeMin = getRideScheduleMinTime(date)
+  const isScheduledValid = mode !== 'scheduled' || isScheduledInFuture(date, time)
+  const isScheduledReady = mode !== 'scheduled' || (Boolean(date.trim()) && Boolean(time.trim()) && isScheduledValid)
 
   const handleDone = () => {
     if (mode === 'scheduled') {
       if (!date || !time) {
-        setError('Для запланированной поездки выберите дату и время.')
+        setError('Выберите будущее время поездки.')
         return
       }
+
+      if (!isScheduledValid) {
+        setError('Выберите будущее время поездки.')
+        return
+      }
+
+      if (!buildScheduledAt(date, time)) {
+        setError('Выберите будущее время поездки.')
+        return
+      }
+
       onSave({ timingMode: 'scheduled', date, time })
       return
     }
@@ -402,7 +372,10 @@ function RideScheduleSheet({
     onSave({ timingMode: 'immediate', date: '', time: '' })
   }
 
-  const handleSkip = () => {
+  const handleNow = () => {
+    setDate('')
+    setTime('')
+    setError('')
     onSave({ timingMode: 'immediate', date: '', time: '' })
   }
 
@@ -420,6 +393,10 @@ function RideScheduleSheet({
               onClick={() => {
                 setMode(option.value)
                 setError('')
+                if (option.value === 'immediate') {
+                  setDate('')
+                  setTime('')
+                }
               }}
               className={cn(
                 'rounded-[18px] border px-4 py-3 text-sm font-semibold transition',
@@ -439,6 +416,8 @@ function RideScheduleSheet({
             <input
               type="date"
               value={date}
+              min={today}
+              disabled={mode === 'immediate'}
               onChange={(event) => {
                 setDate(event.target.value)
                 setError('')
@@ -451,6 +430,8 @@ function RideScheduleSheet({
             <input
               type="time"
               value={time}
+              min={timeMin || undefined}
+              disabled={mode === 'immediate'}
               onChange={(event) => {
                 setTime(event.target.value)
                 setError('')
@@ -469,15 +450,16 @@ function RideScheduleSheet({
         <div className="grid grid-cols-2 gap-2">
           <button
             type="button"
-            onClick={handleSkip}
+            onClick={handleNow}
             className="rounded-[18px] border border-border bg-white px-4 py-4 text-base font-semibold text-ink"
           >
-            Пропустить
+            Сейчас
           </button>
           <button
             type="button"
             onClick={handleDone}
-            className="rounded-[18px] bg-accent px-4 py-4 text-base font-semibold text-white shadow-lg shadow-accent/20"
+            disabled={!isScheduledReady}
+            className="rounded-[18px] bg-accent px-4 py-4 text-base font-semibold text-white shadow-lg shadow-accent/20 disabled:opacity-60"
           >
             Готово
           </button>

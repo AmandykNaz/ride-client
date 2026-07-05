@@ -175,19 +175,22 @@ export default function DriverActiveOrderPage() {
             </p>
             <p className="mt-2 text-sm font-semibold text-ink">{driverActiveOrder.clientName}</p>
           </div>
-          {driverActiveOrder.canCallPassenger ? (
-            <a
-              href={`tel:${driverActiveOrder.clientPhone.replace(/\s+/g, '')}`}
-              className="rounded-2xl bg-white p-4 text-left"
-            >
+          {driverActiveOrder.canCallPassenger && driverActiveOrder.clientPhone ? (
+            <div className="rounded-2xl bg-white p-4 text-left">
               <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">
                 Телефон
               </p>
               <p className="mt-2 text-sm font-semibold text-ink">{driverActiveOrder.clientPhone}</p>
-            </a>
+              <a
+                href={`tel:${driverActiveOrder.clientPhone.replace(/\s+/g, '')}`}
+                className="mt-3 inline-flex items-center justify-center rounded-2xl bg-surface-soft px-4 py-3 text-sm font-semibold text-ink"
+              >
+                Позвонить
+              </a>
+            </div>
           ) : (
             <div className="rounded-2xl bg-surface-soft p-4 text-sm text-muted">
-              Контакт откроется после подтверждения заказа
+              Контакты доступны по правилам заказа и тарифа.
             </div>
           )}
           <div className="rounded-2xl bg-surface-soft p-4">
@@ -348,7 +351,14 @@ export default function DriverActiveOrderPage() {
         {!isCancelled ? (
           <button
             type="button"
-            onClick={() => actions.openRideComplaintSheet(driverActiveOrder.id)}
+            onClick={() =>
+              actions.openRideComplaintSheet({
+                targetType: 'ORDER',
+                orderId: driverActiveOrder.id,
+                title: driverActiveOrder.clientName,
+                route: `${driverActiveOrder.from} → ${driverActiveOrder.to}`,
+              })
+            }
             className="inline-flex items-center justify-center gap-2 rounded-2xl border border-border bg-white px-4 py-3 text-sm font-semibold text-ink"
           >
             <ShieldAlert className="h-4 w-4 text-accent" />

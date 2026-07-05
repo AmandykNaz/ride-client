@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Clock3 } from 'lucide-react'
+import { CarFront, Clock3, Phone, ShieldAlert } from 'lucide-react'
 
 import {
   formatCountdown,
@@ -10,18 +10,51 @@ import { cn } from '../../lib/cn'
 import { useAppActions, useAppState } from '../../providers/AppStateProvider'
 import { PageCard } from '../../shared/ui/PageCard'
 import { OverlaySheet } from '../../shared/ui/OverlaySheet'
+import type { DriverCallOutcome } from '../../types/domain'
+
+function formatContactUnlockOutcomeLabel(outcome?: DriverCallOutcome) {
+  switch (outcome) {
+    case 'AGREED_OFFLINE':
+      return 'Договорились'
+    case 'NO_ANSWER':
+      return 'Не дозвонился'
+    case 'DECLINED':
+      return 'Неактуально'
+    case 'OTHER':
+      return 'Другое'
+    default:
+      return 'Ожидаем результат звонка'
+  }
+}
+
+function formatContactUnlockDateTime(value?: string) {
+  if (!value) return ''
+
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) {
+    return value
+  }
+
+  return date.toLocaleString('ru-RU', {
+    day: '2-digit',
+    month: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
 
 const CANCEL_REASONS = [
-  { code: 'PRICE_CHANGE', label: 'Хочу изменить цену' },
+  { code: 'CHANGE_PRICE', label: 'Хочу изменить цену' },
   { code: 'NO_LONGER_RELEVANT', label: 'Поездка больше не актуальна' },
-  { code: 'NO_OFFERS', label: 'Нет предложений от водителей' },
-  { code: 'TIME_CHANGE', label: 'Хочу изменить время отправления' },
+  { code: 'NO_DRIVER_OFFERS', label: 'Нет предложений от водителей' },
+  { code: 'CHANGE_TIME', label: 'Хочу изменить время отправления' },
   { code: 'WRONG_ADDRESS', label: 'Неверный адрес' },
 ] as const
 
 export default function PassengerOffersPage() {
   const {
     activeRideRequest,
+    passengerRequestContactUnlocksByRequestId,
     driverOffers,
     rideFlowError,
     isRideOffersLoading,
@@ -30,12 +63,14 @@ export default function PassengerOffersPage() {
   const actions = useAppActions()
   const loadOffersRef = useRef(actions.loadActiveRequestOffers)
   const offersListRef = useRef<HTMLDivElement | null>(null)
-  const cancelRedirectTimerRef = useRef<number | null>(null)
   const [cancelStage, setCancelStage] = useState<'closed' | 'confirm' | 'reason'>('closed')
   const [cancelReasonCode, setCancelReasonCode] = useState<(typeof CANCEL_REASONS)[number]['code'] | 'OTHER' | ''>('')
   const [cancelReasonText, setCancelReasonText] = useState('')
-  const [cancelNotice, setCancelNotice] = useState<string | null>(null)
   const [isCancelling, setIsCancelling] = useState(false)
+  const [selectedContactUnlockId, setSelectedContactUnlockId] = useState<string | null>(null)
+  const [closeExternalNote, setCloseExternalNote] = useState('')
+  const [isClosingExternally, setIsClosingExternally] = useState(false)
+  const [pendingOfferAction, setPendingOfferAction] = useState<{ offerId: string; kind: 'accept' | 'reject' } | null>(null)
   const canSubmitCancel = cancelReasonCode === 'OTHER' ? cancelReasonText.trim().length > 0 : Boolean(cancelReasonCode)
   const activeRideRequestId = activeRideRequest?.id ?? null
   const activeRideRequestBackendId =
@@ -43,21 +78,26 @@ export default function PassengerOffersPage() {
       ? (activeRideRequest.backendId ?? activeRideRequest.id).trim()
       : null
   const activeRideRequestStatus = activeRideRequest?.status ?? null
+  const activeRideRequestLookupId = activeRideRequest?.backendId ?? activeRideRequest?.id ?? ''
   const requestPrice = activeRideRequest?.price ?? 0
   const requestTypeLabel = activeRideRequest?.type === 'full' ? 'Весь салон' : 'С попутчиками'
   const searchTimer = useRideSearchTimer(activeRideRequest)
+  const pendingDriverOffers = useMemo(
+    () => driverOffers.filter((offer) => offer.status === 'pending'),
+    [driverOffers],
+  )
+  const contactUnlocks = passengerRequestContactUnlocksByRequestId[activeRideRequestLookupId] ?? []
+  const totalDriverOffersCount = driverOffers.length
+  const activeDriverOffersCount = pendingDriverOffers.length
+  const selectedContactUnlock =
+    contactUnlocks.find((unlock) => unlock.contactUnlockId === selectedContactUnlockId) ?? null
+
+  const isOfferButtonPending = (offerId: string, kind: 'accept' | 'reject') =>
+    pendingOfferAction?.offerId === offerId && pendingOfferAction.kind === kind
 
   useEffect(() => {
     loadOffersRef.current = actions.loadActiveRequestOffers
   }, [actions.loadActiveRequestOffers])
-
-  useEffect(() => {
-    return () => {
-      if (cancelRedirectTimerRef.current) {
-        window.clearTimeout(cancelRedirectTimerRef.current)
-      }
-    }
-  }, [])
 
   useEffect(() => {
     if (
@@ -88,7 +128,6 @@ export default function PassengerOffersPage() {
   }, [activeRideRequestBackendId, activeRideRequestId, activeRideRequestStatus, searchTimer.isExpired])
 
   const openCancelConfirmation = () => {
-    setCancelNotice(null)
     setCancelReasonCode('')
     setCancelReasonText('')
     setCancelStage('confirm')
@@ -120,49 +159,55 @@ export default function PassengerOffersPage() {
       setCancelStage('closed')
       setCancelReasonCode('')
       setCancelReasonText('')
-      setCancelNotice('Заявка отменена')
-
-      if (cancelRedirectTimerRef.current) {
-        window.clearTimeout(cancelRedirectTimerRef.current)
-      }
-
-      cancelRedirectTimerRef.current = window.setTimeout(() => {
-        setCancelNotice(null)
-        actions.setPassengerOrdersTab('rides')
-        cancelRedirectTimerRef.current = null
-      }, 900)
+      actions.setPassengerOrdersTab('rides')
     } finally {
       setIsCancelling(false)
     }
   }
 
-  const openPassengerOrders = () => {
-    actions.setPassengerOrdersTab('rides')
+  const handleOpenCloseExternalSheet = (contactUnlockId: string) => {
+    setSelectedContactUnlockId(contactUnlockId)
+    setCloseExternalNote('')
+  }
+
+  const handleCloseExternalSheet = () => {
+    if (isClosingExternally) return
+    setSelectedContactUnlockId(null)
+    setCloseExternalNote('')
+  }
+
+  const handleCloseExternally = async () => {
+    if (!activeRideRequestBackendId || !selectedContactUnlock || isClosingExternally) return
+
+    setIsClosingExternally(true)
+    try {
+      await actions.closePassengerRequestExternally(
+        activeRideRequestBackendId,
+        selectedContactUnlock.contactUnlockId,
+        closeExternalNote.trim() || undefined,
+      )
+      setSelectedContactUnlockId(null)
+      setCloseExternalNote('')
+      actions.setPassengerOrdersTab('rides')
+    } finally {
+      setIsClosingExternally(false)
+    }
   }
 
   if (!activeRideRequest) {
     return (
       <div className="space-y-4 pb-[calc(6rem+env(safe-area-inset-bottom))]">
-        {cancelNotice ? (
-          <div className="rounded-[24px] border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800">
-            {cancelNotice}
-          </div>
-        ) : null}
         <PageCard
           eyebrow="Пассажир"
-          title={cancelNotice ? 'Заявка отменена' : 'Поиск водителя'}
-          description={
-            cancelNotice
-              ? 'Вы можете продолжить поиск или открыть свои заказы.'
-              : 'Здесь появятся предложения после создания заявки.'
-          }
+          title="Поиск водителя"
+          description="Здесь появятся предложения после создания заявки."
         >
           <button
             type="button"
-            onClick={cancelNotice ? openPassengerOrders : () => actions.setScreen('passengerOrder')}
+            onClick={() => actions.setScreen('passengerOrder')}
             className="rounded-2xl bg-accent px-4 py-3 text-sm font-semibold text-white"
           >
-            {cancelNotice ? 'Мои заказы' : 'Вернуться к заявке'}
+            Вернуться к заявке
           </button>
         </PageCard>
       </div>
@@ -177,21 +222,31 @@ export default function PassengerOffersPage() {
         </div>
       ) : null}
 
+      {driverOffers.length > 0 && pendingDriverOffers.length === 0 ? (
+        <div className="rounded-[24px] border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          Активных предложений сейчас нет. Исторические отклонённые предложения остаются в списке ниже.
+        </div>
+      ) : null}
+
       <PageCard
         eyebrow="Заявка на поиск водителя"
         title={
           searchTimer.isExpired
             ? 'Время поиска истекло'
-            : driverOffers.length > 0
+          : pendingDriverOffers.length > 0
               ? 'Предложения от водителей'
-              : 'Ищем подходящих водителей'
+              : driverOffers.length > 0
+                ? 'История предложений'
+                : 'Ищем подходящих водителей'
         }
         description={
           searchTimer.isExpired
             ? 'Продлите поиск, чтобы водители снова увидели заявку'
-            : driverOffers.length > 0
+            : pendingDriverOffers.length > 0
               ? 'Выберите подходящее предложение.'
-              : 'Ожидайте предложений.'
+              : driverOffers.length > 0
+                ? 'Текущие предложения отклонены, но вы можете вернуться к активному поиску.'
+                : 'Ожидайте предложений.'
         }
       >
         <ActiveRideRequestSummaryCard
@@ -199,7 +254,8 @@ export default function PassengerOffersPage() {
           request={activeRideRequest}
           requestPrice={requestPrice}
           requestTypeLabel={requestTypeLabel}
-          driverOffersCount={driverOffers.length}
+          activeDriverOffersCount={activeDriverOffersCount}
+          totalDriverOffersCount={totalDriverOffersCount}
           isRideOffersLoading={isRideOffersLoading}
           isRideActionLoading={isRideActionLoading}
           remainingSeconds={searchTimer.remainingSeconds}
@@ -211,8 +267,98 @@ export default function PassengerOffersPage() {
         />
       </PageCard>
 
+      {contactUnlocks.length > 0 ? (
+        <section className="space-y-3">
+          <div>
+            <h2 className="text-sm font-semibold text-ink">Ваш контакт открыли водители</h2>
+          </div>
+
+          {contactUnlocks.map((unlock) => {
+            const vehicleLabel = [unlock.vehicleName, unlock.vehiclePlateNumber].filter(Boolean).join(' · ')
+            const openedAt = formatContactUnlockDateTime(unlock.openedAt)
+            const outcomeAt = formatContactUnlockDateTime(unlock.callOutcomeAt)
+
+            return (
+              <article
+                key={unlock.contactUnlockId}
+                className="rounded-[24px] border border-border bg-white p-4 shadow-sm"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold text-ink">{unlock.driverName || 'Водитель'}</p>
+                    {vehicleLabel ? (
+                      <p className="mt-1 text-xs text-muted">{vehicleLabel}</p>
+                    ) : null}
+                  </div>
+                  {openedAt ? (
+                    <span className="text-[11px] font-semibold uppercase tracking-[0.2em] text-muted">
+                      {openedAt}
+                    </span>
+                  ) : null}
+                </div>
+
+                <div className="mt-4 grid gap-2 rounded-2xl bg-surface-soft p-4 text-sm text-ink">
+                  <div className="flex items-center gap-2">
+                    <Phone className="h-4 w-4 text-accent" />
+                    <span>{unlock.driverPhone}</span>
+                  </div>
+                  {vehicleLabel ? (
+                    <div className="flex items-center gap-2 text-muted">
+                      <CarFront className="h-4 w-4" />
+                      <span>{vehicleLabel}</span>
+                    </div>
+                  ) : null}
+                </div>
+
+                <div className="mt-3 rounded-2xl border border-border bg-white p-4 text-sm text-ink">
+                  <p className="font-semibold">Результат звонка</p>
+                  <p className="mt-1">{formatContactUnlockOutcomeLabel(unlock.callOutcome)}</p>
+                  {outcomeAt ? <p className="mt-1 text-muted">Обновлено: {outcomeAt}</p> : null}
+                  {unlock.callOutcomeNote ? <p className="mt-2 text-muted">{unlock.callOutcomeNote}</p> : null}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => handleOpenCloseExternalSheet(unlock.contactUnlockId)}
+                  disabled={isRideActionLoading || isClosingExternally}
+                  className="mt-3 w-full rounded-2xl bg-accent px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-accent/20 disabled:opacity-60"
+                >
+                  {unlock.callOutcome === 'AGREED_OFFLINE' ? 'Договорились' : 'Закрыть с этим водителем'}
+                </button>
+
+                {activeRideRequestBackendId ? (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      actions.openRideComplaintSheet({
+                        targetType: 'REQUEST_CONTACT',
+                        requestId: activeRideRequestBackendId,
+                        contactUnlockId: unlock.contactUnlockId,
+                        title: unlock.driverName || 'Водитель',
+                        route: `${activeRideRequest.originText} → ${activeRideRequest.destinationText}`,
+                      })
+                    }
+                    className="mt-2 inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-border bg-white px-4 py-3 text-sm font-semibold text-ink"
+                  >
+                    <ShieldAlert className="h-4 w-4 text-accent" />
+                    Пожаловаться
+                  </button>
+                ) : null}
+              </article>
+            )
+          })}
+        </section>
+      ) : null}
+
       <div ref={offersListRef} className="space-y-3">
         {driverOffers.map((offer) => {
+          const offerBackendId = offer.backendId ?? (/^\d+$/.test(offer.id) ? offer.id : '')
+          const acceptPending = isOfferButtonPending(offer.id, 'accept')
+          const rejectPending = isOfferButtonPending(offer.id, 'reject')
+          const isPendingOffer = offer.status === 'pending'
+          const isRejectedOffer = offer.status === 'rejected'
+          const isAcceptedOffer = offer.status === 'accepted'
+
           return (
             <article
               key={offer.id}
@@ -273,35 +419,135 @@ export default function PassengerOffersPage() {
                 <p className="mt-4 text-sm text-muted">{offer.comment}</p>
               )}
 
-              <button
-                type="button"
-                onClick={() => actions.acceptActiveRideOffer(offer.id)}
-                className={cn(
-                  'mt-4 w-full rounded-2xl px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-accent/20 disabled:opacity-60',
-                  offer.isCustomOffer ? 'bg-amber-500' : 'bg-accent',
-                )}
-                disabled={isRideActionLoading}
-              >
-                {isRideActionLoading ? 'Обрабатываем...' : offer.isCustomOffer ? 'Принять предложение' : 'Выбрать водителя'}
-              </button>
-              <button
-                type="button"
-                onClick={() => actions.rejectActiveRideOffer(offer.id)}
-                className="mt-2 w-full rounded-2xl border border-border bg-white px-4 py-3 text-sm font-semibold text-ink disabled:opacity-60"
-                disabled={isRideActionLoading}
-              >
-                Отклонить
-              </button>
+              {isPendingOffer ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (!offerBackendId) {
+                        await actions.loadActiveRequestOffers()
+                        return
+                      }
+                      setPendingOfferAction({ offerId: offer.id, kind: 'accept' })
+                      try {
+                        await actions.acceptActiveRideOffer(offerBackendId)
+                      } finally {
+                        setPendingOfferAction((current) =>
+                          current?.offerId === offer.id && current.kind === 'accept' ? null : current,
+                        )
+                      }
+                    }}
+                    className={cn(
+                      'mt-4 w-full rounded-2xl px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-accent/20 disabled:opacity-60',
+                      offer.isCustomOffer ? 'bg-amber-500' : 'bg-accent',
+                    )}
+                    disabled={isRideActionLoading || acceptPending || rejectPending}
+                  >
+                    {acceptPending
+                      ? 'Обрабатываем...'
+                      : offer.isCustomOffer
+                        ? 'Принять предложение'
+                        : 'Выбрать водителя'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (!offerBackendId) {
+                        await actions.loadActiveRequestOffers()
+                        return
+                      }
+                      setPendingOfferAction({ offerId: offer.id, kind: 'reject' })
+                      try {
+                        await actions.rejectActiveRideOffer(offerBackendId)
+                      } finally {
+                        setPendingOfferAction((current) =>
+                          current?.offerId === offer.id && current.kind === 'reject' ? null : current,
+                        )
+                      }
+                    }}
+                    className="mt-2 w-full rounded-2xl border border-border bg-white px-4 py-3 text-sm font-semibold text-ink disabled:opacity-60"
+                    disabled={isRideActionLoading || acceptPending || rejectPending}
+                  >
+                    {rejectPending ? 'Отклоняем...' : 'Отклонить'}
+                  </button>
+                </>
+              ) : isRejectedOffer ? (
+                <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                  <p className="font-semibold">Предложение отклонено</p>
+                  <p className="mt-1">
+                    {offer.isCustomOffer
+                      ? 'Пассажир отклонил ваш counter offer. Можно предложить новую цену, если заявка ещё активна.'
+                      : 'Пассажир не выбрал это предложение. Можно ждать новых заявок.'}
+                  </p>
+                </div>
+              ) : isAcceptedOffer ? (
+                <div className="mt-4 rounded-2xl bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">
+                  Предложение принято
+                </div>
+              ) : (
+                <div className="mt-4 rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                  Статус предложения обновляется.
+                </div>
+              )}
             </article>
           )
         })}
       </div>
 
-      {cancelNotice ? (
-        <div className="fixed inset-x-3 bottom-4 z-50 mx-auto max-w-[520px] rounded-[24px] border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800 shadow-lg shadow-emerald-900/10">
-          {cancelNotice}
-        </div>
-      ) : null}
+      <OverlaySheet
+        open={selectedContactUnlock != null}
+        title="Закрыть заявку?"
+        onClose={handleCloseExternalSheet}
+        position="bottom"
+      >
+        {selectedContactUnlock ? (
+          <div className="space-y-4">
+            <p className="text-sm text-ink">
+              Заявка будет закрыта как договорённость с водителем. Заказ в приложении не создаётся.
+            </p>
+
+            <div className="rounded-2xl bg-surface-soft p-4 text-sm text-ink">
+              <p className="font-semibold">{selectedContactUnlock.driverName || 'Водитель'}</p>
+              <p className="mt-1 text-muted">
+                {[selectedContactUnlock.vehicleName, selectedContactUnlock.vehiclePlateNumber].filter(Boolean).join(' · ') || 'Без данных об автомобиле'}
+              </p>
+              <p className="mt-1 text-muted">{selectedContactUnlock.driverPhone}</p>
+            </div>
+
+            <label className="block">
+              <span className="mb-1 block text-sm font-medium text-ink">
+                Комментарий, например: договорились на 08:00
+              </span>
+              <textarea
+                value={closeExternalNote}
+                onChange={(event) => setCloseExternalNote(event.target.value)}
+                rows={4}
+                placeholder="Комментарий необязательно"
+                className="w-full rounded-2xl border border-border bg-white px-4 py-3 text-sm text-ink outline-none focus:border-accent"
+              />
+            </label>
+
+            <div className="grid gap-2">
+              <button
+                type="button"
+                onClick={() => void handleCloseExternally()}
+                disabled={isClosingExternally}
+                className="rounded-2xl bg-accent px-4 py-3 text-sm font-semibold text-white disabled:opacity-60"
+              >
+                {isClosingExternally ? 'Закрываем...' : 'Закрыть заявку'}
+              </button>
+              <button
+                type="button"
+                onClick={handleCloseExternalSheet}
+                disabled={isClosingExternally}
+                className="rounded-2xl border border-border bg-white px-4 py-3 text-sm font-semibold text-ink"
+              >
+                Отмена
+              </button>
+            </div>
+          </div>
+        ) : null}
+      </OverlaySheet>
 
       <OverlaySheet
         open={cancelStage === 'confirm'}
@@ -413,7 +659,8 @@ function ActiveRideRequestSummaryCard({
   request,
   requestPrice,
   requestTypeLabel,
-  driverOffersCount,
+  activeDriverOffersCount,
+  totalDriverOffersCount,
   isRideOffersLoading,
   isRideActionLoading,
   remainingSeconds,
@@ -444,7 +691,8 @@ function ActiveRideRequestSummaryCard({
   }
   requestPrice: number
   requestTypeLabel: string
-  driverOffersCount: number
+  activeDriverOffersCount: number
+  totalDriverOffersCount: number
   isRideOffersLoading: boolean
   isRideActionLoading: boolean
   remainingSeconds: number
@@ -456,7 +704,7 @@ function ActiveRideRequestSummaryCard({
 }) {
   const fromValue = request.originText || request.from
   const toValue = request.destinationText || request.to
-  const activeStep = request.status === 'CONVERTED_TO_ORDER' ? 4 : driverOffersCount > 0 ? 3 : 2
+  const activeStep = request.status === 'CONVERTED_TO_ORDER' ? 4 : activeDriverOffersCount > 0 ? 3 : 2
   const currentPrice = Math.max(100, requestPrice || 0)
 
   return (
@@ -481,8 +729,12 @@ function ActiveRideRequestSummaryCard({
         </div>
 
         <div className="mt-4 flex items-center justify-between gap-3 rounded-[22px] border border-border bg-white px-4 py-3">
-          <p className="text-sm font-semibold text-ink">Предложений: {driverOffersCount}</p>
-          {driverOffersCount > 0 ? (
+          <p className="text-sm font-semibold text-ink">
+            {totalDriverOffersCount > activeDriverOffersCount
+              ? `Активных: ${activeDriverOffersCount} · Всего: ${totalDriverOffersCount}`
+              : `Предложений: ${activeDriverOffersCount}`}
+          </p>
+          {totalDriverOffersCount > 0 ? (
             <button
               type="button"
               onClick={onViewOffers}
