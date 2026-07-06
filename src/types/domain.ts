@@ -249,6 +249,7 @@ export type DriverProfile = {
   id?: string
   fullName: string
   phone: string
+  avatarUrl?: string
   city: string
   cityName?: string
   rating: number
@@ -280,6 +281,11 @@ export type DriverApplicationDocument = {
   fileName?: string
   mimeType?: string
   sizeBytes?: number
+}
+
+export type DriverAvatarUploadResult = {
+  avatarUrl?: string
+  driverAvatarUrl?: string
 }
 
 export type RideDriverRecheckType =

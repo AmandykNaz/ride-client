@@ -1,7 +1,11 @@
-import { BadgeCheck, CircleAlert, LogOut, ShieldCheck, UserCog } from 'lucide-react'
+import { useRef, useState, type ChangeEvent } from 'react'
+import { CircleAlert, LogOut, ShieldCheck, Upload, UserCog, Trash2 } from 'lucide-react'
 
 import { formatKzPlateNumber, formatKzt } from '../../lib/format'
+import { deleteDriverAvatar, uploadDriverAvatar } from '../../features/driver/api/driver.api'
 import { useAppActions, useAppState } from '../../providers/AppStateProvider'
+import { BackendApiError } from '../../shared/api/backend'
+import { DriverAvatar } from '../../shared/ui/DriverAvatar'
 import { PageCard } from '../../shared/ui/PageCard'
 import {
   getDriverAccessState,
@@ -34,6 +38,9 @@ export default function DriverProfilePage() {
     driverAccess,
   } = useAppState()
   const actions = useAppActions()
+  const avatarInputRef = useRef<HTMLInputElement | null>(null)
+  const [avatarError, setAvatarError] = useState('')
+  const [avatarLoading, setAvatarLoading] = useState(false)
   const accessState = getDriverAccessState(driverVerificationStatus, driverWallet, driverAccess)
   const verificationStatusLabel = getDriverVerificationStatusLabel(driverVerificationStatus)
   const walletShortfall = getDriverWalletShortfall(driverWallet)
@@ -51,6 +58,8 @@ export default function DriverProfilePage() {
   const profileDocuments = driverProfile?.documents ?? []
   const applicationDocuments = driverApplicationDraft.documents ?? []
   const resolvedDocuments = profileDocuments.length > 0 ? profileDocuments : applicationDocuments
+  const driverDisplayName = driverProfile?.fullName || driverApplicationDraft.fullName || 'Водитель'
+  const driverAvatarUrl = driverProfile?.avatarUrl || undefined
   const hasDocumentProof = resolvedDocuments.length > 0
   const isApprovedProfile = accessState === 'APPROVED_READY' || accessState === 'APPROVED_LOW_BALANCE'
   const documentStatusText = hasDocumentProof
@@ -76,6 +85,68 @@ export default function DriverProfilePage() {
       Выйти
     </button>
   )
+
+  const getRussianAvatarError = (error: unknown, fallback: string) => {
+    if (error instanceof BackendApiError) {
+      const message = error.message.trim()
+      if (message && /[А-Яа-яЁё]/.test(message)) {
+        return message
+      }
+    }
+
+    return fallback
+  }
+
+  const handleAvatarInputClick = () => {
+    if (!avatarLoading) {
+      avatarInputRef.current?.click()
+    }
+  }
+
+  const handleAvatarUpload = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+
+    if (!file) return
+
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+      setAvatarError('Можно загрузить только JPG, PNG или WebP.')
+      return
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      setAvatarError('Фото не должно быть больше 5 МБ.')
+      return
+    }
+
+    setAvatarLoading(true)
+    setAvatarError('')
+
+    try {
+      await uploadDriverAvatar(file)
+      await actions.refreshDriverSnapshot()
+    } catch (error) {
+      setAvatarError(getRussianAvatarError(error, 'Не удалось загрузить фото.'))
+    } finally {
+      setAvatarLoading(false)
+    }
+  }
+
+  const handleAvatarDelete = async () => {
+    if (avatarLoading) return
+
+    setAvatarLoading(true)
+    setAvatarError('')
+
+    try {
+      await deleteDriverAvatar()
+      await actions.refreshDriverSnapshot()
+    } catch (error) {
+      setAvatarError(getRussianAvatarError(error, 'Не удалось удалить фото.'))
+    } finally {
+      setAvatarLoading(false)
+    }
+  }
 
   if (accessState === 'NOT_STARTED') {
     return (
@@ -280,15 +351,45 @@ export default function DriverProfilePage() {
           ) : null}
 
           <div className="rounded-2xl bg-surface-soft p-4">
-            <div className="flex items-center gap-3">
-              <BadgeCheck className="h-5 w-5 text-accent" />
+            <div className="flex items-start gap-3">
+              <DriverAvatar name={driverDisplayName} avatarUrl={driverAvatarUrl} className="h-16 w-16 rounded-3xl" />
               <div>
                 <p className="text-sm font-semibold text-ink">
-                  {driverProfile?.fullName || driverApplicationDraft.fullName}
+                  {driverDisplayName}
                 </p>
                 <p className="text-sm text-muted">
                   {driverProfile?.phone || driverApplicationDraft.phone}
                 </p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <input
+                    ref={avatarInputRef}
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    className="hidden"
+                    onChange={handleAvatarUpload}
+                  />
+                  <button
+                    type="button"
+                    onClick={handleAvatarInputClick}
+                    disabled={avatarLoading}
+                    className="inline-flex items-center gap-2 rounded-2xl border border-border bg-white px-3 py-2 text-sm font-semibold text-ink disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    <Upload className="h-4 w-4" />
+                    {avatarLoading ? 'Загружаем...' : 'Загрузить фото'}
+                  </button>
+                  {driverAvatarUrl ? (
+                    <button
+                      type="button"
+                      onClick={handleAvatarDelete}
+                      disabled={avatarLoading}
+                      className="inline-flex items-center gap-2 rounded-2xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      Удалить фото
+                    </button>
+                  ) : null}
+                </div>
+                {avatarError ? <p className="mt-2 text-sm text-rose-700">{avatarError}</p> : null}
               </div>
             </div>
           </div>

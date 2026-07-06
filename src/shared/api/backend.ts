@@ -17,7 +17,7 @@ type BackendEnvelope<T> = {
   data: T
 }
 
-type BackendMethod = 'GET' | 'POST' | 'PATCH'
+type BackendMethod = 'GET' | 'POST' | 'PATCH' | 'DELETE'
 
 type BackendRequestOptions = {
   method: BackendMethod
@@ -321,4 +321,11 @@ export function backendPatch<T>(
   options?: Pick<BackendRequestOptions, 'skipAuth' | 'headers'>,
 ) {
   return requestBackend<T>(path, { method: 'PATCH', body, ...options })
+}
+
+export function backendDelete<T>(
+  path: string,
+  options?: Pick<BackendRequestOptions, 'skipAuth' | 'headers'>,
+) {
+  return requestBackend<T>(path, { method: 'DELETE', ...options })
 }

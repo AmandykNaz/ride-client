@@ -3,6 +3,7 @@ import type {
   DriverActiveOrder,
   DriverApplicationDraft,
   DriverApplicationHistoryItem,
+  DriverAvatarUploadResult,
   DriverCounterOffer,
   DriverFeedOrder,
   DriverProfile,
@@ -117,6 +118,7 @@ export type RideDriverCustomer = {
   name?: string
   fullName?: string
   phone?: string
+  avatarUrl?: string
   city?: string
   cityId?: string
   rating?: number
@@ -137,6 +139,7 @@ export type RideDriverDriverProfile = {
   minBalance?: number
   isOnline?: boolean
   verificationStatus?: string
+  avatarUrl?: string
   vehicle?: RideDriverVehicle | null
   raw?: unknown
 }
@@ -145,6 +148,7 @@ export type RideDriverProfile = {
   id?: string
   fullName?: string
   phone?: string
+  avatarUrl?: string
   city?: string
   cityName?: string
   rating?: number
@@ -232,6 +236,8 @@ export type RideDriverOffer = {
 export type RideDriverOrderStatus =
   | RideOrderStatus
   | string
+
+export type DriverAvatarResponse = DriverAvatarUploadResult
 
 export type RideDriverRequestHistoryItem = {
   requestId: string

@@ -1,4 +1,4 @@
-import { backendGet, backendPatch, backendPost } from '../../../shared/api/backend'
+import { backendDelete, backendGet, backendPatch, backendPost } from '../../../shared/api/backend'
 import { getKzPlateValidationError, normalizeKzPlateInput } from '../../../lib/format'
 import type {
   DriverCallOutcome,
@@ -637,6 +637,14 @@ function mapProfile(raw: unknown): DriverProfile | null {
         driverProfile?.phone ??
         application?.phone,
     ),
+    avatarUrl: asString(
+      driverProfile?.avatarUrl ??
+        driverProfile?.avatar_url ??
+        customer?.avatarUrl ??
+        customer?.avatar_url ??
+        record.avatarUrl ??
+        record.avatar_url,
+    ) || undefined,
     city,
     cityName: city || undefined,
     rating: asNumber(
@@ -1291,6 +1299,17 @@ export function mapDriverOrderToViewModel(raw: unknown): DriverOrderViewModel {
 
 export async function getDriverMe() {
   return mapDriverMeToViewModel(await backendGet('/ride/driver/me'))
+}
+
+export async function uploadDriverAvatar(file: File) {
+  const formData = new FormData()
+  formData.append('avatar', file)
+
+  return backendPost('/ride/driver/profile/avatar', formData)
+}
+
+export async function deleteDriverAvatar() {
+  return backendDelete('/ride/driver/profile/avatar')
 }
 
 export async function getActiveDriverRecheck() {
