@@ -6,9 +6,11 @@ import { formatKzt, formatRideRequestWhenLabel, formatRoute } from '../../lib/fo
 import { cn } from '../../lib/cn'
 import {
   getLocalDateInputValue,
+  getRideScheduleMaxDate,
   getRideScheduleMinTime,
   buildScheduledAt,
-  isScheduledInFuture,
+  PASSENGER_RIDE_REQUEST_MAX_DAYS_AHEAD,
+  RIDE_SCHEDULE_MIN_ADVANCE_MINUTES,
 } from '../../features/passenger/ride-schedule'
 import { OverlaySheet } from '../../shared/ui/OverlaySheet'
 
@@ -36,6 +38,40 @@ function buildLocationLabel(cityName?: string, address?: string) {
   if (!trimmedAddress) return trimmedCity
 
   return `${trimmedCity}, ${trimmedAddress}`
+}
+
+function getScheduledRideValidationError(date: string, time: string) {
+  const trimmedDate = String(date ?? '').trim()
+  const trimmedTime = String(time ?? '').trim()
+
+  if (!trimmedDate || !trimmedTime) {
+    return 'Выберите дату и время поездки.'
+  }
+
+  const scheduledAt = buildScheduledAt(trimmedDate, trimmedTime)
+  if (!scheduledAt) {
+    return 'Выберите корректные дату и время поездки.'
+  }
+
+  const scheduledDate = new Date(scheduledAt)
+  if (Number.isNaN(scheduledDate.getTime())) {
+    return 'Выберите корректные дату и время поездки.'
+  }
+
+  const minAllowedAt = new Date(Date.now() + RIDE_SCHEDULE_MIN_ADVANCE_MINUTES * 60 * 1000)
+  if (scheduledDate.getTime() < minAllowedAt.getTime()) {
+    return `Время поездки должно быть минимум через ${RIDE_SCHEDULE_MIN_ADVANCE_MINUTES} минут.`
+  }
+
+  const maxAllowedAt = new Date()
+  maxAllowedAt.setDate(maxAllowedAt.getDate() + PASSENGER_RIDE_REQUEST_MAX_DAYS_AHEAD)
+  maxAllowedAt.setHours(23, 59, 59, 999)
+
+  if (scheduledDate.getTime() > maxAllowedAt.getTime()) {
+    return `Заявку можно создать максимум на ${PASSENGER_RIDE_REQUEST_MAX_DAYS_AHEAD} дней вперёд.`
+  }
+
+  return ''
 }
 
 function RowButton({
@@ -116,20 +152,16 @@ export default function PassengerOrderPage() {
   )
   const hasPrice = rideDraft.price.trim().length > 0 && Number.isFinite(currentPrice) && currentPrice > 0
   const needsScheduledTime = rideDraft.timingMode === 'scheduled'
-  const isScheduledFieldsValid =
-    !needsScheduledTime ||
-    (Boolean(rideDraft.date.trim()) &&
-      Boolean(rideDraft.time.trim()) &&
-      isScheduledInFuture(rideDraft.date, rideDraft.time))
+  const scheduledValidationError = needsScheduledTime
+    ? getScheduledRideValidationError(rideDraft.date, rideDraft.time)
+    : ''
   const validationError = !hasOrigin
     ? 'Выберите город и адрес отправления.'
     : !hasDestination
       ? 'Выберите город и адрес прибытия.'
-          : !hasPrice
-            ? 'Укажите цену поездки.'
-            : !isScheduledFieldsValid
-              ? 'Выберите будущее время поездки.'
-              : ''
+      : !hasPrice
+        ? 'Укажите цену поездки.'
+        : scheduledValidationError
   const canSearch = !isSubmitting && passengerStatus !== 'LIMITED' && passengerStatus !== 'BLOCKED' && !validationError
   const originLabel = buildLocationLabel(rideDraft.originCityName, rideDraft.originAddress)
   const destinationLabel = buildLocationLabel(rideDraft.destinationCityName, rideDraft.destinationAddress)
@@ -344,24 +376,26 @@ function RideScheduleSheet({
   const [time, setTime] = useState(initialMode === 'scheduled' ? initialTime : '')
   const [error, setError] = useState('')
   const today = getLocalDateInputValue()
+  const maxDate = getRideScheduleMaxDate()
   const timeMin = getRideScheduleMinTime(date)
-  const isScheduledValid = mode !== 'scheduled' || isScheduledInFuture(date, time)
+  const scheduleValidationError = mode === 'scheduled' ? getScheduledRideValidationError(date, time) : ''
+  const isScheduledValid = mode !== 'scheduled' || !scheduleValidationError
   const isScheduledReady = mode !== 'scheduled' || (Boolean(date.trim()) && Boolean(time.trim()) && isScheduledValid)
 
   const handleDone = () => {
     if (mode === 'scheduled') {
       if (!date || !time) {
-        setError('Выберите будущее время поездки.')
+        setError('Выберите дату и время поездки.')
         return
       }
 
-      if (!isScheduledValid) {
-        setError('Выберите будущее время поездки.')
+      if (scheduleValidationError) {
+        setError(scheduleValidationError)
         return
       }
 
       if (!buildScheduledAt(date, time)) {
-        setError('Выберите будущее время поездки.')
+        setError('Выберите корректные дату и время поездки.')
         return
       }
 
@@ -417,6 +451,7 @@ function RideScheduleSheet({
               type="date"
               value={date}
               min={today}
+              max={maxDate}
               disabled={mode === 'immediate'}
               onChange={(event) => {
                 setDate(event.target.value)
@@ -444,6 +479,13 @@ function RideScheduleSheet({
         {error ? (
           <div className="rounded-[18px] border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
             {error}
+          </div>
+        ) : null}
+
+        {mode === 'scheduled' && !error ? (
+          <div className="rounded-[18px] border border-border bg-surface-soft px-4 py-3 text-sm text-muted">
+            Время поездки должно быть минимум через {RIDE_SCHEDULE_MIN_ADVANCE_MINUTES} минут и максимум на{' '}
+            {PASSENGER_RIDE_REQUEST_MAX_DAYS_AHEAD} дней вперёд.
           </div>
         ) : null}
 

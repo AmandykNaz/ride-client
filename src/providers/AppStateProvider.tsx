@@ -53,6 +53,15 @@ import {
   withdrawDriverOffer as withdrawDriverOfferApi,
 } from '../features/driver/api/driver.api'
 import {
+  createDriverAnnouncement as createDriverAnnouncementApi,
+  getDriverAnnouncements as getDriverAnnouncementsApi,
+  normalizeAnnouncementId,
+  updateDriverAnnouncement as updateDriverAnnouncementApi,
+  updateDriverAnnouncementStatus as updateDriverAnnouncementStatusApi,
+  type RideDriverAnnouncement,
+  type RideDriverAnnouncementStatus,
+} from '../features/announcements'
+import {
     createDriverTopUpRequest as createDriverTopUpRequestApi,
     cancelTopUpRequest as cancelTopUpRequestApi,
     getDriverAccess,
@@ -195,6 +204,8 @@ type AppState = {
   orderReviews: RideReviewApi[]
   orderComplaints: RideComplaintApi[]
   driverFeedOrders: DriverFeedOrder[]
+  driverAnnouncements: RideDriverAnnouncement[]
+  driverAnnouncementEditorId: string | null
   driverUnlockedContacts: Record<string, DriverUnlockedContact>
   driverOrders: DriverActiveOrder[]
   driverActiveOrder: DriverActiveOrder | null
@@ -304,6 +315,7 @@ type AppContextValue = {
     refreshOrderReviews: (orderId: string) => Promise<void>
     refreshOrderComplaints: (orderId: string) => Promise<void>
     refreshDriverFeed: () => Promise<void>
+    refreshDriverAnnouncements: () => Promise<void>
     refreshDriverOffers: () => Promise<void>
     refreshDriverOrders: () => Promise<void>
     extendPassengerRideRequest: () => Promise<void>
@@ -339,6 +351,35 @@ type AppContextValue = {
     openDriverCounterOfferSheet: (requestId: string) => void
     closeDriverCounterOfferSheet: () => void
     sendDriverCounterOffer: (price: string, comment: string) => Promise<DriverCounterOffer>
+    openDriverAnnouncementEditor: (announcementId?: string | null) => void
+    closeDriverAnnouncementEditor: () => void
+    createDriverAnnouncement: (payload: {
+      fromText: string
+      toText: string
+      scheduledAt: string
+      pricePerSeat: number | string
+      seatsAvailable: number | string
+      comment?: string
+      acceptsPassengers: boolean
+      acceptsParcels: boolean
+    }) => Promise<RideDriverAnnouncement>
+    updateDriverAnnouncement: (
+      id: string,
+      payload: {
+        fromText?: string
+        toText?: string
+        scheduledAt?: string
+        pricePerSeat?: number | string
+        seatsAvailable?: number | string
+        comment?: string
+        acceptsPassengers?: boolean
+        acceptsParcels?: boolean
+      },
+    ) => Promise<RideDriverAnnouncement>
+    updateDriverAnnouncementStatus: (
+      id: string,
+      status: RideDriverAnnouncementStatus,
+    ) => Promise<RideDriverAnnouncement>
     unlockDriverRequestContact: (requestId: string) => Promise<RideRequestContactUnlockResult>
     setDriverRequestContactOutcome: (
       requestId: string,
@@ -428,6 +469,8 @@ type AppAction =
   | { type: 'setDriverFeedLoading'; loading: boolean }
   | { type: 'setDriverActionLoading'; loading: boolean }
   | { type: 'setDriverFlowError'; error: string | null }
+  | { type: 'setDriverAnnouncements'; announcements: RideDriverAnnouncement[] }
+  | { type: 'setDriverAnnouncementEditorId'; announcementId: string | null }
   | { type: 'setDriverWalletLoading'; loading: boolean }
   | { type: 'setDriverAccessLoading'; loading: boolean }
   | { type: 'setDriverTopUpSubmitting'; loading: boolean }
@@ -534,6 +577,8 @@ type AppAction =
   | { type: 'openDriverCounterOfferSheet'; requestId: string }
   | { type: 'closeDriverCounterOfferSheet' }
   | { type: 'sendDriverCounterOffer'; price: string; comment: string }
+  | { type: 'openDriverAnnouncementEditor'; announcementId?: string | null }
+  | { type: 'closeDriverAnnouncementEditor' }
   | {
       type: 'setDriverRequestContactOutcome'
       requestId: string
@@ -1050,6 +1095,34 @@ function getDriverContactOutcomeErrorMessage(error: unknown) {
   return 'Не удалось сохранить результат звонка.'
 }
 
+function getDriverAnnouncementActionErrorMessage(
+  error: unknown,
+  fallback: string,
+) {
+  if (!(error instanceof Error) || !error.message.trim()) {
+    return fallback
+  }
+
+  const uniqueParts = Array.from(
+    new Set(
+      error.message
+        .split(/\r?\n|[;,]/)
+        .map((part) => part.trim())
+        .filter(Boolean),
+    ),
+  )
+  const joined = uniqueParts.join('\n')
+
+  if (
+    /Validation failed \(numeric string is expected\)/i.test(joined) ||
+    /property\s+.+\s+should\s+not\s+exist/i.test(joined)
+  ) {
+    return fallback
+  }
+
+  return joined || fallback
+}
+
 function makeWalletTransaction(params: {
   type: WalletTransaction['type']
   amount: number
@@ -1312,20 +1385,29 @@ function isPassengerOfferUnavailableError(error: unknown) {
 
 function getCreateRideRequestErrorMessage(error: unknown) {
   if (error instanceof BackendApiError) {
-    const normalizedMessage = String(error.message ?? '').toLowerCase()
+    if (error.message.trim()) {
+      const normalizedMessage = error.message.toLowerCase()
 
-    if (normalizedMessage.includes('cannot post') || normalizedMessage.includes('not found')) {
-      return 'Сервис создания заявки недоступен. Обновите backend и попробуйте снова.'
-    }
+      if (
+        normalizedMessage.includes('время поездки должно быть минимум через 30 минут') ||
+        normalizedMessage.includes('заявку можно создать максимум на 7 дней вперёд')
+      ) {
+        return error.message
+      }
 
-    if (
-      normalizedMessage.includes('scheduledat') ||
-      normalizedMessage.includes('выберите будущее время поездки') ||
-      normalizedMessage.includes('future') ||
-      normalizedMessage.includes('must be a valid iso date string') ||
-      normalizedMessage.includes('can not be in the past')
-    ) {
-      return 'Выберите будущее время поездки.'
+      if (normalizedMessage.includes('cannot post') || normalizedMessage.includes('not found')) {
+        return 'Сервис создания заявки недоступен. Обновите backend и попробуйте снова.'
+      }
+
+      if (
+        normalizedMessage.includes('scheduledat') ||
+        normalizedMessage.includes('выберите будущее время поездки') ||
+        normalizedMessage.includes('future') ||
+        normalizedMessage.includes('must be a valid iso date string') ||
+        normalizedMessage.includes('can not be in the past')
+      ) {
+        return 'Выберите будущее время поездки.'
+      }
     }
 
     return 'Не удалось создать заявку. Проверьте данные.'
@@ -1333,6 +1415,13 @@ function getCreateRideRequestErrorMessage(error: unknown) {
 
   if (error instanceof Error) {
     const normalizedMessage = error.message.toLowerCase()
+
+    if (
+      normalizedMessage.includes('время поездки должно быть минимум через 30 минут') ||
+      normalizedMessage.includes('заявку можно создать максимум на 7 дней вперёд')
+    ) {
+      return error.message
+    }
 
     if (normalizedMessage.includes('cannot post') || normalizedMessage.includes('not found')) {
       return 'Сервис создания заявки недоступен. Обновите backend и попробуйте снова.'
@@ -1455,6 +1544,10 @@ function appReducer(state: AppState, action: AppAction): AppState {
       return { ...state, isDriverActionLoading: action.loading }
     case 'setDriverFlowError':
       return { ...state, driverFlowError: action.error }
+    case 'setDriverAnnouncements':
+      return { ...state, driverAnnouncements: action.announcements }
+    case 'setDriverAnnouncementEditorId':
+      return { ...state, driverAnnouncementEditorId: action.announcementId }
     case 'setDriverWalletLoading':
       return { ...state, isDriverWalletLoading: action.loading }
     case 'setDriverAccessLoading':
@@ -1545,6 +1638,7 @@ function appReducer(state: AppState, action: AppAction): AppState {
         activeRecheck: action.activeRecheck,
         driverApplicationDraft: action.driverApplicationDraft,
         driverFeedOrders: isApprovedDriver ? dedupeById(mergeUnlockedContactsIntoFeedOrders(action.driverFeedOrders, state.driverUnlockedContacts)) : [],
+        driverAnnouncements: isApprovedDriver ? state.driverAnnouncements : [],
         driverUnlockedContacts: isApprovedDriver ? state.driverUnlockedContacts : {},
         driverOrders: isApprovedDriver ? dedupeById(action.driverOrders) : [],
         driverCounterOffers: isApprovedDriver ? action.driverCounterOffers : [],
@@ -2170,6 +2264,22 @@ function appReducer(state: AppState, action: AppAction): AppState {
         driverCounterOfferPrice: '',
         driverCounterOfferComment: '',
       }
+    case 'openDriverAnnouncementEditor':
+      return {
+        ...state,
+        currentScreen: 'driverAnnouncementEditor',
+        driverAnnouncementEditorId: action.announcementId ?? null,
+        isMenuOpen: false,
+        driverFlowError: null,
+      }
+    case 'closeDriverAnnouncementEditor':
+      return {
+        ...state,
+        currentScreen: 'driverAnnouncements',
+        driverAnnouncementEditorId: null,
+        isMenuOpen: false,
+        driverFlowError: null,
+      }
     case 'sendDriverCounterOffer': {
       if (!state.driverCounterOfferRequestId || !canAccessDriverOrders(state) || state.driverActiveOrder) return state
       const order = state.driverFeedOrders.find(
@@ -2640,6 +2750,8 @@ function createInitialState(): AppState {
   driverWalletTransactions: [],
   driverTopUpRequests: [],
   driverFeedOrders: [],
+  driverAnnouncements: [],
+  driverAnnouncementEditorId: null,
   driverUnlockedContacts: {},
   driverOrders: [],
   driverActiveOrder: null,
@@ -2729,6 +2841,8 @@ function clearTransientRideState(state: AppState): AppState {
     driverOrders: [],
     driverActiveOrder: null,
     driverCounterOffers: [],
+    driverAnnouncements: [],
+    driverAnnouncementEditorId: null,
     isDriverCounterOfferSheetOpen: false,
     driverCounterOfferRequestId: null,
     driverCounterOfferPrice: '',
@@ -4005,9 +4119,34 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     }
   }, [dispatch, state.driverVerificationStatus])
 
+  const refreshDriverAnnouncements = useCallback(async () => {
+    if (state.role !== 'driver' || state.driverVerificationStatus !== 'APPROVED') {
+      return
+    }
+
+    dispatch({ type: 'setDriverFlowError', error: null })
+
+    try {
+      const response = await getDriverAnnouncementsApi()
+      dispatch({ type: 'setDriverAnnouncements', announcements: response.items })
+    } catch (error) {
+      if (error instanceof BackendAuthError) {
+        clearRideAccessToken()
+        dispatch({ type: 'resetPassengerSession' })
+        return
+      }
+
+      dispatch({
+        type: 'setDriverFlowError',
+        error: error instanceof Error ? error.message : 'Не удалось загрузить объявления водителя.',
+      })
+    }
+  }, [dispatch, state.driverVerificationStatus, state.role])
+
   const refreshDriverFeedRef = useRef(refreshDriverFeed)
   const refreshDriverOffersRef = useRef(refreshDriverOffers)
   const refreshDriverOrdersRef = useRef(refreshDriverOrders)
+  const refreshDriverAnnouncementsRef = useRef(refreshDriverAnnouncements)
   const refreshDriverWalletRef = useRef(refreshDriverWallet)
   const refreshDriverWalletTransactionsRef = useRef(refreshDriverWalletTransactions)
   const refreshDriverTopUpRequestsRef = useRef(refreshDriverTopUpRequests)
@@ -4023,6 +4162,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     refreshDriverFeedRef.current = refreshDriverFeed
     refreshDriverOffersRef.current = refreshDriverOffers
     refreshDriverOrdersRef.current = refreshDriverOrders
+    refreshDriverAnnouncementsRef.current = refreshDriverAnnouncements
     refreshDriverWalletRef.current = refreshDriverWallet
     refreshDriverWalletTransactionsRef.current = refreshDriverWalletTransactions
     refreshDriverTopUpRequestsRef.current = refreshDriverTopUpRequests
@@ -4034,6 +4174,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     refreshDriverFeed,
     refreshDriverOffers,
     refreshDriverOrders,
+    refreshDriverAnnouncements,
     refreshDriverReviewSummary,
     refreshDriverReviews,
     refreshDriverTopUpRequests,
@@ -4141,6 +4282,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
             refreshDriverReviewSummaryRef.current(),
             refreshDriverReviewsRef.current(),
             refreshDriverComplaintsRef.current(),
+            refreshDriverAnnouncementsRef.current(),
             refreshDriverFeedRef.current(true),
             refreshDriverOffersRef.current(true),
             refreshDriverOrdersRef.current(true),
@@ -4239,6 +4381,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
           refreshDriverReviewSummary(),
           refreshDriverReviews(),
           refreshDriverComplaints(),
+          refreshDriverAnnouncements(),
           refreshDriverFeed(true),
           refreshDriverOffers(true),
           refreshDriverOrders(true),
@@ -4975,6 +5118,168 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  const openDriverAnnouncementEditorAction = (announcementId?: string | null) => {
+    const normalizedId = announcementId == null ? null : normalizeAnnouncementId(announcementId)
+
+    if (announcementId != null && !normalizedId) {
+      dispatch({
+        type: 'setDriverFlowError',
+        error: 'Не удалось открыть объявление. Вернитесь к списку и попробуйте снова.',
+      })
+      return
+    }
+
+    dispatch({ type: 'openDriverAnnouncementEditor', announcementId: normalizedId })
+  }
+
+  const closeDriverAnnouncementEditorAction = () => {
+    dispatch({ type: 'closeDriverAnnouncementEditor' })
+  }
+
+  const createDriverAnnouncementAction = async (payload: {
+    fromText: string
+    toText: string
+    scheduledAt: string
+    pricePerSeat: number | string
+    seatsAvailable: number | string
+    comment?: string
+    acceptsPassengers: boolean
+    acceptsParcels: boolean
+  }): Promise<RideDriverAnnouncement> => {
+    dispatch({ type: 'setDriverActionLoading', loading: true })
+    dispatch({ type: 'setDriverFlowError', error: null })
+
+    try {
+      const created = await createDriverAnnouncementApi(payload)
+
+      dispatch({
+        type: 'setDriverAnnouncements',
+        announcements: [
+          created,
+          ...stateRef.current.driverAnnouncements.filter((item) => item.id !== created.id),
+        ],
+      })
+
+      return created
+    } catch (error) {
+      if (error instanceof BackendAuthError) {
+        clearRideAccessToken()
+        dispatch({ type: 'resetPassengerSession' })
+        throw error
+      }
+
+      dispatch({
+        type: 'setDriverFlowError',
+        error: getDriverAnnouncementActionErrorMessage(
+          error,
+          'Не удалось сохранить объявление. Проверьте данные и попробуйте снова.',
+        ),
+      })
+      throw error
+    } finally {
+      dispatch({ type: 'setDriverActionLoading', loading: false })
+    }
+  }
+
+  const updateDriverAnnouncementAction = async (
+    id: string,
+    payload: {
+      fromText?: string
+      toText?: string
+      scheduledAt?: string
+      pricePerSeat?: number | string
+      seatsAvailable?: number | string
+      comment?: string
+      acceptsPassengers?: boolean
+      acceptsParcels?: boolean
+    },
+  ): Promise<RideDriverAnnouncement> => {
+    const normalizedId = normalizeAnnouncementId(id)
+    if (!normalizedId) {
+      const error = new Error('Не удалось открыть объявление. Вернитесь к списку и попробуйте снова.')
+      dispatch({ type: 'setDriverFlowError', error: error.message })
+      throw error
+    }
+
+    dispatch({ type: 'setDriverActionLoading', loading: true })
+    dispatch({ type: 'setDriverFlowError', error: null })
+
+    try {
+      const updated = await updateDriverAnnouncementApi(normalizedId, payload)
+
+      dispatch({
+        type: 'setDriverAnnouncements',
+        announcements: stateRef.current.driverAnnouncements.map((item) =>
+          item.id === updated.id ? updated : item,
+        ),
+      })
+
+      return updated
+    } catch (error) {
+      if (error instanceof BackendAuthError) {
+        clearRideAccessToken()
+        dispatch({ type: 'resetPassengerSession' })
+        throw error
+      }
+
+      dispatch({
+        type: 'setDriverFlowError',
+        error: getDriverAnnouncementActionErrorMessage(
+          error,
+          'Не удалось сохранить объявление. Проверьте данные и попробуйте снова.',
+        ),
+      })
+      throw error
+    } finally {
+      dispatch({ type: 'setDriverActionLoading', loading: false })
+    }
+  }
+
+  const updateDriverAnnouncementStatusAction = async (
+    id: string,
+    status: RideDriverAnnouncementStatus,
+  ): Promise<RideDriverAnnouncement> => {
+    const normalizedId = normalizeAnnouncementId(id)
+    if (!normalizedId) {
+      const error = new Error('Не удалось открыть объявление. Вернитесь к списку и попробуйте снова.')
+      dispatch({ type: 'setDriverFlowError', error: error.message })
+      throw error
+    }
+
+    dispatch({ type: 'setDriverActionLoading', loading: true })
+    dispatch({ type: 'setDriverFlowError', error: null })
+
+    try {
+      const updated = await updateDriverAnnouncementStatusApi(normalizedId, status)
+
+      dispatch({
+        type: 'setDriverAnnouncements',
+        announcements: stateRef.current.driverAnnouncements.map((item) =>
+          item.id === updated.id ? updated : item,
+        ),
+      })
+
+      return updated
+    } catch (error) {
+      if (error instanceof BackendAuthError) {
+        clearRideAccessToken()
+        dispatch({ type: 'resetPassengerSession' })
+        throw error
+      }
+
+      dispatch({
+        type: 'setDriverFlowError',
+        error: getDriverAnnouncementActionErrorMessage(
+          error,
+          'Не удалось обновить объявление. Попробуйте снова.',
+        ),
+      })
+      throw error
+    } finally {
+      dispatch({ type: 'setDriverActionLoading', loading: false })
+    }
+  }
+
   const driverOrderNextStatusAction = async () => {
     if (!state.driverActiveOrder) return
 
@@ -5175,6 +5480,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       refreshOrderReviews: (orderId) => refreshOrderReviews(orderId),
       refreshOrderComplaints: (orderId) => refreshOrderComplaints(orderId),
       refreshDriverFeed: () => refreshDriverFeed(),
+      refreshDriverAnnouncements: () => refreshDriverAnnouncements(),
       refreshDriverOffers: () => refreshDriverOffers(),
       refreshDriverOrders: () => refreshDriverOrders(),
       extendPassengerRideRequest: () => extendPassengerRideRequestAction(),
@@ -5265,6 +5571,16 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         dispatch({ type: 'closeDriverCounterOfferSheet' }),
       sendDriverCounterOffer: (price, comment) =>
         sendDriverCounterOfferAction(price, comment),
+      openDriverAnnouncementEditor: (announcementId) =>
+        openDriverAnnouncementEditorAction(announcementId),
+      closeDriverAnnouncementEditor: () =>
+        closeDriverAnnouncementEditorAction(),
+      createDriverAnnouncement: (payload) =>
+        createDriverAnnouncementAction(payload),
+      updateDriverAnnouncement: (id, payload) =>
+        updateDriverAnnouncementAction(id, payload),
+      updateDriverAnnouncementStatus: (id, status) =>
+        updateDriverAnnouncementStatusAction(id, status),
       unlockDriverRequestContact: (requestId) =>
         unlockDriverRequestContactAction(requestId),
       setDriverRequestContactOutcome: (requestId, outcome, note) =>
