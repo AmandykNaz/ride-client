@@ -366,6 +366,22 @@ function resolveHistoryErrorMessage(error: unknown) {
 }
 
 function resolveReviewErrorMessage(error: unknown) {
+  if (error instanceof BackendApiError) {
+    const message = error.message.trim()
+
+    if (message === 'Driver profile not found') {
+      return 'Не удалось определить профиль водителя. Обновите экран или войдите заново.'
+    }
+
+    if (message === 'Passenger profile not found') {
+      return 'Не удалось определить профиль пассажира. Обновите экран или войдите заново.'
+    }
+
+    if (message) {
+      return message
+    }
+  }
+
   if (error instanceof Error && error.message.trim()) {
     return error.message
   }

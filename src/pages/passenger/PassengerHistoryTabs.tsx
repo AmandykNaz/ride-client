@@ -23,6 +23,7 @@ import {
 } from '../../features/ride-safety/api/ride-reviews.api'
 import type { RideReview } from '../../features/ride-safety/api/ride-reviews.types'
 import { OverlaySheet } from '../../shared/ui/OverlaySheet'
+import { BackendApiError } from '../../shared/api/backend'
 import { DriverAvatar } from '../../shared/ui/DriverAvatar'
 import { RideRequestReviewSheet } from '../../features/ride-safety/components/RideRequestReviewSheet'
 
@@ -662,6 +663,22 @@ export function PassengerHistoryTabs() {
 }
 
 function resolveReviewErrorMessage(error: unknown) {
+  if (error instanceof BackendApiError) {
+    const message = error.message.trim()
+
+    if (message === 'Driver profile not found') {
+      return 'Не удалось определить профиль водителя. Обновите экран или войдите заново.'
+    }
+
+    if (message === 'Passenger profile not found') {
+      return 'Не удалось определить профиль пассажира. Обновите экран или войдите заново.'
+    }
+
+    if (message) {
+      return message
+    }
+  }
+
   if (error instanceof Error && error.message.trim()) {
     return error.message
   }

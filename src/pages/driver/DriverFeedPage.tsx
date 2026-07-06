@@ -80,6 +80,8 @@ export default function DriverFeedPage() {
     'Профиль водителя заблокирован модератором.'
   const lowBalance = accessState === 'APPROVED_LOW_BALANCE'
   const subscriptionLocked = driverAccess?.monetizationMode === 'ACCESS_SUBSCRIPTION' && !driverAccess?.hasAccess
+  const unlockActionLabel =
+    driverAccess?.monetizationMode === 'ACCESS_SUBSCRIPTION' ? 'Купить тариф' : 'Перейти в баланс'
   const visibleOrders = useMemo(
     () =>
       driverFeedOrders
@@ -505,7 +507,9 @@ export default function DriverFeedPage() {
                 ? 'Контакты закончились. Купите тариф.'
                 : null
             }
+            unlockActionLabel={unlockActionLabel}
             onUnlock={() => void handleUnlockContact(order)}
+            onOpenBalance={() => actions.setScreen('driverBalance')}
             onCall={() => handleCallPassenger(order)}
             onOpenCounterOffer={() => handleOpenCounterOffer(order)}
             onSetCallOutcome={(outcome) => void handleQuickCallOutcome(order, outcome)}

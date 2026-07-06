@@ -50,7 +50,9 @@ type DriverFeedOrderCardProps = {
   counterOffers?: DriverCounterOffer[]
   isUnlocking?: boolean
   unlockUnavailableReason?: string | null
+  unlockActionLabel?: string
   onUnlock: () => void
+  onOpenBalance: () => void
   onCall: () => void
   onOpenCounterOffer: () => void
   isSavingCallOutcome?: boolean
@@ -63,7 +65,9 @@ export function DriverFeedOrderCard({
   counterOffers,
   isUnlocking = false,
   unlockUnavailableReason = null,
+  unlockActionLabel = 'Перейти в баланс',
   onUnlock,
+  onOpenBalance,
   onCall,
   onOpenCounterOffer,
   isSavingCallOutcome = false,
@@ -126,7 +130,7 @@ export function DriverFeedOrderCard({
             </div>
             <div className="flex items-center gap-2 text-muted">
               <Route className="h-4 w-4" />
-              <span>{order.passengersCount ?? 1} пассажир(а)</span>
+              <span>Пассажиров / мест: {order.passengersCount ?? 1}</span>
             </div>
             {order.comment ? <p className="text-sm text-muted">{order.comment}</p> : null}
           </div>
@@ -247,14 +251,36 @@ export function DriverFeedOrderCard({
                   {unlockUnavailableReason || 'Откройте контакт по тарифу, чтобы позвонить пассажиру.'}
                 </p>
               </div>
-              <button
-                type="button"
-                onClick={onUnlock}
-                disabled={isUnlocking || isUnlockDisabled}
-                className="w-full rounded-2xl border border-border bg-surface-soft px-4 py-3 text-sm font-semibold text-ink disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {isUnlocking ? 'Открываем...' : isUnlockDisabled ? 'Контакты закончились' : 'Открыть контакт'}
-              </button>
+              <div className="grid gap-2">
+                <button
+                  type="button"
+                  onClick={onUnlock}
+                  disabled={isUnlocking || isUnlockDisabled}
+                  className="w-full rounded-2xl border border-border bg-surface-soft px-4 py-3 text-sm font-semibold text-ink disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {isUnlocking ? 'Открываем...' : isUnlockDisabled ? 'Контакты закончились' : 'Открыть контакт'}
+                </button>
+                {isUnlockDisabled ? (
+                  <button
+                    type="button"
+                    onClick={onOpenBalance}
+                    className="w-full rounded-2xl bg-accent px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-accent/20"
+                  >
+                    {unlockActionLabel}
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.preventDefault()
+                    event.stopPropagation()
+                    onOpenCounterOffer()
+                  }}
+                  className="w-full rounded-2xl border border-border bg-white px-4 py-3 text-sm font-semibold text-ink"
+                >
+                  Предложить свою цену
+                </button>
+              </div>
             </div>
           )
         ) : null}
@@ -307,21 +333,7 @@ export function DriverFeedOrderCard({
               </button>
             </div>
           </div>
-        ) : (
-          <div className="grid gap-2">
-            <button
-              type="button"
-              onClick={(event) => {
-                event.preventDefault()
-                event.stopPropagation()
-                onOpenCounterOffer()
-              }}
-              className="rounded-2xl border border-border bg-white px-4 py-3 text-sm font-semibold text-ink"
-            >
-              Предложить свою цену
-            </button>
-          </div>
-        )}
+        ) : null}
       </div>
     </article>
   )

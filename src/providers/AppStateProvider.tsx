@@ -4681,7 +4681,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       const targetType = state.rideComplaintForm.targetType
       const category = state.rideComplaintForm.category
       const message = state.rideComplaintForm.message.trim()
-      let complaint: RideComplaintApi | null = null
+      const reporterRole = state.rideComplaintForm.reporterRole
 
       if (targetType === 'ORDER') {
         const orderId = state.rideComplaintForm.orderId
@@ -4689,11 +4689,10 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
           throw new Error('Не удалось определить заказ для жалобы.')
         }
 
-        complaint = await createRideOrderComplaintApi(orderId, {
+        const createdComplaint = await createRideOrderComplaintApi(orderId, {
           category,
           message,
         } satisfies CreateRideComplaintPayload)
-        const createdComplaint = complaint
 
         dispatch({
           type: 'setOrderComplaints',
@@ -4713,14 +4712,14 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
           contactUnlockId: state.rideComplaintForm.contactUnlockId ?? undefined,
         } satisfies CreateRideRequestComplaintPayload
 
-        const reporterRole = state.rideComplaintForm.reporterRole
-        complaint =
-          reporterRole === 'DRIVER'
-            ? await createDriverRideRequestComplaintApi(requestId, payload)
-            : await createPassengerRideRequestComplaintApi(requestId, payload)
+        if (reporterRole === 'DRIVER') {
+          await createDriverRideRequestComplaintApi(requestId, payload)
+        } else {
+          await createPassengerRideRequestComplaintApi(requestId, payload)
+        }
       }
 
-      await (state.role === 'driver' ? refreshDriverComplaints() : refreshPassengerComplaints())
+      await (reporterRole === 'DRIVER' ? refreshDriverComplaints() : refreshPassengerComplaints())
 
       dispatch({ type: 'setRideSafetyNotice', notice: 'Жалоба отправлена. Администратор проверит обращение.' })
       dispatch({ type: 'updateRideComplaintForm', patch: { message: '' } })
