@@ -2,6 +2,7 @@ import type {
   ParcelSize,
   RideOrderStatus,
   RideRequestStatus,
+  TripType,
   TopUpRequestMethod,
   TopUpRequestStatus,
   WalletTransactionStatus,
@@ -262,6 +263,55 @@ export function formatParcelSizeLabel(size?: ParcelSize | string | null) {
     default:
       return size ?? '—'
   }
+}
+
+export function normalizeRideType(value?: unknown) {
+  const normalized = String(value ?? '').trim().toLowerCase()
+
+  if (
+    normalized === 'shared' ||
+    normalized === 'with-companions' ||
+    normalized === 'with_companions' ||
+    normalized === 'с попутчиками'
+  ) {
+    return 'shared' as const
+  }
+
+  if (
+    normalized === 'full' ||
+    normalized === 'whole-car' ||
+    normalized === 'whole_car' ||
+    normalized === 'private' ||
+    normalized === 'full-car' ||
+    normalized === 'full_car' ||
+    normalized === 'весь салон'
+  ) {
+    return 'full' as const
+  }
+
+  return null
+}
+
+export function isSharedRideType(value?: TripType | string | null) {
+  return normalizeRideType(value) === 'shared'
+}
+
+export function isPrivateRideType(value?: TripType | string | null) {
+  return normalizeRideType(value) === 'full'
+}
+
+export function formatRideTypeLabel(value?: TripType | string | null) {
+  const normalized = normalizeRideType(value)
+
+  if (normalized === 'shared') {
+    return 'С попутчиками'
+  }
+
+  if (normalized === 'full') {
+    return 'Весь салон'
+  }
+
+  return 'Тип поездки не указан'
 }
 
 export function formatRideRequestStatusLabel(status?: RideRequestStatus | string | null) {

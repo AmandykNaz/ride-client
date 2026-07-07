@@ -3,6 +3,8 @@ import type { ComponentType } from 'react'
 import type { AppScreen } from '../types/domain'
 import BusesComingSoonPage from '../pages/BusesComingSoonPage'
 import DriverBalancePage from '../pages/driver/DriverBalancePage'
+import DriverAnnouncementEditorPage from '../pages/driver/DriverAnnouncementEditorPage'
+import DriverAnnouncementsPage from '../pages/driver/DriverAnnouncementsPage'
 import DriverDashboardPage from '../pages/driver/DriverDashboardPage'
 import DriverActiveOrderPage from '../pages/driver/DriverActiveOrderPage'
 import DriverFeedPage from '../pages/driver/DriverFeedPage'
@@ -11,6 +13,7 @@ import DriverRegistrationPage from '../pages/driver/DriverRegistrationPage'
 import DriverProfilePage from '../pages/driver/DriverProfilePage'
 import PassengerActiveRidePage from '../pages/passenger/PassengerActiveRidePage'
 import PassengerActiveParcelPage from '../pages/passenger/PassengerActiveParcelPage'
+import PassengerAnnouncementsPage from '../pages/passenger/PassengerAnnouncementsPage'
 import PassengerOrderPage from '../pages/passenger/PassengerOrderPage'
 import PassengerOffersPage from '../pages/passenger/PassengerOffersPage'
 import PassengerParcelOffersPage from '../pages/passenger/PassengerParcelOffersPage'
@@ -23,6 +26,7 @@ import SupportPage from '../pages/SupportPage'
 
 const screenComponents: Record<AppScreen, ComponentType> = {
   passengerOrder: PassengerOrderPage,
+  passengerAnnouncements: PassengerAnnouncementsPage,
   passengerOffers: PassengerOffersPage,
   passengerActiveRide: PassengerActiveRidePage,
   parcelOffers: PassengerParcelOffersPage,
@@ -32,6 +36,8 @@ const screenComponents: Record<AppScreen, ComponentType> = {
   passengerProfile: PassengerProfilePage,
   driverRegistration: DriverRegistrationPage,
   driverDashboard: DriverDashboardPage,
+  driverAnnouncements: DriverAnnouncementsPage,
+  driverAnnouncementEditor: DriverAnnouncementEditorPage,
   driverFeed: DriverFeedPage,
   driverOrders: DriverActiveOrderPage,
   driverMyOrders: DriverMyOrdersPage,

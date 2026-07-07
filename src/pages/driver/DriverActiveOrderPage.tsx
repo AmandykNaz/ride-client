@@ -9,7 +9,13 @@ import {
   ShieldAlert,
 } from 'lucide-react'
 
-import { formatKzt, formatParcelSizeLabel, formatRideOrderStatusLabel, formatRoute } from '../../lib/format'
+import {
+  formatKzt,
+  formatParcelSizeLabel,
+  formatRideOrderStatusLabel,
+  formatRideTypeLabel,
+  formatRoute,
+} from '../../lib/format'
 import { useAppActions, useAppState } from '../../providers/AppStateProvider'
 import { PageCard } from '../../shared/ui/PageCard'
 import { DriverBlockedStateCard } from './components/DriverBlockedStateCard'
@@ -240,7 +246,7 @@ export default function DriverActiveOrderPage() {
             <div className="flex items-center gap-2">
               <Navigation2 className="h-4 w-4 text-accent" />
               <span className="font-semibold">
-                {driverActiveOrder.rideType === 'full' ? 'Весь салон' : 'С попутчиками'}
+                {formatRideTypeLabel(driverActiveOrder.rideType)}
               </span>
             </div>
             <div className="flex items-center gap-2 text-muted">

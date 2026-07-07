@@ -590,6 +590,7 @@ export type PassengerHistoryItem = {
 
 export type AppScreen =
   | 'passengerOrder'
+  | 'passengerAnnouncements'
   | 'passengerOffers'
   | 'passengerActiveRide'
   | 'parcelOffers'
@@ -600,6 +601,8 @@ export type AppScreen =
   | 'driverRegistration'
   | 'driverDashboard'
   | 'driverFeed'
+  | 'driverAnnouncements'
+  | 'driverAnnouncementEditor'
   | 'driverOrders'
   | 'driverMyOrders'
   | 'driverBalance'

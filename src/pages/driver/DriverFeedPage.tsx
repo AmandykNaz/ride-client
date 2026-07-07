@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { CircleGauge, Lock, Sparkles } from 'lucide-react'
 
 import { cn } from '../../lib/cn'
-import { formatKzt, formatRoute } from '../../lib/format'
+import { formatKzt, formatRoute, isPrivateRideType } from '../../lib/format'
 import { useAppActions, useAppState } from '../../providers/AppStateProvider'
 import { PageCard } from '../../shared/ui/PageCard'
 import { OverlaySheet } from '../../shared/ui/OverlaySheet'
@@ -26,7 +26,7 @@ function matchesFilter(order: DriverFeedOrder, filter: FeedFilter) {
   if (filter === 'all') return true
   if (filter === 'ride') return order.category === 'ride'
   if (filter === 'parcel') return order.category === 'parcel'
-  return order.category === 'ride' && order.rideType === 'full'
+  return order.category === 'ride' && isPrivateRideType(order.rideType)
 }
 
 function getCallOutcomeLabel(outcome: DriverCallOutcome) {

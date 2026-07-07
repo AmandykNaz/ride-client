@@ -1,5 +1,5 @@
 import { backendDelete, backendGet, backendPatch, backendPost } from '../../../shared/api/backend'
-import { getKzPlateValidationError, normalizeKzPlateInput } from '../../../lib/format'
+import { getKzPlateValidationError, normalizeKzPlateInput, normalizeRideType } from '../../../lib/format'
 import type {
   DriverCallOutcome,
   DriverApplicationDocument,
@@ -791,7 +791,7 @@ function mapFeedRequest(raw: unknown): DriverFeedOrder {
     time,
     requestedPrice,
     passengersCount: asNumber(record.passengersCount ?? record.passengers_count, 1) || undefined,
-    rideType: asString(record.rideType ?? record.ride_type) as DriverFeedOrder['rideType'],
+    rideType: normalizeRideType(record.rideType ?? record.ride_type) ?? undefined,
     parcelSize: normalizeParcelSize(record.parcelSize ?? record.parcel_size),
     parcelDescription: asString(record.parcelDescription ?? record.parcel_description),
     senderName: asString(record.senderName ?? record.sender_name),
@@ -918,7 +918,7 @@ function mapDriverOrder(raw: unknown): DriverActiveOrder {
     requestedPrice: asNumber(record.requestedPrice ?? record.requested_price ?? routePrice, routePrice),
     driverOfferedPrice: asNumber(record.driverOfferedPrice ?? record.driver_offered_price, 0) || undefined,
     commissionPreview: asOptionalNumber(record.commissionPreview ?? record.commission_preview),
-    rideType: asString(record.rideType ?? record.ride_type) as DriverActiveOrder['rideType'],
+    rideType: normalizeRideType(record.rideType ?? record.ride_type) ?? undefined,
     passengersCount: asNumber(record.passengersCount ?? record.passengers_count, 1) || undefined,
     parcelSize: normalizeParcelSize(record.parcelSize ?? record.parcel_size),
     parcelDescription: asString(record.parcelDescription ?? record.parcel_description),

@@ -506,7 +506,7 @@ export default function DriverDashboardPage() {
         </div>
       ) : null}
 
-      <div className="grid grid-cols-3 gap-2">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         <button
           type="button"
           onClick={() => actions.setScreen('driverFeed')}
@@ -523,6 +523,13 @@ export default function DriverDashboardPage() {
           className="rounded-2xl border border-border bg-white px-3 py-3 text-sm font-semibold text-ink"
         >
           Баланс
+        </button>
+        <button
+          type="button"
+          onClick={() => actions.setScreen('driverAnnouncements')}
+          className="rounded-2xl border border-border bg-white px-3 py-3 text-sm font-semibold text-ink"
+        >
+          Объявления
         </button>
         <button
           type="button"

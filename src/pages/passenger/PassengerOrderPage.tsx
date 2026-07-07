@@ -1,12 +1,11 @@
 import { ChevronRight } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 import { useAppActions, useAppState } from '../../providers/AppStateProvider'
-import { formatKzt, formatRideRequestWhenLabel, formatRoute } from '../../lib/format'
+import { formatKzt, formatRideRequestWhenLabel, formatRoute, formatShortDate } from '../../lib/format'
 import { cn } from '../../lib/cn'
 import {
-  getLocalDateInputValue,
-  getRideScheduleMaxDate,
+  getRideScheduleDateOptions,
   getRideScheduleMinTime,
   buildScheduledAt,
   PASSENGER_RIDE_REQUEST_MAX_DAYS_AHEAD,
@@ -18,6 +17,8 @@ const typeOptions = [
   { value: 'shared' as const, label: 'С попутчиками' },
   { value: 'full' as const, label: 'Весь салон' },
 ]
+const PASSENGER_MIN_PRICE = 500
+const PASSENGER_MAX_PRICE = 100000
 
 function normalizePriceInput(value: string) {
   const digits = value.replace(/\D/g, '')
@@ -38,6 +39,29 @@ function buildLocationLabel(cityName?: string, address?: string) {
   if (!trimmedAddress) return trimmedCity
 
   return `${trimmedCity}, ${trimmedAddress}`
+}
+
+function getPassengerPriceValidationError(value: string) {
+  const normalized = normalizePriceInput(value)
+
+  if (!normalized) {
+    return 'Укажите цену поездки.'
+  }
+
+  const numeric = Number(normalized)
+  if (!Number.isFinite(numeric)) {
+    return 'Цена должна быть числом.'
+  }
+
+  if (numeric < PASSENGER_MIN_PRICE) {
+    return 'Цена должна быть от 500 ₸.'
+  }
+
+  if (numeric > PASSENGER_MAX_PRICE) {
+    return 'Цена должна быть не больше 100 000 ₸.'
+  }
+
+  return ''
 }
 
 function getScheduledRideValidationError(date: string, time: string) {
@@ -150,7 +174,8 @@ export default function PassengerOrderPage() {
   const hasDestination = Boolean(
     (rideDraft.destinationCityName ?? '').trim() && (rideDraft.destinationAddress ?? '').trim(),
   )
-  const hasPrice = rideDraft.price.trim().length > 0 && Number.isFinite(currentPrice) && currentPrice > 0
+  const priceValidationError = getPassengerPriceValidationError(rideDraft.price)
+  const hasPrice = rideDraft.price.trim().length > 0 && !priceValidationError
   const needsScheduledTime = rideDraft.timingMode === 'scheduled'
   const scheduledValidationError = needsScheduledTime
     ? getScheduledRideValidationError(rideDraft.date, rideDraft.time)
@@ -159,8 +184,8 @@ export default function PassengerOrderPage() {
     ? 'Выберите город и адрес отправления.'
     : !hasDestination
       ? 'Выберите город и адрес прибытия.'
-      : !hasPrice
-        ? 'Укажите цену поездки.'
+      : priceValidationError
+        ? priceValidationError
         : scheduledValidationError
   const canSearch = !isSubmitting && passengerStatus !== 'LIMITED' && passengerStatus !== 'BLOCKED' && !validationError
   const originLabel = buildLocationLabel(rideDraft.originCityName, rideDraft.originAddress)
@@ -230,6 +255,22 @@ export default function PassengerOrderPage() {
             AmanJol Ride
           </div>
         </div>
+
+        <button
+          type="button"
+          onClick={() => actions.setScreen('passengerAnnouncements')}
+          className="mb-4 flex w-full items-center justify-between gap-3 rounded-[24px] border border-border bg-surface-soft px-4 py-4 text-left transition hover:border-accent/30"
+        >
+          <span className="min-w-0">
+            <span className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.24em] text-muted">
+              Готовые поездки водителей
+            </span>
+            <span className="block text-base font-semibold leading-6 text-ink">
+              Посмотреть попутки
+            </span>
+          </span>
+          <ChevronRight className="h-4 w-4 shrink-0 text-muted" />
+        </button>
 
         <div className="space-y-2">
           <RowButton
@@ -375,12 +416,28 @@ function RideScheduleSheet({
   const [date, setDate] = useState(initialMode === 'scheduled' ? initialDate : '')
   const [time, setTime] = useState(initialMode === 'scheduled' ? initialTime : '')
   const [error, setError] = useState('')
-  const today = getLocalDateInputValue()
-  const maxDate = getRideScheduleMaxDate()
+  const [isDatePickerOpen, setIsDatePickerOpen] = useState(false)
   const timeMin = getRideScheduleMinTime(date)
   const scheduleValidationError = mode === 'scheduled' ? getScheduledRideValidationError(date, time) : ''
   const isScheduledValid = mode !== 'scheduled' || !scheduleValidationError
   const isScheduledReady = mode !== 'scheduled' || (Boolean(date.trim()) && Boolean(time.trim()) && isScheduledValid)
+  const dateOptions = useMemo(() => getRideScheduleDateOptions(), [])
+  const compactDateOptions = dateOptions.slice(0, 3)
+  const extendedDateOptions = dateOptions.slice(3)
+  const hasCustomDateSelected = Boolean(date) && !compactDateOptions.some((option) => option.value === date)
+
+  const selectDate = (nextDate: string) => {
+    setMode('scheduled')
+    setDate(nextDate)
+    setError('')
+  }
+
+  const selectNow = () => {
+    setMode('immediate')
+    setDate('')
+    setTime('')
+    setError('')
+  }
 
   const handleDone = () => {
     if (mode === 'scheduled') {
@@ -406,108 +463,164 @@ function RideScheduleSheet({
     onSave({ timingMode: 'immediate', date: '', time: '' })
   }
 
-  const handleNow = () => {
-    setDate('')
-    setTime('')
-    setError('')
-    onSave({ timingMode: 'immediate', date: '', time: '' })
-  }
-
   return (
-    <OverlaySheet open title="Дата и время" onClose={onClose} position="bottom">
-      <div className="space-y-4">
-        <div className="grid grid-cols-2 gap-2">
-          {[
-            { value: 'immediate' as const, label: 'Сейчас' },
-            { value: 'scheduled' as const, label: 'Запланировать' },
-          ].map((option) => (
+    <>
+      <OverlaySheet open title="Дата и время" onClose={onClose} position="bottom">
+        <div className="space-y-4 pb-1">
+          <div className="space-y-2">
+            <span className="block text-sm font-medium text-ink">Дата поездки</span>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={selectNow}
+                className={cn(
+                  'rounded-[18px] border px-3 py-3 text-left transition',
+                  mode === 'immediate'
+                    ? 'border-accent bg-accent/8 text-accent'
+                    : 'border-border bg-white text-ink',
+                )}
+              >
+                <span className="block text-sm font-semibold">Сейчас</span>
+                <span className={cn('mt-1 block text-xs', mode === 'immediate' ? 'text-accent/80' : 'text-muted')}>
+                  Как можно скорее
+                </span>
+              </button>
+              {compactDateOptions.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => selectDate(option.value)}
+                  className={cn(
+                    'rounded-[18px] border px-3 py-3 text-left transition',
+                    mode === 'scheduled' && date === option.value
+                      ? 'border-accent bg-accent/8 text-accent'
+                      : 'border-border bg-white text-ink',
+                  )}
+                >
+                  <span className="block text-sm font-semibold">{option.title}</span>
+                  <span
+                    className={cn(
+                      'mt-1 block text-xs',
+                      mode === 'scheduled' && date === option.value ? 'text-accent/80' : 'text-muted',
+                    )}
+                  >
+                    {option.subtitle}
+                  </span>
+                </button>
+              ))}
+              <button
+                type="button"
+                onClick={() => {
+                  setMode('scheduled')
+                  setIsDatePickerOpen(true)
+                  setError('')
+                }}
+                className={cn(
+                  'rounded-[18px] border px-3 py-3 text-left transition',
+                  mode === 'scheduled' && hasCustomDateSelected
+                    ? 'border-accent bg-accent/8 text-accent'
+                    : 'border-border bg-white text-ink',
+                )}
+              >
+                <span className="block text-sm font-semibold">Другая дата</span>
+                <span
+                  className={cn(
+                    'mt-1 block text-xs',
+                    mode === 'scheduled' && hasCustomDateSelected ? 'text-accent/80' : 'text-muted',
+                  )}
+                >
+                  {mode === 'scheduled' && hasCustomDateSelected
+                    ? formatShortDate(new Date(`${date}T00:00:00`).toISOString())
+                    : `До ${PASSENGER_RIDE_REQUEST_MAX_DAYS_AHEAD} дней вперёд`}
+                </span>
+              </button>
+            </div>
+          </div>
+
+          {mode === 'immediate' ? (
+            <div className="rounded-[20px] border border-border bg-surface-soft px-4 py-4 text-sm text-muted">
+              Поездка будет создана как можно скорее.
+            </div>
+          ) : (
+            <label className="block">
+              <span className="mb-1 block text-sm font-medium text-ink">Время отправления</span>
+              <input
+                type="time"
+                value={time}
+                min={timeMin || undefined}
+                onChange={(event) => {
+                  setTime(event.target.value)
+                  setError('')
+                }}
+                className={cn(
+                  'w-full rounded-[18px] border bg-white px-4 py-4 text-base outline-none transition focus:border-accent',
+                  error ? 'border-red-300' : 'border-border',
+                )}
+              />
+            </label>
+          )}
+
+          {error ? (
+            <div className="rounded-[18px] border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+              {error}
+            </div>
+          ) : null}
+
+          {mode === 'scheduled' && !error ? (
+            <div className="rounded-[18px] border border-border bg-surface-soft px-4 py-3 text-sm text-muted">
+              Время поездки должно быть минимум через {RIDE_SCHEDULE_MIN_ADVANCE_MINUTES} минут и максимум на{' '}
+              {PASSENGER_RIDE_REQUEST_MAX_DAYS_AHEAD} дней вперёд.
+            </div>
+          ) : null}
+
+          <div className="sticky bottom-0 bg-white pt-1">
             <button
-              key={option.value}
               type="button"
-              onClick={() => {
-                setMode(option.value)
-                setError('')
-                if (option.value === 'immediate') {
-                  setDate('')
-                  setTime('')
-                }
-              }}
-              className={cn(
-                'rounded-[18px] border px-4 py-3 text-sm font-semibold transition',
-                mode === option.value
-                  ? 'border-accent bg-accent/8 text-accent'
-                  : 'border-border bg-surface-soft text-ink',
-              )}
+              onClick={handleDone}
+              disabled={mode === 'scheduled' && !isScheduledReady}
+              className="w-full rounded-[18px] bg-accent px-4 py-4 text-base font-semibold text-white shadow-lg shadow-accent/20 disabled:opacity-60"
             >
-              {option.label}
+              Готово
             </button>
-          ))}
-        </div>
-
-        <div className="space-y-3">
-          <label className="block">
-            <span className="mb-1 block text-sm font-medium text-ink">Дата отправления</span>
-            <input
-              type="date"
-              value={date}
-              min={today}
-              max={maxDate}
-              disabled={mode === 'immediate'}
-              onChange={(event) => {
-                setDate(event.target.value)
-                setError('')
-              }}
-              className="w-full rounded-[18px] border border-border bg-white px-4 py-4 text-base outline-none transition focus:border-accent"
-            />
-          </label>
-          <label className="block">
-            <span className="mb-1 block text-sm font-medium text-ink">Время отправления</span>
-            <input
-              type="time"
-              value={time}
-              min={timeMin || undefined}
-              disabled={mode === 'immediate'}
-              onChange={(event) => {
-                setTime(event.target.value)
-                setError('')
-              }}
-              className="w-full rounded-[18px] border border-border bg-white px-4 py-4 text-base outline-none transition focus:border-accent"
-            />
-          </label>
-        </div>
-
-        {error ? (
-          <div className="rounded-[18px] border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-            {error}
           </div>
-        ) : null}
-
-        {mode === 'scheduled' && !error ? (
-          <div className="rounded-[18px] border border-border bg-surface-soft px-4 py-3 text-sm text-muted">
-            Время поездки должно быть минимум через {RIDE_SCHEDULE_MIN_ADVANCE_MINUTES} минут и максимум на{' '}
-            {PASSENGER_RIDE_REQUEST_MAX_DAYS_AHEAD} дней вперёд.
-          </div>
-        ) : null}
-
-        <div className="grid grid-cols-2 gap-2">
-          <button
-            type="button"
-            onClick={handleNow}
-            className="rounded-[18px] border border-border bg-white px-4 py-4 text-base font-semibold text-ink"
-          >
-            Сейчас
-          </button>
-          <button
-            type="button"
-            onClick={handleDone}
-            disabled={!isScheduledReady}
-            className="rounded-[18px] bg-accent px-4 py-4 text-base font-semibold text-white shadow-lg shadow-accent/20 disabled:opacity-60"
-          >
-            Готово
-          </button>
         </div>
-      </div>
-    </OverlaySheet>
+      </OverlaySheet>
+
+      <OverlaySheet
+        open={isDatePickerOpen}
+        title="Выберите дату"
+        onClose={() => setIsDatePickerOpen(false)}
+        position="bottom"
+      >
+        <div className="space-y-2">
+          {extendedDateOptions.map((option) => {
+            const isSelected = date === option.value
+
+            return (
+              <button
+                key={option.value}
+                type="button"
+                onClick={() => {
+                  selectDate(option.value)
+                  setIsDatePickerOpen(false)
+                }}
+                className={cn(
+                  'flex w-full items-center justify-between rounded-[18px] border px-4 py-3 text-left transition',
+                  isSelected ? 'border-accent bg-accent/8 text-accent' : 'border-border bg-white text-ink',
+                )}
+              >
+                <span>
+                  <span className="block text-sm font-semibold">{option.title}</span>
+                  <span className={cn('mt-1 block text-xs', isSelected ? 'text-accent/80' : 'text-muted')}>
+                    {option.subtitle}
+                  </span>
+                </span>
+              </button>
+            )
+          })}
+        </div>
+      </OverlaySheet>
+    </>
   )
 }
 
@@ -525,10 +638,10 @@ function RidePriceSheet({
 
   const handleDone = () => {
     const normalized = normalizePriceInput(price)
-    const numeric = Number(normalized)
+    const nextError = getPassengerPriceValidationError(normalized)
 
-    if (!normalized || !Number.isFinite(numeric) || numeric <= 0) {
-      setError('Укажите цену больше нуля.')
+    if (nextError) {
+      setError(nextError)
       return
     }
 

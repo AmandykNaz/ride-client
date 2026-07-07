@@ -4,6 +4,7 @@ import { CarFront, Clock3, Phone, ShieldAlert } from 'lucide-react'
 import {
   formatCountdown,
   formatKzt,
+  formatRideTypeLabel,
   formatRideRequestWhenLabel,
   formatShortDateTime,
   formatVehicleParts,
@@ -115,7 +116,7 @@ export default function PassengerOffersPage() {
   const activeRideRequestStatus = activeRideRequest?.status ?? null
   const activeRideRequestLookupId = activeRideRequest?.backendId ?? activeRideRequest?.id ?? ''
   const requestPrice = activeRideRequest?.price ?? 0
-  const requestTypeLabel = activeRideRequest?.type === 'full' ? 'Весь салон' : 'С попутчиками'
+  const requestTypeLabel = formatRideTypeLabel(activeRideRequest?.rideType ?? activeRideRequest?.type)
   const searchTimer = useRideSearchTimer(activeRideRequest)
   const pendingDriverOffers = useMemo(
     () => driverOffers.filter((offer) => offer.status === 'pending'),

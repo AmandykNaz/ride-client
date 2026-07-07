@@ -1389,6 +1389,10 @@ function getCreateRideRequestErrorMessage(error: unknown) {
       const normalizedMessage = error.message.toLowerCase()
 
       if (
+        normalizedMessage.includes('цена должна быть от 500') ||
+        normalizedMessage.includes('цена должна быть не больше 100 000') ||
+        normalizedMessage.includes('цена должна быть числом') ||
+        normalizedMessage.includes('укажите цену поездки') ||
         normalizedMessage.includes('время поездки должно быть минимум через 30 минут') ||
         normalizedMessage.includes('заявку можно создать максимум на 7 дней вперёд')
       ) {
@@ -1417,6 +1421,10 @@ function getCreateRideRequestErrorMessage(error: unknown) {
     const normalizedMessage = error.message.toLowerCase()
 
     if (
+      normalizedMessage.includes('цена должна быть от 500') ||
+      normalizedMessage.includes('цена должна быть не больше 100 000') ||
+      normalizedMessage.includes('цена должна быть числом') ||
+      normalizedMessage.includes('укажите цену поездки') ||
       normalizedMessage.includes('время поездки должно быть минимум через 30 минут') ||
       normalizedMessage.includes('заявку можно создать максимум на 7 дней вперёд')
     ) {
@@ -3359,10 +3367,26 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     }
 
     const requestedPrice = Number(state.rideDraft.price)
-    if (!Number.isFinite(requestedPrice) || requestedPrice <= 0) {
+    if (!Number.isFinite(requestedPrice)) {
       dispatch({
         type: 'setRideFlowError',
-        error: 'Укажите цену поездки.',
+        error: 'Цена должна быть числом.',
+      })
+      return
+    }
+
+    if (requestedPrice < 500) {
+      dispatch({
+        type: 'setRideFlowError',
+        error: 'Цена должна быть от 500 ₸.',
+      })
+      return
+    }
+
+    if (requestedPrice > 100000) {
+      dispatch({
+        type: 'setRideFlowError',
+        error: 'Цена должна быть не больше 100 000 ₸.',
       })
       return
     }

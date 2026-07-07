@@ -37,6 +37,29 @@ export function getRideScheduleMaxDate(date = new Date()) {
   return getLocalDateInputValue(maxDate)
 }
 
+export function getRideScheduleDateOptions() {
+  return Array.from({ length: PASSENGER_RIDE_REQUEST_MAX_DAYS_AHEAD + 1 }, (_, index) => {
+    const date = new Date()
+    date.setDate(date.getDate() + index)
+
+    return {
+      value: getLocalDateInputValue(date),
+      title:
+        index === 0
+          ? 'Сегодня'
+          : index === 1
+            ? 'Завтра'
+            : index === 2
+              ? 'Послезавтра'
+              : new Intl.DateTimeFormat('ru-RU', { weekday: 'short' }).format(date),
+      subtitle: new Intl.DateTimeFormat('ru-RU', {
+        day: 'numeric',
+        month: 'short',
+      }).format(date),
+    }
+  })
+}
+
 function parseRideScheduleDateTime(date: string, time: string) {
   const trimmedDate = String(date ?? '').trim()
   const trimmedTime = String(time ?? '').trim()

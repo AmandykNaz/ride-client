@@ -1,7 +1,15 @@
 import { Clock3, MessageSquareQuote, Phone, Route, Sparkles, Truck } from 'lucide-react'
 
 import { cn } from '../../../lib/cn'
-import { formatKzt, formatParcelSizeLabel, formatRoute, formatShortDateTime, formatShortDateTimeParts } from '../../../lib/format'
+import {
+  formatKzt,
+  formatParcelSizeLabel,
+  formatRideTypeLabel,
+  formatRoute,
+  formatShortDateTime,
+  formatShortDateTimeParts,
+  isPrivateRideType,
+} from '../../../lib/format'
 import type { DriverCallOutcome, DriverCounterOffer, DriverFeedOrder } from '../../../types/domain'
 
 function maskPhone(phone: string) {
@@ -13,7 +21,7 @@ function maskPhone(phone: string) {
 
 function getOrderBadgeLabel(order: DriverFeedOrder) {
   if (order.category === 'parcel') return 'Посылка'
-  return order.rideType === 'full' ? 'Весь салон' : 'Межгород'
+  return isPrivateRideType(order.rideType) ? 'Весь салон' : 'Межгород'
 }
 
 function getOrderAccent(order: DriverFeedOrder) {
@@ -21,7 +29,7 @@ function getOrderAccent(order: DriverFeedOrder) {
     return 'bg-sky-50 text-sky-700'
   }
 
-  return order.rideType === 'full'
+  return isPrivateRideType(order.rideType)
     ? 'bg-amber-50 text-amber-700'
     : 'bg-accent/10 text-accent'
 }
@@ -123,11 +131,11 @@ export function DriverFeedOrderCard({
         {order.category === 'ride' ? (
           <div className="grid gap-2 rounded-2xl bg-surface-soft p-4 text-sm text-ink">
             <div className="flex items-center gap-2">
-              <Route className="h-4 w-4 text-accent" />
-              <span className="font-semibold">
-                {order.rideType === 'full' ? 'Весь салон' : 'С попутчиками'}
-              </span>
-            </div>
+                <Route className="h-4 w-4 text-accent" />
+                <span className="font-semibold">
+                  {formatRideTypeLabel(order.rideType)}
+                </span>
+              </div>
             <div className="flex items-center gap-2 text-muted">
               <Route className="h-4 w-4" />
               <span>Пассажиров / мест: {order.passengersCount ?? 1}</span>

@@ -5,7 +5,6 @@ import {
   History,
   House,
   Luggage,
-  Package,
   Settings,
   ShieldCheck,
   Sparkles,
@@ -42,6 +41,10 @@ export const screenMeta = {
     title: 'Межгород',
     subtitle: 'Поездки по Казахстану',
   },
+  passengerAnnouncements: {
+    title: 'Попутки',
+    subtitle: 'Готовые поездки водителей',
+  },
   passengerOffers: {
     title: 'Поиск водителя',
     subtitle: 'Предложения и ожидание',
@@ -73,6 +76,14 @@ export const screenMeta = {
   driverDashboard: {
     title: 'Кабинет водителя',
     subtitle: 'Обзор и действия',
+  },
+  driverAnnouncements: {
+    title: 'Мои объявления',
+    subtitle: 'Ваши водительские объявления',
+  },
+  driverAnnouncementEditor: {
+    title: 'Объявление водителя',
+    subtitle: 'Создание и редактирование',
   },
   driverFeed: {
     title: 'Лента',
@@ -118,7 +129,7 @@ export const screenMeta = {
 
 export const passengerBottomNav: BottomNavItem[] = [
   { label: 'Заказ', screen: 'passengerOrder', icon: House },
-  { label: 'Посылки', screen: 'passengerParcels', icon: Package },
+  { label: 'Попутки', screen: 'passengerAnnouncements', icon: Sparkles },
   { label: 'Мои заказы', screen: 'passengerOrders', icon: History },
 ]
 
@@ -131,7 +142,7 @@ export const driverBottomNav: BottomNavItem[] = [
 
 export const passengerDrawerItems: DrawerItem[] = [
   { label: 'Межгород', screen: 'passengerOrder', icon: BusFront },
-  { label: 'Отправить посылку', screen: 'passengerParcels', icon: Package2 },
+  { label: 'Отправить посылку · скоро', screen: 'busesComingSoon', icon: Package2 },
   { label: 'Автобусы скоро', screen: 'busesComingSoon', icon: BusFront },
   { label: 'История заказов', screen: 'passengerOrders', icon: History },
   { label: 'Безопасность', screen: 'safety', icon: ShieldCheck },
@@ -147,6 +158,7 @@ export const passengerDrawerItems: DrawerItem[] = [
 
 export const driverDrawerItems: DrawerItem[] = [
   { label: 'Кабинет водителя', screen: 'driverDashboard', icon: CircleGauge },
+  { label: 'Мои объявления', screen: 'driverAnnouncements', icon: Truck },
   { label: 'Лента заказов', screen: 'driverFeed', icon: Sparkles },
   { label: 'Мои заказы', screen: 'driverMyOrders', icon: History },
   { label: 'Баланс', screen: 'driverBalance', icon: Banknote },
