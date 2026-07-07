@@ -17,7 +17,7 @@ function sortNotifications(items: RideNotification[]) {
   })
 }
 
-function resolveNotificationDestination(actionType?: string | null) {
+function resolveNotificationDestination(actionType?: string | null, role?: 'passenger' | 'driver') {
   const normalized = String(actionType ?? '').trim().toUpperCase()
 
   switch (normalized) {
@@ -27,13 +27,18 @@ function resolveNotificationDestination(actionType?: string | null) {
     case 'PASSENGER_ORDER':
     case 'PASSENGER_REQUEST_CONTACT_OPENED':
     case 'RIDE_REQUEST':
-    case 'RIDE_ORDER':
       return 'passengerOrders' as const
+    case 'PASSENGER_ANNOUNCEMENT_CANCELLED':
+      return 'passengerAnnouncements' as const
+    case 'RIDE_ORDER':
+    case 'RIDE_ORDER_CANCELLED':
+      return role === 'driver' ? 'driverMyOrders' as const : 'passengerOrders' as const
     case 'PASSENGER_ANNOUNCEMENTS':
     case 'ANNOUNCEMENT':
       return 'passengerAnnouncements' as const
     case 'DRIVER_FEED':
     case 'DRIVER_REQUEST':
+    case 'DRIVER_REQUEST_CANCELLED':
       return 'driverFeed' as const
     case 'DRIVER_ORDERS':
     case 'DRIVER_ORDER':
@@ -51,6 +56,7 @@ function resolveNotificationDestination(actionType?: string | null) {
 
 export default function NotificationsPage() {
   const {
+    role,
     notifications,
     notificationsLoading,
     notificationsError,
@@ -94,7 +100,7 @@ export default function NotificationsPage() {
         await actions.markNotificationRead(notification.id)
       }
 
-      const screen = resolveNotificationDestination(notification.actionType)
+      const screen = resolveNotificationDestination(notification.actionType, role)
       if (screen) {
         actions.setScreen(screen)
       }
