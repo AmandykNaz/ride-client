@@ -19,13 +19,14 @@ function sortNotifications(items: RideNotification[]) {
 
 function resolveNotificationDestination(actionType?: string | null, role?: 'passenger' | 'driver') {
   const normalized = String(actionType ?? '').trim().toUpperCase()
+  const legacyPassengerRequestContactOpened = 'PASSENGER_REQUEST_CONTACT_OPENED'
 
   switch (normalized) {
     case 'PASSENGER_OFFER_CREATED':
       return 'passengerOffers' as const
     case 'PASSENGER_ORDERS':
     case 'PASSENGER_ORDER':
-    case 'PASSENGER_REQUEST_CONTACT_OPENED':
+    case legacyPassengerRequestContactOpened:
     case 'RIDE_REQUEST':
       return 'passengerOrders' as const
     case 'PASSENGER_ANNOUNCEMENT_CANCELLED':
