@@ -47,6 +47,12 @@ function resolveNotificationDestination(actionType?: string | null, role?: 'pass
       return 'driverMyOrders' as const
     case 'DRIVER_OFFER_REJECTED':
       return 'driverFeed' as const
+    case 'DRIVER_TOP_UP_APPROVED':
+    case 'DRIVER_TOP_UP_REJECTED':
+      return 'driverBalance' as const
+    case 'DRIVER_APPLICATION_APPROVED':
+    case 'DRIVER_APPLICATION_REJECTED':
+      return 'driverProfile' as const
     case 'DRIVER_ANNOUNCEMENT_CONTACT_OPENED':
     case 'DRIVER_ANNOUNCEMENTS':
       return 'driverAnnouncements' as const
