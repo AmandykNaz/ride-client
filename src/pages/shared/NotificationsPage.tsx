@@ -53,6 +53,8 @@ function resolveNotificationDestination(actionType?: string | null, role?: 'pass
     case 'DRIVER_APPLICATION_APPROVED':
     case 'DRIVER_APPLICATION_REJECTED':
       return 'driverProfile' as const
+    case 'DRIVER_APPLICATION_NEEDS_CHANGES':
+      return 'driverRegistration' as const
     case 'DRIVER_ANNOUNCEMENT_CONTACT_OPENED':
     case 'DRIVER_ANNOUNCEMENTS':
       return 'driverAnnouncements' as const
