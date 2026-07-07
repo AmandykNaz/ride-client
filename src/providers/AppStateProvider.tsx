@@ -756,6 +756,53 @@ function cloneDriverApplicationDraft(
   }
 }
 
+function hasStartedDriverApplicationDraft(application: DriverApplicationDraft): boolean {
+  return Boolean(
+    application.fullName.trim() ||
+      application.phone.trim() ||
+      application.city.trim() ||
+      application.cityId?.trim() ||
+      application.frequentRoutes.trim() ||
+      application.vehicleBrand.trim() ||
+      application.vehicleBrandId != null ||
+      application.vehicleModel.trim() ||
+      application.vehicleModelId != null ||
+      application.vehicleYear.trim() ||
+      application.vehiclePlate.trim() ||
+      application.vehicleColor.trim() ||
+      application.vehicleColorId != null ||
+      application.vehicleSeats.trim() ||
+      application.documents.some((document) => document.filePath.trim().length > 0),
+  )
+}
+
+function resolveDriverApplicationDraftFromSnapshot(
+  currentDraft: DriverApplicationDraft,
+  incomingDraft?: Partial<DriverApplicationDraft> | null,
+  options?: {
+    preserveLocalEdits?: boolean
+  },
+): DriverApplicationDraft {
+  if (!incomingDraft) {
+    return currentDraft
+  }
+
+  if (options?.preserveLocalEdits && hasStartedDriverApplicationDraft(currentDraft)) {
+    return cloneDriverApplicationDraft(currentDraft)
+  }
+
+  return {
+    ...currentDraft,
+    ...incomingDraft,
+    documents: Array.isArray(incomingDraft.documents)
+      ? incomingDraft.documents.map((document) => ({ ...document }))
+      : currentDraft.documents,
+    history: Array.isArray(incomingDraft.history)
+      ? incomingDraft.history.map((item) => ({ ...item }))
+      : currentDraft.history,
+  }
+}
+
 function hasRealDriverApplicationDocuments(documents: unknown): boolean {
   if (!Array.isArray(documents)) return false
 
@@ -4482,6 +4529,11 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
           me.verificationStatus === 'NOT_STARTED' && currentState.driverVerificationStatus === 'DRAFT'
             ? 'DRAFT'
             : me.verificationStatus
+        const shouldPreserveDriverDraft =
+          currentState.currentScreen === 'driverRegistration' &&
+          (currentState.driverVerificationStatus === 'DRAFT' ||
+            currentState.driverVerificationStatus === 'NEEDS_CHANGES') &&
+          !currentState.driverApplicationDraft.submittedAt
         const nextScreen =
           verificationStatus === 'PENDING_REVIEW'
             ? 'driverDashboard'
@@ -4498,9 +4550,11 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
                 blockedReason: me.profile.blockedReason?.trim() || me.wallet?.blockedReason?.trim() || me.profile.blockedReason,
               }
             : currentState.driverProfile,
-          driverApplicationDraft: currentApplication
-            ? { ...currentState.driverApplicationDraft, ...currentApplication }
-            : currentState.driverApplicationDraft,
+          driverApplicationDraft: resolveDriverApplicationDraftFromSnapshot(
+            currentState.driverApplicationDraft,
+            currentApplication,
+            { preserveLocalEdits: shouldPreserveDriverDraft },
+          ),
           activeRecheck,
           driverFeedOrders: currentState.driverFeedOrders,
           driverOrders: currentState.driverOrders,
@@ -4612,6 +4666,11 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         driverMe.verificationStatus === 'NOT_STARTED' && state.driverVerificationStatus === 'DRAFT'
           ? 'DRAFT'
           : driverMe.verificationStatus
+      const shouldPreserveDriverDraft =
+        state.currentScreen === 'driverRegistration' &&
+        (state.driverVerificationStatus === 'DRAFT' ||
+          state.driverVerificationStatus === 'NEEDS_CHANGES') &&
+        !state.driverApplicationDraft.submittedAt
 
       driverProfile = driverMe.profile
         ? {
@@ -4625,7 +4684,11 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         type: 'setDriverSnapshot',
         driverVerificationStatus: verificationStatus,
         driverProfile,
-        driverApplicationDraft: currentApplication ? { ...state.driverApplicationDraft, ...currentApplication } : state.driverApplicationDraft,
+        driverApplicationDraft: resolveDriverApplicationDraftFromSnapshot(
+          state.driverApplicationDraft,
+          currentApplication,
+          { preserveLocalEdits: shouldPreserveDriverDraft },
+        ),
         activeRecheck,
         driverFeedOrders: state.driverFeedOrders,
         driverOrders: state.driverOrders,
