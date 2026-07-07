@@ -9,7 +9,6 @@ import { cn } from '../../lib/cn'
 import { formatKzPlateNumber, getKzPlateValidationError, normalizeKzPlateInput } from '../../lib/format'
 import { useAppActions, useAppState } from '../../providers/AppStateProvider'
 import { PageCard } from '../../shared/ui/PageCard'
-import { type DriverApplicationDocument } from '../../types/domain'
 import {
   getRideVehicleBodyTypes,
   getRideVehicleBrands,
@@ -29,7 +28,7 @@ import DriverDocumentsStep from './components/DriverDocumentsStep'
 import {
   documentDefinitions,
   documentTitle,
-  requiredDocumentDefinitions,
+  hasRequiredDriverApplicationDocuments,
 } from './components/driverDocumentsStep.constants'
 const allowedVehicleSeats = [2, 3, 4, 5, 6, 7, 8, 12, 16, 20]
 
@@ -310,14 +309,7 @@ export default function DriverRegistrationPage() {
 
   const driverStatusLabel = getDriverVerificationStatusLabel(driverVerificationStatus)
 
-  const isRequiredDocumentReady = (type: DriverApplicationDocument['type']) =>
-    driverApplicationDraft.documents.some(
-      (document) => document.type === type && document.filePath.trim().length > 0,
-    )
-
-  const allRequiredDocumentsReady = requiredDocumentDefinitions.every((definition) =>
-    isRequiredDocumentReady(definition.type),
-  )
+  const allRequiredDocumentsReady = hasRequiredDriverApplicationDocuments(driverApplicationDraft.documents)
 
   const missingReviewFields = [
     !driverApplicationDraft.fullName.trim() && 'ФИО',

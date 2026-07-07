@@ -21,6 +21,22 @@ export function documentTitle(type: DriverDocumentType) {
   return documentDefinitions.find((definition) => definition.type === type)?.label ?? type
 }
 
+export function isDriverApplicationDocumentReady(document?: Partial<DriverApplicationDocument> | null) {
+  return Boolean(document?.filePath?.trim())
+}
+
+export function hasRequiredDriverApplicationDocuments(documents: readonly DriverApplicationDocument[] | unknown): boolean {
+  if (!Array.isArray(documents)) return false
+
+  return requiredDocumentDefinitions.every((definition) =>
+    documents.some(
+      (document) =>
+        document?.type === definition.type &&
+        isDriverApplicationDocumentReady(document),
+    ),
+  )
+}
+
 export function formatFileSize(sizeBytes?: number) {
   if (sizeBytes == null) return '—'
   if (sizeBytes < 1024) return `${sizeBytes} B`

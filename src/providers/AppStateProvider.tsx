@@ -87,6 +87,7 @@ import {
   getPassengerComplaints,
   getRideOrderComplaints,
 } from '../features/ride-safety/api/ride-complaints.api'
+import { hasRequiredDriverApplicationDocuments } from '../pages/driver/components/driverDocumentsStep.constants'
 import {
   createRideOrderReview as createRideOrderReviewApi,
   getDriverReviewSummary,
@@ -804,35 +805,7 @@ function resolveDriverApplicationDraftFromSnapshot(
 }
 
 function hasRealDriverApplicationDocuments(documents: unknown): boolean {
-  if (!Array.isArray(documents)) return false
-
-  const requiredDocumentTypes = [
-    'DRIVER_LICENSE_FRONT',
-    'DRIVER_LICENSE_BACK',
-    'VEHICLE_REGISTRATION',
-    'CAR_FRONT_PHOTO',
-  ] as const
-
-  return requiredDocumentTypes.every((requiredType) => {
-    const document = documents.find((item) => {
-      if (typeof item !== 'object' || item === null || Array.isArray(item)) return false
-      return (item as Record<string, unknown>).type === requiredType
-    }) as Record<string, unknown> | undefined
-
-    if (!document) return false
-
-    if (typeof document !== 'object' || document === null || Array.isArray(document)) {
-      return false
-    }
-
-    const record = document as Record<string, unknown>
-    return (
-      typeof record.type === 'string' &&
-      record.type.trim().length > 0 &&
-      typeof record.filePath === 'string' &&
-      record.filePath.trim().length > 0
-    )
-  })
+  return hasRequiredDriverApplicationDocuments(documents)
 }
 
 function nextDriverOrderStatus(

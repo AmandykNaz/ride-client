@@ -170,6 +170,8 @@ function mapApplicationDocuments(raw: unknown): RideDriverApplicationDocument[] 
         ? raw.items
         : isRecord(raw) && Array.isArray(raw.data)
           ? raw.data
+          : isRecord(raw)
+            ? [raw]
           : []
 
   return list
@@ -1345,7 +1347,14 @@ export async function uploadDriverDocument(type: RideDriverApplicationDocument['
   formData.set('type', String(type ?? '').trim())
   formData.set('file', file)
 
-  return backendPost<DriverApplicationDocument>('/ride/driver/documents/upload', formData)
+  const response = await backendPost('/ride/driver/documents/upload', formData)
+  const [document] = mapApplicationDocumentsToDraft(response)
+
+  if (!document) {
+    throw new Error('Не удалось обработать загруженный документ.')
+  }
+
+  return document
 }
 
 export async function uploadDriverRecheckFile(

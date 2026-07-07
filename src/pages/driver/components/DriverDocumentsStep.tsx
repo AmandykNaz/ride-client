@@ -22,6 +22,7 @@ import { uploadDriverDocument } from '../../../features/driver/api/driver.api'
 import type { DriverApplicationDocument } from '../../../types/domain'
 import {
   formatFileSize,
+  isDriverApplicationDocumentReady,
   optionalDocumentDefinitions,
   requiredDocumentDefinitions,
 } from './driverDocumentsStep.constants'
@@ -48,7 +49,7 @@ type DocumentsAction =
   | { type: 'SHOW_REQUIRED_ERRORS' }
 
 function isDocumentReady(document?: UploadedDriverDocument) {
-  return Boolean(document?.filePath.trim() || document?.url?.trim())
+  return isDriverApplicationDocumentReady(document) || Boolean(document?.url?.trim())
 }
 
 function isRequiredDocumentType(type: DriverDocumentType) {
@@ -411,6 +412,11 @@ export function DriverDocumentsStep({
     onDocumentsChange(combinedDocuments)
   }, [combinedDocuments, combinedSignature, onDocumentsChange])
 
+  const emitDocumentsChange = () => {
+    lastEmittedSignatureRef.current = combinedSignature
+    onDocumentsChange(combinedDocuments)
+  }
+
   const handleUpload = async (documentType: DriverDocumentType, file: File) => {
     dispatch({ type: 'START_UPLOAD', documentType })
 
@@ -546,6 +552,7 @@ export function DriverDocumentsStep({
                 return
               }
 
+              emitDocumentsChange()
               onContinue()
             }}
             disabled={state.uploadingType !== null}
