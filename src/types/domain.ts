@@ -598,6 +598,7 @@ export type AppScreen =
   | 'passengerParcels'
   | 'passengerOrders'
   | 'passengerProfile'
+  | 'notifications'
   | 'driverRegistration'
   | 'driverDashboard'
   | 'driverFeed'

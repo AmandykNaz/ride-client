@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import {
+  Bell,
   ChevronRight,
   CircleUserRound,
   Menu,
@@ -33,6 +34,8 @@ export function MobileShell({ children, overlay }: MobileShellProps) {
   const profileScreen: AppScreen =
     state.role === 'driver' ? 'driverProfile' : 'passengerProfile'
   const currentScreenMeta = screenMeta[state.currentScreen]
+  const unreadNotificationsCountLabel =
+    state.unreadNotificationsCount > 99 ? '99+' : String(state.unreadNotificationsCount)
 
   const handleDrawerItem = (item: (typeof drawerItems)[number]) => {
     if (item.role) {
@@ -82,14 +85,30 @@ export function MobileShell({ children, overlay }: MobileShellProps) {
                 </p>
               </div>
 
-              <button
-                type="button"
-                onClick={() => actions.setScreen(profileScreen)}
-                className="grid h-11 w-11 place-items-center rounded-2xl border border-border bg-white text-ink shadow-sm transition hover:border-accent/40 hover:text-accent"
-                aria-label="Открыть профиль"
-              >
-                <CircleUserRound className="h-5 w-5" />
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => actions.setScreen('notifications')}
+                  className="relative grid h-11 w-11 place-items-center rounded-2xl border border-border bg-white text-ink shadow-sm transition hover:border-accent/40 hover:text-accent"
+                  aria-label="Открыть уведомления"
+                >
+                  <Bell className="h-5 w-5" />
+                  {state.unreadNotificationsCount > 0 ? (
+                    <span className="absolute -right-1 -top-1 min-w-[1.25rem] rounded-full bg-accent px-1.5 py-0.5 text-center text-[10px] font-semibold leading-none text-white">
+                      {unreadNotificationsCountLabel}
+                    </span>
+                  ) : null}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => actions.setScreen(profileScreen)}
+                  className="grid h-11 w-11 place-items-center rounded-2xl border border-border bg-white text-ink shadow-sm transition hover:border-accent/40 hover:text-accent"
+                  aria-label="Открыть профиль"
+                >
+                  <CircleUserRound className="h-5 w-5" />
+                </button>
+              </div>
             </div>
           </header>
 

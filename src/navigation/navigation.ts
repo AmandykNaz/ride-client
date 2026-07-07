@@ -73,6 +73,10 @@ export const screenMeta = {
     title: 'Профиль',
     subtitle: 'Пассажирский режим',
   },
+  notifications: {
+    title: 'Уведомления',
+    subtitle: 'Важные обновления по поездкам',
+  },
   driverDashboard: {
     title: 'Кабинет водителя',
     subtitle: 'Обзор и действия',

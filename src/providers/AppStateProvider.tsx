@@ -62,6 +62,13 @@ import {
   type RideDriverAnnouncementStatus,
 } from '../features/announcements'
 import {
+  getRideUnreadNotificationsCount as getRideUnreadNotificationsCountApi,
+  listRideNotifications as listRideNotificationsApi,
+  markAllRideNotificationsRead as markAllRideNotificationsReadApi,
+  markRideNotificationRead as markRideNotificationReadApi,
+  type RideNotification,
+} from '../features/notifications'
+import {
     createDriverTopUpRequest as createDriverTopUpRequestApi,
     cancelTopUpRequest as cancelTopUpRequestApi,
     getDriverAccess,
@@ -209,6 +216,10 @@ type AppState = {
   driverUnlockedContacts: Record<string, DriverUnlockedContact>
   driverOrders: DriverActiveOrder[]
   driverActiveOrder: DriverActiveOrder | null
+  notifications: RideNotification[]
+  unreadNotificationsCount: number
+  notificationsLoading: boolean
+  notificationsError: string | null
   driverCounterOffers: DriverCounterOffer[]
   isDriverCounterOfferSheetOpen: boolean
   driverCounterOfferRequestId: string | null
@@ -316,6 +327,10 @@ type AppContextValue = {
     refreshOrderComplaints: (orderId: string) => Promise<void>
     refreshDriverFeed: () => Promise<void>
     refreshDriverAnnouncements: () => Promise<void>
+    refreshNotifications: () => Promise<void>
+    refreshUnreadNotificationsCount: () => Promise<void>
+    markNotificationRead: (id: string) => Promise<void>
+    markAllNotificationsRead: () => Promise<void>
     refreshDriverOffers: () => Promise<void>
     refreshDriverOrders: () => Promise<void>
     extendPassengerRideRequest: () => Promise<void>
@@ -471,6 +486,12 @@ type AppAction =
   | { type: 'setDriverFlowError'; error: string | null }
   | { type: 'setDriverAnnouncements'; announcements: RideDriverAnnouncement[] }
   | { type: 'setDriverAnnouncementEditorId'; announcementId: string | null }
+  | { type: 'setNotificationsLoading'; loading: boolean }
+  | { type: 'setNotificationsError'; error: string | null }
+  | { type: 'setNotifications'; notifications: RideNotification[] }
+  | { type: 'setUnreadNotificationsCount'; count: number }
+  | { type: 'markNotificationReadLocal'; id: string; readAt?: string | null }
+  | { type: 'markAllNotificationsReadLocal'; readAt?: string | null }
   | { type: 'setDriverWalletLoading'; loading: boolean }
   | { type: 'setDriverAccessLoading'; loading: boolean }
   | { type: 'setDriverTopUpSubmitting'; loading: boolean }
@@ -1447,6 +1468,45 @@ function getCreateRideRequestErrorMessage(error: unknown) {
   return 'Не удалось создать заявку. Проверьте данные.'
 }
 
+function getNotificationsErrorMessage(error: unknown, fallback: string) {
+  if (error instanceof BackendApiError) {
+    const normalizedMessage = error.message.trim().toLowerCase()
+
+    if (normalizedMessage.includes('session expired') || normalizedMessage.includes('unauthorized')) {
+      return 'Сессия истекла. Войдите снова.'
+    }
+
+    if (
+      normalizedMessage.includes('validation failed') ||
+      normalizedMessage.includes('should not exist') ||
+      normalizedMessage.includes('cannot') ||
+      normalizedMessage.includes('stack')
+    ) {
+      return fallback
+    }
+
+    if (error.message.trim()) {
+      return error.message
+    }
+  }
+
+  if (error instanceof Error && error.message.trim()) {
+    const normalizedMessage = error.message.trim().toLowerCase()
+    if (
+      normalizedMessage.includes('validation failed') ||
+      normalizedMessage.includes('should not exist') ||
+      normalizedMessage.includes('cannot') ||
+      normalizedMessage.includes('stack')
+    ) {
+      return fallback
+    }
+
+    return error.message
+  }
+
+  return fallback
+}
+
 type RideRequestClientMeta = Pick<
   PassengerRideRequest,
   'timingMode' | 'scheduledAt' | 'scheduledDate' | 'scheduledTime' | 'priceUpdatedAt' | 'searchRemainingSeconds' | 'expiresAt'
@@ -1556,6 +1616,45 @@ function appReducer(state: AppState, action: AppAction): AppState {
       return { ...state, driverAnnouncements: action.announcements }
     case 'setDriverAnnouncementEditorId':
       return { ...state, driverAnnouncementEditorId: action.announcementId }
+    case 'setNotificationsLoading':
+      return { ...state, notificationsLoading: action.loading }
+    case 'setNotificationsError':
+      return { ...state, notificationsError: action.error }
+    case 'setNotifications':
+      return { ...state, notifications: action.notifications }
+    case 'setUnreadNotificationsCount':
+      return { ...state, unreadNotificationsCount: Math.max(0, action.count) }
+    case 'markNotificationReadLocal': {
+      const normalizedReadAt = action.readAt ?? new Date().toISOString()
+      const notifications = state.notifications.map((item) =>
+        item.id === action.id
+          ? { ...item, isRead: true, readAt: item.readAt ?? normalizedReadAt }
+          : item,
+      )
+      const target = state.notifications.find((item) => item.id === action.id)
+
+      return {
+        ...state,
+        notifications,
+        unreadNotificationsCount:
+          target && !target.isRead
+            ? Math.max(0, state.unreadNotificationsCount - 1)
+            : state.unreadNotificationsCount,
+      }
+    }
+    case 'markAllNotificationsReadLocal': {
+      const normalizedReadAt = action.readAt ?? new Date().toISOString()
+
+      return {
+        ...state,
+        notifications: state.notifications.map((item) => ({
+          ...item,
+          isRead: true,
+          readAt: item.readAt ?? normalizedReadAt,
+        })),
+        unreadNotificationsCount: 0,
+      }
+    }
     case 'setDriverWalletLoading':
       return { ...state, isDriverWalletLoading: action.loading }
     case 'setDriverAccessLoading':
@@ -2760,6 +2859,10 @@ function createInitialState(): AppState {
   driverFeedOrders: [],
   driverAnnouncements: [],
   driverAnnouncementEditorId: null,
+  notifications: [],
+  unreadNotificationsCount: 0,
+  notificationsLoading: false,
+  notificationsError: null,
   driverUnlockedContacts: {},
   driverOrders: [],
   driverActiveOrder: null,
@@ -2851,6 +2954,10 @@ function clearTransientRideState(state: AppState): AppState {
     driverCounterOffers: [],
     driverAnnouncements: [],
     driverAnnouncementEditorId: null,
+    notifications: [],
+    unreadNotificationsCount: 0,
+    notificationsLoading: false,
+    notificationsError: null,
     isDriverCounterOfferSheetOpen: false,
     driverCounterOfferRequestId: null,
     driverCounterOfferPrice: '',
@@ -4167,10 +4274,121 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     }
   }, [dispatch, state.driverVerificationStatus, state.role])
 
+  const refreshNotifications = useCallback(async () => {
+    if (!getRideAccessToken()) {
+      dispatch({ type: 'setNotifications', notifications: [] })
+      dispatch({ type: 'setUnreadNotificationsCount', count: 0 })
+      dispatch({ type: 'setNotificationsError', error: null })
+      return
+    }
+
+    dispatch({ type: 'setNotificationsLoading', loading: true })
+    dispatch({ type: 'setNotificationsError', error: null })
+
+    try {
+      const [response, unreadCountResponse] = await Promise.all([
+        listRideNotificationsApi({ take: 50, skip: 0 }),
+        getRideUnreadNotificationsCountApi(),
+      ])
+      dispatch({ type: 'setNotifications', notifications: response.items })
+      dispatch({ type: 'setUnreadNotificationsCount', count: unreadCountResponse.unreadCount })
+    } catch (error) {
+      if (error instanceof BackendAuthError) {
+        clearRideAccessToken()
+        dispatch({ type: 'resetPassengerSession' })
+        return
+      }
+
+      dispatch({
+        type: 'setNotificationsError',
+        error: getNotificationsErrorMessage(error, 'Не удалось загрузить уведомления. Попробуйте снова.'),
+      })
+    } finally {
+      dispatch({ type: 'setNotificationsLoading', loading: false })
+    }
+  }, [dispatch])
+
+  const refreshUnreadNotificationsCount = useCallback(async () => {
+    if (!getRideAccessToken()) {
+      dispatch({ type: 'setUnreadNotificationsCount', count: 0 })
+      return
+    }
+
+    try {
+      const response = await getRideUnreadNotificationsCountApi()
+      dispatch({ type: 'setUnreadNotificationsCount', count: response.unreadCount })
+    } catch (error) {
+      if (error instanceof BackendAuthError) {
+        clearRideAccessToken()
+        dispatch({ type: 'resetPassengerSession' })
+      }
+    }
+  }, [dispatch])
+
+  const markNotificationRead = useCallback(async (id: string) => {
+    const normalizedId = String(id ?? '').trim()
+    if (!normalizedId) {
+      dispatch({
+        type: 'setNotificationsError',
+        error: 'Не удалось отметить уведомление как прочитанное. Попробуйте снова.',
+      })
+      return
+    }
+
+    try {
+      const notification = await markRideNotificationReadApi(normalizedId)
+      dispatch({
+        type: 'markNotificationReadLocal',
+        id: normalizedId,
+        readAt: notification.readAt ?? new Date().toISOString(),
+      })
+      const unreadCountResponse = await getRideUnreadNotificationsCountApi()
+      dispatch({ type: 'setUnreadNotificationsCount', count: unreadCountResponse.unreadCount })
+    } catch (error) {
+      if (error instanceof BackendAuthError) {
+        clearRideAccessToken()
+        dispatch({ type: 'resetPassengerSession' })
+        return
+      }
+
+      dispatch({
+        type: 'setNotificationsError',
+        error: getNotificationsErrorMessage(
+          error,
+          'Не удалось отметить уведомление как прочитанное. Попробуйте снова.',
+        ),
+      })
+    }
+  }, [dispatch])
+
+  const markAllNotificationsRead = useCallback(async () => {
+    try {
+      await markAllRideNotificationsReadApi()
+      dispatch({ type: 'markAllNotificationsReadLocal', readAt: new Date().toISOString() })
+      dispatch({ type: 'setUnreadNotificationsCount', count: 0 })
+    } catch (error) {
+      if (error instanceof BackendAuthError) {
+        clearRideAccessToken()
+        dispatch({ type: 'resetPassengerSession' })
+        return
+      }
+
+      dispatch({
+        type: 'setNotificationsError',
+        error: getNotificationsErrorMessage(
+          error,
+          'Не удалось отметить уведомления как прочитанные. Попробуйте снова.',
+        ),
+      })
+    }
+  }, [dispatch])
+
   const refreshDriverFeedRef = useRef(refreshDriverFeed)
   const refreshDriverOffersRef = useRef(refreshDriverOffers)
   const refreshDriverOrdersRef = useRef(refreshDriverOrders)
   const refreshDriverAnnouncementsRef = useRef(refreshDriverAnnouncements)
+  const refreshNotificationsRef = useRef(refreshNotifications)
+  const refreshUnreadNotificationsCountRef = useRef(refreshUnreadNotificationsCount)
   const refreshDriverWalletRef = useRef(refreshDriverWallet)
   const refreshDriverWalletTransactionsRef = useRef(refreshDriverWalletTransactions)
   const refreshDriverTopUpRequestsRef = useRef(refreshDriverTopUpRequests)
@@ -4187,6 +4405,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     refreshDriverOffersRef.current = refreshDriverOffers
     refreshDriverOrdersRef.current = refreshDriverOrders
     refreshDriverAnnouncementsRef.current = refreshDriverAnnouncements
+    refreshNotificationsRef.current = refreshNotifications
+    refreshUnreadNotificationsCountRef.current = refreshUnreadNotificationsCount
     refreshDriverWalletRef.current = refreshDriverWallet
     refreshDriverWalletTransactionsRef.current = refreshDriverWalletTransactions
     refreshDriverTopUpRequestsRef.current = refreshDriverTopUpRequests
@@ -4199,12 +4419,32 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     refreshDriverOffers,
     refreshDriverOrders,
     refreshDriverAnnouncements,
+    refreshNotifications,
+    refreshUnreadNotificationsCount,
     refreshDriverReviewSummary,
     refreshDriverReviews,
     refreshDriverTopUpRequests,
     refreshDriverWallet,
     refreshDriverWalletTransactions,
   ])
+
+  useEffect(() => {
+    const token = getRideAccessToken()
+    if (!token) {
+      dispatch({ type: 'setUnreadNotificationsCount', count: 0 })
+      return
+    }
+
+    void refreshUnreadNotificationsCountRef.current()
+
+    const unreadInterval = window.setInterval(() => {
+      void refreshUnreadNotificationsCountRef.current()
+    }, 30000)
+
+    return () => {
+      window.clearInterval(unreadInterval)
+    }
+  }, [state.passengerStatus, state.role, state.driverVerificationStatus])
 
   const refreshDriverSnapshot = useCallback(async (
     screenOverride?: AppScreen,
@@ -5505,6 +5745,10 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       refreshOrderComplaints: (orderId) => refreshOrderComplaints(orderId),
       refreshDriverFeed: () => refreshDriverFeed(),
       refreshDriverAnnouncements: () => refreshDriverAnnouncements(),
+      refreshNotifications: () => refreshNotifications(),
+      refreshUnreadNotificationsCount: () => refreshUnreadNotificationsCount(),
+      markNotificationRead: (id) => markNotificationRead(id),
+      markAllNotificationsRead: () => markAllNotificationsRead(),
       refreshDriverOffers: () => refreshDriverOffers(),
       refreshDriverOrders: () => refreshDriverOrders(),
       extendPassengerRideRequest: () => extendPassengerRideRequestAction(),

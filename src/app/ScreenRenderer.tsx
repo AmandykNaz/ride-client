@@ -23,6 +23,7 @@ import PassengerProfilePage from '../pages/passenger/PassengerProfilePage'
 import SafetyPage from '../pages/SafetyPage'
 import SettingsPage from '../pages/SettingsPage'
 import SupportPage from '../pages/SupportPage'
+import NotificationsPage from '../pages/shared/NotificationsPage'
 
 const screenComponents: Record<AppScreen, ComponentType> = {
   passengerOrder: PassengerOrderPage,
@@ -34,6 +35,7 @@ const screenComponents: Record<AppScreen, ComponentType> = {
   passengerParcels: PassengerParcelsPage,
   passengerOrders: PassengerOrdersPage,
   passengerProfile: PassengerProfilePage,
+  notifications: NotificationsPage,
   driverRegistration: DriverRegistrationPage,
   driverDashboard: DriverDashboardPage,
   driverAnnouncements: DriverAnnouncementsPage,
