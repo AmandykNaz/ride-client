@@ -356,6 +356,7 @@ export type DriverApplicationDraft = {
   fullName: string
   phone: string
   city: string
+  cityName?: string
   cityId?: string
   frequentRoutes: string
   vehicleBrandId?: number
@@ -363,6 +364,7 @@ export type DriverApplicationDraft = {
   vehicleModelId?: number
   vehicleModel: string
   vehicleYear: string
+  vehicle?: Partial<DriverVehicle>
   vehiclePlate: string
   vehicleColorId?: number
   vehicleColor: string

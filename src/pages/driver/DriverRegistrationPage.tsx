@@ -24,6 +24,13 @@ import type {
   RideVehicleModelOption,
 } from '../../features/driver/api/driver.types'
 import { getDriverVerificationStatusLabel } from '../../features/driver/driver-status'
+import {
+  getDriverApplicationCityId,
+  getDriverApplicationCityName,
+  getDriverApplicationVehicleYear,
+  getMissingDriverApplicationFields,
+  normalizeDriverApplicationDraft,
+} from '../../features/driver/utils/driver-application-draft'
 import DriverDocumentsStep from './components/DriverDocumentsStep'
 import {
   documentDefinitions,
@@ -265,19 +272,39 @@ export default function DriverRegistrationPage() {
     }
   }, [driverApplicationDraft.vehicleBrandId])
 
+  const normalizedDraft = useMemo(
+    () => normalizeDriverApplicationDraft(driverApplicationDraft, { cities: rideCities }),
+    [driverApplicationDraft, rideCities],
+  )
+
+  const resolvedCityId = useMemo(
+    () => getDriverApplicationCityId(normalizedDraft, rideCities),
+    [normalizedDraft, rideCities],
+  )
+
+  const resolvedCityName = useMemo(
+    () => getDriverApplicationCityName(normalizedDraft, rideCities),
+    [normalizedDraft, rideCities],
+  )
+
+  const resolvedVehicleYear = useMemo(
+    () => getDriverApplicationVehicleYear(normalizedDraft),
+    [normalizedDraft],
+  )
+
   const selectedRideCity = useMemo(
-    () => rideCities.find((city) => String(city.id) === driverApplicationDraft.cityId) ?? null,
-    [driverApplicationDraft.cityId, rideCities],
+    () => rideCities.find((city) => String(city.id) === resolvedCityId) ?? null,
+    [resolvedCityId, rideCities],
   )
 
   const selectedVehicleBrand = useMemo(
-    () => vehicleBrands.find((brand) => brand.id === driverApplicationDraft.vehicleBrandId) ?? null,
-    [driverApplicationDraft.vehicleBrandId, vehicleBrands],
+    () => vehicleBrands.find((brand) => brand.id === normalizedDraft.vehicleBrandId) ?? null,
+    [normalizedDraft.vehicleBrandId, vehicleBrands],
   )
 
   const selectedVehicleModel = useMemo(
-    () => vehicleModels.find((model) => model.id === driverApplicationDraft.vehicleModelId) ?? null,
-    [driverApplicationDraft.vehicleModelId, vehicleModels],
+    () => vehicleModels.find((model) => model.id === normalizedDraft.vehicleModelId) ?? null,
+    [normalizedDraft.vehicleModelId, vehicleModels],
   )
 
   const vehicleCatalogReady = Boolean(
@@ -288,46 +315,43 @@ export default function DriverRegistrationPage() {
       vehicleBodyTypes.length > 0,
   )
 
-  const vehicleBrandSelected = Boolean(driverApplicationDraft.vehicleBrandId ?? driverApplicationDraft.vehicleBrand.trim())
-  const vehicleModelSelected = Boolean(driverApplicationDraft.vehicleModelId ?? driverApplicationDraft.vehicleModel.trim())
-  const vehicleColorSelected = Boolean(driverApplicationDraft.vehicleColorId ?? driverApplicationDraft.vehicleColor.trim())
-  const vehiclePlateValue = normalizeKzPlateInput(driverApplicationDraft.vehiclePlate)
-  const vehicleYearValue = Number(driverApplicationDraft.vehicleYear)
-  const vehicleSeatsValue = Number(driverApplicationDraft.vehicleSeats)
+  const vehicleBrandSelected = Boolean(normalizedDraft.vehicleBrandId ?? normalizedDraft.vehicleBrand.trim())
+  const vehicleModelSelected = Boolean(normalizedDraft.vehicleModelId ?? normalizedDraft.vehicleModel.trim())
+  const vehicleColorSelected = Boolean(normalizedDraft.vehicleColorId ?? normalizedDraft.vehicleColor.trim())
+  const vehiclePlateValue = normalizeKzPlateInput(normalizedDraft.vehiclePlate)
+  const vehicleYearValue = Number(resolvedVehicleYear)
+  const vehicleSeatsValue = Number(normalizedDraft.vehicleSeats)
   const vehicleYearValid =
-    driverApplicationDraft.vehicleYear.trim().length > 0 &&
+    resolvedVehicleYear.trim().length > 0 &&
     Number.isInteger(vehicleYearValue) &&
     vehicleYearValue >= 1990 &&
     vehicleYearValue <= currentVehicleYear + 1
   const vehicleSeatsValid =
-    driverApplicationDraft.vehicleSeats.trim().length > 0 &&
+    normalizedDraft.vehicleSeats.trim().length > 0 &&
     Number.isInteger(vehicleSeatsValue) &&
     allowedVehicleSeats.includes(vehicleSeatsValue)
   const vehiclePlateValid = Boolean(vehiclePlateValue) && getKzPlateValidationError(vehiclePlateValue) === null
   const vehiclePlateValidationError = vehiclePlateTouched ? getKzPlateValidationError(vehiclePlateValue) : null
-  const vehicleBodyTypeSelected = Boolean(normalizeVehicleBodyTypeCode(driverApplicationDraft.vehicleBodyType))
+  const vehicleBodyTypeSelected = Boolean(normalizeVehicleBodyTypeCode(normalizedDraft.vehicleBodyType))
 
   const driverStatusLabel = getDriverVerificationStatusLabel(driverVerificationStatus)
 
-  const allRequiredDocumentsReady = hasRequiredDriverApplicationDocuments(driverApplicationDraft.documents)
+  const allRequiredDocumentsReady = hasRequiredDriverApplicationDocuments(normalizedDraft.documents)
 
-  const missingReviewFields = [
-    !driverApplicationDraft.fullName.trim() && 'ФИО',
-    !driverApplicationDraft.phone.trim() && 'Телефон',
-    !driverApplicationDraft.cityId?.trim() && 'Город',
-    !vehicleBrandSelected && 'Марка',
-    !vehicleModelSelected && 'Модель',
-    !vehicleYearValid && 'Год',
-    !vehiclePlateValid && 'Госномер',
-    !vehicleColorSelected && 'Цвет',
-    !vehicleSeatsValid && 'Мест',
-    !vehicleBodyTypeSelected && 'Тип кузова',
-  ].filter((label): label is string => Boolean(label))
+  const missingReviewFields = getMissingDriverApplicationFields(normalizedDraft, {
+    cities: rideCities,
+    vehicleBrandSelected,
+    vehicleModelSelected,
+    vehiclePlateValid,
+    vehicleColorSelected,
+    vehicleSeatsValid,
+    vehicleBodyTypeSelected,
+  })
 
   const isStep5Ready = Boolean(
-    driverApplicationDraft.fullName.trim() &&
-      driverApplicationDraft.phone.trim() &&
-      driverApplicationDraft.cityId?.trim() &&
+    normalizedDraft.fullName.trim() &&
+      normalizedDraft.phone.trim() &&
+      resolvedCityId &&
       vehicleBrandSelected &&
       vehicleModelSelected &&
       vehicleYearValid &&
@@ -345,15 +369,66 @@ export default function DriverRegistrationPage() {
 
   const summaryVehicle = useMemo(() => {
     const pieces = [
-      selectedVehicleBrand?.name || driverApplicationDraft.vehicleBrand,
-      selectedVehicleModel?.name || driverApplicationDraft.vehicleModel,
-      driverApplicationDraft.vehicleYear,
+      selectedVehicleBrand?.name || normalizedDraft.vehicleBrand,
+      selectedVehicleModel?.name || normalizedDraft.vehicleModel,
+      resolvedVehicleYear,
     ].filter(Boolean)
 
     return pieces.join(' ')
-  }, [driverApplicationDraft.vehicleBrand, driverApplicationDraft.vehicleModel, driverApplicationDraft.vehicleYear, selectedVehicleBrand?.name, selectedVehicleModel?.name])
+  }, [normalizedDraft.vehicleBrand, normalizedDraft.vehicleModel, resolvedVehicleYear, selectedVehicleBrand?.name, selectedVehicleModel?.name])
 
-  const reviewPhone = driverProfile?.phone || driverApplicationDraft.phone
+  const reviewPhone = driverProfile?.phone || normalizedDraft.phone
+
+  const buildCurrentNormalizedDraft = useCallback(
+    (documents = normalizedDraft.documents) =>
+      normalizeDriverApplicationDraft(
+        {
+          ...normalizedDraft,
+          fullName: normalizedDraft.fullName.trim(),
+          phone: normalizedDraft.phone.trim(),
+          cityId: resolvedCityId || undefined,
+          city: resolvedCityName,
+          cityName: resolvedCityName || undefined,
+          vehicleBrandId: normalizedDraft.vehicleBrandId,
+          vehicleBrand: normalizedDraft.vehicleBrand,
+          vehicleModelId: normalizedDraft.vehicleModelId,
+          vehicleModel: normalizedDraft.vehicleModel,
+          vehicleYear: resolvedVehicleYear,
+          vehicle: {
+            ...(normalizedDraft.vehicle ?? {}),
+            ...(resolvedVehicleYear ? { year: resolvedVehicleYear } : {}),
+          },
+          vehiclePlate: normalizedDraft.vehiclePlate,
+          vehicleColorId: normalizedDraft.vehicleColorId,
+          vehicleColor: normalizedDraft.vehicleColor,
+          vehicleSeats: normalizedDraft.vehicleSeats,
+          vehicleBodyType: normalizedDraft.vehicleBodyType,
+          documents,
+        },
+        { cities: rideCities },
+      ),
+    [normalizedDraft, resolvedCityId, resolvedCityName, resolvedVehicleYear, rideCities],
+  )
+
+  const persistCurrentDraftBeforeStepChange = useCallback(
+    (documents = normalizedDraft.documents) => {
+      actions.setDriverApplicationDraft(buildCurrentNormalizedDraft(documents))
+    },
+    [actions, buildCurrentNormalizedDraft, normalizedDraft.documents],
+  )
+
+  useEffect(() => {
+    if (!import.meta.env.DEV || driverRegistrationStep !== 5) return
+
+    console.debug('[driver-registration step5 draft]', {
+      cityId: resolvedCityId,
+      cityName: resolvedCityName,
+      vehicleYear: resolvedVehicleYear,
+      vehicleNestedYear: normalizedDraft.vehicle?.year ?? '',
+      missingReviewFields,
+      documentsCount: normalizedDraft.documents.filter((document) => document.filePath.trim().length > 0).length,
+    })
+  }, [driverRegistrationStep, missingReviewFields, normalizedDraft.documents, normalizedDraft.vehicle?.year, resolvedCityId, resolvedCityName, resolvedVehicleYear])
 
   const step = driverRegistrationStep
 
@@ -396,6 +471,14 @@ export default function DriverRegistrationPage() {
         <button
           type="button"
           onClick={() => {
+            if (step === 2) {
+              persistCurrentDraftBeforeStepChange()
+            }
+
+            if (step === 3) {
+              persistCurrentDraftBeforeStepChange()
+            }
+
             if (step === 3 && !vehiclePlateValid) {
               setVehiclePlateTouched(true)
               return
@@ -509,14 +592,14 @@ export default function DriverRegistrationPage() {
 
         <Field
           label="ФИО"
-          value={driverApplicationDraft.fullName}
+          value={normalizedDraft.fullName}
           onChange={(value) => actions.updateDriverApplicationField('fullName', value)}
           placeholder="Иванов Иван Иванович"
         />
 
         <Field
           label="Телефон"
-          value={driverApplicationDraft.phone}
+          value={normalizedDraft.phone}
           onChange={(value) => actions.updateDriverApplicationField('phone', value)}
           placeholder="+7 700 000 00 00"
         />
@@ -524,13 +607,14 @@ export default function DriverRegistrationPage() {
         <label className="block">
           <span className="mb-1 block text-sm font-medium text-ink">Основной город работы</span>
           <select
-            value={driverApplicationDraft.cityId ?? ''}
+            value={resolvedCityId}
             onChange={(event) => {
               const cityId = event.target.value
               const city = rideCities.find((item) => String(item.id) === cityId) ?? null
 
               actions.updateDriverApplicationField('cityId', cityId)
               actions.updateDriverApplicationField('city', city?.name ?? '')
+              actions.updateDriverApplicationField('cityName', city?.name ?? undefined)
             }}
             disabled={rideCitiesLoading}
             className="w-full rounded-2xl border border-border bg-surface-soft px-4 py-3 text-sm outline-none transition focus:border-accent disabled:cursor-not-allowed disabled:opacity-60"
@@ -545,9 +629,9 @@ export default function DriverRegistrationPage() {
         </label>
       </div>,
       Boolean(
-        driverApplicationDraft.fullName.trim() &&
-          driverApplicationDraft.phone.trim() &&
-          driverApplicationDraft.cityId?.trim(),
+        normalizedDraft.fullName.trim() &&
+          normalizedDraft.phone.trim() &&
+          resolvedCityId,
       ),
       {
         title: 'Личные данные',
@@ -581,7 +665,7 @@ export default function DriverRegistrationPage() {
         <div className="grid gap-3 sm:[grid-template-columns:repeat(2,minmax(0,1fr))]">
           <SelectField
             label="Марка"
-            value={driverApplicationDraft.vehicleBrandId?.toString() ?? ''}
+            value={normalizedDraft.vehicleBrandId?.toString() ?? ''}
             onChange={(value) => {
               const brandId = value ? Number(value) : undefined
               const brand = vehicleBrands.find((item) => item.id === brandId) ?? null
@@ -605,7 +689,7 @@ export default function DriverRegistrationPage() {
 
           <SelectField
             label="Модель"
-            value={driverApplicationDraft.vehicleModelId?.toString() ?? ''}
+            value={normalizedDraft.vehicleModelId?.toString() ?? ''}
             onChange={(value) => {
               const modelId = value ? Number(value) : undefined
               const model = vehicleModels.find((item) => item.id === modelId) ?? null
@@ -614,13 +698,13 @@ export default function DriverRegistrationPage() {
               actions.updateDriverApplicationField('vehicleModel', model?.name ?? '')
             }}
             placeholder={
-              driverApplicationDraft.vehicleBrandId
+              normalizedDraft.vehicleBrandId
                 ? vehicleModelsLoading
                   ? 'Загрузка моделей...'
                   : 'Выберите модель'
                 : 'Сначала выберите марку'
             }
-            disabled={!driverApplicationDraft.vehicleBrandId || vehicleModelsLoading || Boolean(vehicleCatalogError)}
+            disabled={!normalizedDraft.vehicleBrandId || vehicleModelsLoading || Boolean(vehicleCatalogError)}
           >
             {vehicleModels.map((model) => (
               <option key={model.id} value={model.id}>
@@ -636,8 +720,8 @@ export default function DriverRegistrationPage() {
             <button
               type="button"
               onClick={() => {
-                if (driverApplicationDraft.vehicleBrandId != null) {
-                  void loadVehicleModels(driverApplicationDraft.vehicleBrandId)
+                if (normalizedDraft.vehicleBrandId != null) {
+                  void loadVehicleModels(normalizedDraft.vehicleBrandId)
                 }
               }}
               className="mt-3 rounded-2xl border border-rose-200 bg-white px-4 py-2 text-sm font-semibold text-rose-700"
@@ -650,8 +734,14 @@ export default function DriverRegistrationPage() {
         <div className="grid gap-3 sm:[grid-template-columns:repeat(2,minmax(0,1fr))]">
           <SelectField
             label="Год"
-            value={driverApplicationDraft.vehicleYear}
-            onChange={(value) => actions.updateDriverApplicationField('vehicleYear', value)}
+            value={resolvedVehicleYear}
+            onChange={(value) => {
+              actions.updateDriverApplicationField('vehicleYear', value)
+              actions.updateDriverApplicationField('vehicle', {
+                ...(normalizedDraft.vehicle ?? {}),
+                year: value,
+              })
+            }}
             placeholder="Выберите год"
           >
             {yearOptions.map((year) => (
@@ -662,7 +752,7 @@ export default function DriverRegistrationPage() {
           </SelectField>
           <Field
             label="Госномер"
-            value={driverApplicationDraft.vehiclePlate}
+            value={normalizedDraft.vehiclePlate}
             onChange={(value) => actions.updateDriverApplicationField('vehiclePlate', normalizeKzPlateInput(value))}
             onBlur={() => setVehiclePlateTouched(true)}
             placeholder="Например 765 ABL 13"
@@ -677,7 +767,7 @@ export default function DriverRegistrationPage() {
         <div className="grid gap-3 sm:[grid-template-columns:repeat(2,minmax(0,1fr))]">
           <SelectField
             label="Цвет"
-            value={driverApplicationDraft.vehicleColorId?.toString() ?? ''}
+            value={normalizedDraft.vehicleColorId?.toString() ?? ''}
             onChange={(value) => {
               const colorId = value ? Number(value) : undefined
               const color = vehicleColors.find((item) => item.id === colorId) ?? null
@@ -697,7 +787,7 @@ export default function DriverRegistrationPage() {
 
           <SelectField
             label="Мест"
-            value={driverApplicationDraft.vehicleSeats}
+            value={normalizedDraft.vehicleSeats}
             onChange={(value) => actions.updateDriverApplicationField('vehicleSeats', value)}
             placeholder="Выберите количество мест"
           >
@@ -713,8 +803,8 @@ export default function DriverRegistrationPage() {
           <span className="block text-sm font-medium text-ink">Тип кузова</span>
           <div className="flex flex-wrap gap-2">
             {vehicleBodyTypes.map((bodyType) => {
-              const bodyTypeValue = normalizeVehicleBodyTypeCode(bodyType.code).toLowerCase() as typeof driverApplicationDraft.vehicleBodyType
-              const isSelected = driverApplicationDraft.vehicleBodyType === bodyTypeValue
+              const bodyTypeValue = normalizeVehicleBodyTypeCode(bodyType.code).toLowerCase() as typeof normalizedDraft.vehicleBodyType
+              const isSelected = normalizedDraft.vehicleBodyType === bodyTypeValue
 
               return (
                 <button
@@ -764,7 +854,10 @@ export default function DriverRegistrationPage() {
             actions.updateDriverApplicationField('documents', nextDocuments)
           }}
           onBack={actions.prevDriverRegistrationStep}
-          onContinue={actions.nextDriverRegistrationStep}
+          onContinue={(nextDocuments) => {
+            persistCurrentDraftBeforeStepChange(nextDocuments)
+            actions.nextDriverRegistrationStep()
+          }}
           onAuthRequired={() => {
             actions.openAuthSheet('driverRegistrationResume')
           }}
@@ -817,9 +910,9 @@ export default function DriverRegistrationPage() {
         ) : null}
 
         <div className="rounded-2xl bg-surface-soft p-4 text-sm text-ink">
-          <p className="font-semibold">{driverApplicationDraft.fullName || 'ФИО'}</p>
+          <p className="font-semibold">{normalizedDraft.fullName || 'ФИО'}</p>
           <p className="mt-1 text-muted">{reviewPhone || 'Телефон'}</p>
-          <p className="mt-1 text-muted">{selectedRideCity?.name || driverApplicationDraft.city || 'Город'}</p>
+          <p className="mt-1 text-muted">{selectedRideCity?.name || resolvedCityName || 'Город'}</p>
         </div>
 
         <div className="rounded-2xl bg-surface-soft p-4 text-sm text-ink">

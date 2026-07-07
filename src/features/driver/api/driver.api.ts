@@ -43,6 +43,10 @@ import type {
   RideDriverRequestHistoryItem,
 } from './driver.types'
 export type { RideCity } from './driver.types'
+import {
+  getDriverApplicationCityId,
+  normalizeDriverApplicationDraft,
+} from '../utils/driver-application-draft'
 
 type BackendRecord = Record<string, unknown>
 
@@ -1116,18 +1120,20 @@ function mapDriverApplicationDraft(application: RideDriverApplication | null): D
           ? rejectionReason ?? application?.moderatorComment
           : application?.moderatorComment
 
-  return {
+  return normalizeDriverApplicationDraft({
     step: 1,
     fullName: application?.fullName ?? '',
     phone: application?.phone ?? '',
-    city: application?.city ?? '',
+    city: application?.city ?? application?.cityName ?? '',
+    cityName: application?.cityName ?? application?.city ?? undefined,
     cityId: application?.cityId ?? '',
     frequentRoutes: application?.frequentRoutes ?? '',
     vehicleBrandId: application?.vehicleBrandId ?? asOptionalNumber(vehicleSnapshot?.brandId ?? vehicleSnapshot?.brand_id),
     vehicleBrand: application?.vehicleBrand ?? asString(vehicleSnapshot?.brandName ?? vehicleSnapshot?.brand ?? vehicleSnapshot?.make),
     vehicleModelId: application?.vehicleModelId ?? asOptionalNumber(vehicleSnapshot?.modelId ?? vehicleSnapshot?.model_id),
     vehicleModel: application?.vehicleModel ?? asString(vehicleSnapshot?.modelName ?? vehicleSnapshot?.model),
-    vehicleYear: application?.vehicleYear ?? '',
+    vehicleYear: application?.vehicleYear ?? asString(vehicleSnapshot?.year),
+    vehicle: vehicleSnapshot ? { year: asString(vehicleSnapshot.year) || undefined } : undefined,
     vehiclePlate: normalizeKzPlateInput(
       application?.vehiclePlate ?? asString(vehicleSnapshot?.plateNumber ?? vehicleSnapshot?.plate) ?? '',
     ),
@@ -1143,31 +1149,32 @@ function mapDriverApplicationDraft(application: RideDriverApplication | null): D
     changesRequestedReason: changesRequestedReason ?? undefined,
     rejectionReason: rejectionReason ?? undefined,
     blockedReason: blockedReason ?? undefined,
-  }
+  })
 }
 
 function buildApplicationPayload(
   application: DriverApplicationDraft,
 ): DriverApplicationPayload {
-  const cityId = asString(application.cityId)
+  const normalizedApplication = normalizeDriverApplicationDraft(application)
+  const cityId = getDriverApplicationCityId(normalizedApplication)
   const documents = buildApplicationDocumentsPayload(
-    (application as unknown as { documents?: unknown }).documents,
+    (normalizedApplication as unknown as { documents?: unknown }).documents,
   )
-  const bodyTypeCode = toVehicleBodyTypeApi(application.vehicleBodyType)
+  const bodyTypeCode = toVehicleBodyTypeApi(normalizedApplication.vehicleBodyType)
 
   if (!cityId) {
     throw new Error('Для отправки заявки на проверку нужен cityId.')
   }
 
-  const vehicleBrandId = typeof application.vehicleBrandId === 'number' ? application.vehicleBrandId : undefined
-  const vehicleModelId = typeof application.vehicleModelId === 'number' ? application.vehicleModelId : undefined
-  const vehicleColorId = typeof application.vehicleColorId === 'number' ? application.vehicleColorId : undefined
-  const vehicleBrand = application.vehicleBrand.trim()
-  const vehicleModel = application.vehicleModel.trim()
-  const vehicleColor = application.vehicleColor.trim()
-  const vehicleYear = Number(application.vehicleYear.trim())
-  const vehicleSeatsCount = Number(application.vehicleSeats.trim())
-  const vehiclePlate = normalizeKzPlateInput(application.vehiclePlate)
+  const vehicleBrandId = typeof normalizedApplication.vehicleBrandId === 'number' ? normalizedApplication.vehicleBrandId : undefined
+  const vehicleModelId = typeof normalizedApplication.vehicleModelId === 'number' ? normalizedApplication.vehicleModelId : undefined
+  const vehicleColorId = typeof normalizedApplication.vehicleColorId === 'number' ? normalizedApplication.vehicleColorId : undefined
+  const vehicleBrand = normalizedApplication.vehicleBrand.trim()
+  const vehicleModel = normalizedApplication.vehicleModel.trim()
+  const vehicleColor = normalizedApplication.vehicleColor.trim()
+  const vehicleYear = Number(normalizedApplication.vehicle?.year?.trim() || normalizedApplication.vehicleYear.trim())
+  const vehicleSeatsCount = Number(normalizedApplication.vehicleSeats.trim())
+  const vehiclePlate = normalizeKzPlateInput(normalizedApplication.vehiclePlate)
   const plateValidationError = getKzPlateValidationError(vehiclePlate)
 
   if (plateValidationError) {
@@ -1185,7 +1192,7 @@ function buildApplicationPayload(
   }
 
   return {
-    fullName: application.fullName,
+    fullName: normalizedApplication.fullName,
     cityId,
     vehicle,
     ...(documents ? { documents } : {}),

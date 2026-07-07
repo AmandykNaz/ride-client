@@ -89,6 +89,10 @@ import {
 } from '../features/ride-safety/api/ride-complaints.api'
 import { hasRequiredDriverApplicationDocuments } from '../pages/driver/components/driverDocumentsStep.constants'
 import {
+  mergeDriverApplicationDraft,
+  normalizeDriverApplicationDraft,
+} from '../features/driver/utils/driver-application-draft'
+import {
   createRideOrderReview as createRideOrderReviewApi,
   getDriverReviewSummary,
   getDriverReviews,
@@ -298,6 +302,7 @@ type AppContextValue = {
     setPendingPassengerFlow: (flow: PassengerFlow) => void
     refreshPassengerRideSnapshot: () => Promise<void>
     startDriverRegistration: () => void
+    setDriverApplicationDraft: (draft: DriverApplicationDraft) => void
     updateDriverApplicationField: <K extends keyof DriverApplicationDraft>(
       field: K,
       value: DriverApplicationDraft[K],
@@ -567,6 +572,7 @@ type AppAction =
     }
   | { type: 'setPendingPassengerFlow'; flow: PassengerFlow }
   | { type: 'startDriverRegistration' }
+  | { type: 'setDriverApplicationDraft'; draft: DriverApplicationDraft }
   | {
       type: 'updateDriverApplicationField'
       field: keyof DriverApplicationDraft
@@ -753,6 +759,7 @@ function cloneDriverApplicationDraft(
 ): DriverApplicationDraft {
   return {
     ...application,
+    vehicle: application.vehicle ? { ...application.vehicle } : undefined,
     documents: application.documents.map((document) => ({ ...document })),
   }
 }
@@ -792,16 +799,18 @@ function resolveDriverApplicationDraftFromSnapshot(
     return cloneDriverApplicationDraft(currentDraft)
   }
 
-  return {
-    ...currentDraft,
-    ...incomingDraft,
-    documents: Array.isArray(incomingDraft.documents)
-      ? incomingDraft.documents.map((document) => ({ ...document }))
-      : currentDraft.documents,
-    history: Array.isArray(incomingDraft.history)
-      ? incomingDraft.history.map((item) => ({ ...item }))
-      : currentDraft.history,
-  }
+  return mergeDriverApplicationDraft(
+    currentDraft,
+    {
+      ...incomingDraft,
+      documents: Array.isArray(incomingDraft.documents)
+        ? incomingDraft.documents.map((document) => ({ ...document }))
+        : currentDraft.documents,
+      history: Array.isArray(incomingDraft.history)
+        ? incomingDraft.history.map((item) => ({ ...item }))
+        : currentDraft.history,
+    },
+  )
 }
 
 function hasRealDriverApplicationDocuments(documents: unknown): boolean {
@@ -1763,7 +1772,7 @@ function appReducer(state: AppState, action: AppAction): AppState {
         driverVerificationStatus: action.driverVerificationStatus,
         driverProfile: action.driverProfile,
         activeRecheck: action.activeRecheck,
-        driverApplicationDraft: action.driverApplicationDraft,
+        driverApplicationDraft: normalizeDriverApplicationDraft(action.driverApplicationDraft),
         driverFeedOrders: isApprovedDriver ? dedupeById(mergeUnlockedContactsIntoFeedOrders(action.driverFeedOrders, state.driverUnlockedContacts)) : [],
         driverAnnouncements: isApprovedDriver ? state.driverAnnouncements : [],
         driverUnlockedContacts: isApprovedDriver ? state.driverUnlockedContacts : {},
@@ -1992,29 +2001,35 @@ function appReducer(state: AppState, action: AppAction): AppState {
         isMenuOpen: false,
         driverVerificationStatus: 'DRAFT',
         driverRegistrationStep: 1,
-        driverApplicationDraft: {
+        driverApplicationDraft: normalizeDriverApplicationDraft({
           ...cloneDriverApplicationDraft(state.driverApplicationDraft),
           step: 1,
           fullName:
             state.driverProfile?.fullName || state.driverApplicationDraft.fullName,
           phone: state.driverProfile?.phone || state.driverApplicationDraft.phone,
           city: state.driverProfile?.city || state.driverApplicationDraft.city,
-        },
+        }),
       }
     case 'updateDriverApplicationField': {
       return {
         ...state,
-        driverApplicationDraft: {
+        driverApplicationDraft: normalizeDriverApplicationDraft({
           ...state.driverApplicationDraft,
           [action.field]: action.value,
-        } as DriverApplicationDraft,
+        } as DriverApplicationDraft),
+      }
+    }
+    case 'setDriverApplicationDraft': {
+      return {
+        ...state,
+        driverApplicationDraft: normalizeDriverApplicationDraft(action.draft),
       }
     }
     case 'uploadDriverDocumentMock':
       if (!import.meta.env.DEV) return state
       return {
         ...state,
-        driverApplicationDraft: {
+        driverApplicationDraft: normalizeDriverApplicationDraft({
           ...state.driverApplicationDraft,
           documents: state.driverApplicationDraft.documents.map((document) =>
             document.type === action.documentType
@@ -2026,7 +2041,7 @@ function appReducer(state: AppState, action: AppAction): AppState {
                 }
               : document,
           ),
-        },
+        }),
       }
     case 'nextDriverRegistrationStep':
       return {
@@ -2035,13 +2050,13 @@ function appReducer(state: AppState, action: AppAction): AppState {
           5,
           (state.driverRegistrationStep + 1) as DriverApplicationStep,
         ) as DriverApplicationStep,
-        driverApplicationDraft: {
+        driverApplicationDraft: normalizeDriverApplicationDraft({
           ...state.driverApplicationDraft,
           step: Math.min(
             5,
             (state.driverRegistrationStep + 1) as DriverApplicationStep,
           ) as DriverApplicationStep,
-        },
+        }),
         driverVerificationStatus: 'DRAFT',
         currentScreen: 'driverRegistration',
       }
@@ -2052,23 +2067,23 @@ function appReducer(state: AppState, action: AppAction): AppState {
           1,
           (state.driverRegistrationStep - 1) as DriverApplicationStep,
         ) as DriverApplicationStep,
-        driverApplicationDraft: {
+        driverApplicationDraft: normalizeDriverApplicationDraft({
           ...state.driverApplicationDraft,
           step: Math.max(
             1,
             (state.driverRegistrationStep - 1) as DriverApplicationStep,
           ) as DriverApplicationStep,
-        },
+        }),
         currentScreen: 'driverRegistration',
       }
     case 'submitDriverApplication':
       return {
         ...state,
         driverVerificationStatus: 'PENDING_REVIEW',
-        driverApplicationDraft: {
+        driverApplicationDraft: normalizeDriverApplicationDraft({
           ...state.driverApplicationDraft,
           submittedAt: new Date().toISOString(),
-        },
+        }),
         currentScreen: 'driverDashboard',
         isMenuOpen: false,
       }
@@ -2104,7 +2119,7 @@ function appReducer(state: AppState, action: AppAction): AppState {
       return {
         ...state,
         driverVerificationStatus: 'NEEDS_CHANGES',
-        driverApplicationDraft: {
+        driverApplicationDraft: normalizeDriverApplicationDraft({
           ...state.driverApplicationDraft,
           moderatorComment:
             action.comment ??
@@ -2112,7 +2127,7 @@ function appReducer(state: AppState, action: AppAction): AppState {
           changesRequestedReason:
             action.comment ??
             'Проверьте фото документов и заполните госномер без сокращений.',
-        },
+        }),
         currentScreen: 'driverDashboard',
         isMenuOpen: false,
         role: 'driver',
@@ -2122,13 +2137,13 @@ function appReducer(state: AppState, action: AppAction): AppState {
       return {
         ...state,
         driverVerificationStatus: 'BLOCKED',
-        driverApplicationDraft: {
+        driverApplicationDraft: normalizeDriverApplicationDraft({
           ...state.driverApplicationDraft,
           moderatorComment:
             action.comment ?? 'Временная блокировка за нарушение правил модерации.',
           blockedReason:
             action.comment ?? 'Временная блокировка за нарушение правил модерации.',
-        },
+        }),
         currentScreen: 'driverDashboard',
         isMenuOpen: false,
         role: 'driver',
@@ -2149,10 +2164,10 @@ function appReducer(state: AppState, action: AppAction): AppState {
           2,
           state.driverApplicationDraft.step,
         ) as DriverApplicationStep,
-        driverApplicationDraft: {
+        driverApplicationDraft: normalizeDriverApplicationDraft({
           ...state.driverApplicationDraft,
           step: Math.max(2, state.driverApplicationDraft.step) as DriverApplicationStep,
-        } as DriverApplicationDraft,
+        } as DriverApplicationDraft),
       }
     case 'toggleDriverOnlineStatus':
       if (state.driverVerificationStatus !== 'APPROVED') return state
@@ -4723,7 +4738,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const saveDriverApplication = async () => {
-    const application = state.driverApplicationDraft
+    const application = normalizeDriverApplicationDraft(state.driverApplicationDraft)
     const shouldUpdate =
       Boolean(driverApplicationIdRef.current) &&
       (state.driverVerificationStatus === 'NEEDS_CHANGES' ||
@@ -5791,6 +5806,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       updatePassengerRideRequestPrice: (requestedPrice) =>
         updatePassengerRideRequestPriceAction(requestedPrice),
       startDriverRegistration: () => dispatch({ type: 'startDriverRegistration' }),
+      setDriverApplicationDraft: (draft) =>
+        dispatch({ type: 'setDriverApplicationDraft', draft }),
       updateDriverApplicationField: (field, value) =>
         dispatch({ type: 'updateDriverApplicationField', field, value }),
       uploadDriverDocumentMock: (documentType, filePath) =>

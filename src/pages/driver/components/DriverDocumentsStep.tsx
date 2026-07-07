@@ -311,7 +311,7 @@ export type DriverDocumentsStepProps = {
   documents: DriverApplicationDocument[]
   onDocumentsChange: (documents: DriverApplicationDocument[]) => void
   onBack: () => void
-  onContinue: () => void
+  onContinue: (documents: DriverApplicationDocument[]) => void
   onAuthRequired: () => void
 }
 
@@ -553,7 +553,7 @@ export function DriverDocumentsStep({
               }
 
               emitDocumentsChange()
-              onContinue()
+              onContinue(combinedDocuments)
             }}
             disabled={state.uploadingType !== null}
             className="rounded-2xl bg-accent px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-accent/20 disabled:cursor-not-allowed disabled:opacity-60"
