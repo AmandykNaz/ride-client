@@ -140,6 +140,29 @@ function formatDateTimeValue(
   return new Intl.DateTimeFormat('ru-RU', options).format(date)
 }
 
+function parseBackendDateTimePreservingClock(value?: string | null) {
+  const normalized = String(value ?? '').trim()
+  if (!normalized) return null
+
+  const match = normalized.match(
+    /^(\d{4})-(\d{2})-(\d{2})(?:[T\s](\d{2}):(\d{2})(?::(\d{2}))?)?/,
+  )
+
+  if (!match) {
+    return null
+  }
+
+  const [, year, month, day, hours = '00', minutes = '00'] = match
+
+  return {
+    year: Number(year),
+    month: Number(month),
+    day: Number(day),
+    hours,
+    minutes,
+  }
+}
+
 function isSameLocalDay(left: Date, right: Date) {
   return (
     left.getFullYear() === right.getFullYear() &&
@@ -415,6 +438,46 @@ export function formatShortDateTime(value?: string | null) {
       minute: '2-digit',
     }) || 'Не указано'
   )
+}
+
+export function formatBackendDateTimePreservingTime(value?: string | null) {
+  if (!value) return 'Не указано'
+
+  const parsed = parseBackendDateTimePreservingClock(value)
+  if (!parsed) {
+    return formatShortDateTime(value)
+  }
+
+  const date = new Date(parsed.year, parsed.month - 1, parsed.day, 12, 0, 0)
+  const dayMonth = new Intl.DateTimeFormat('ru-RU', {
+    day: 'numeric',
+    month: 'short',
+  }).format(date)
+
+  return `${dayMonth}, ${parsed.hours}:${parsed.minutes}`
+}
+
+export function formatBusDateTime(value?: string | null) {
+  if (!value) return 'Не указано'
+
+  const parsed = parseBackendDateTimePreservingClock(value)
+  if (!parsed) {
+    return (
+      formatDateTimeValue(value, {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        timeZone: 'Asia/Almaty',
+      }) || 'Не указано'
+    )
+  }
+
+  const day = String(parsed.day).padStart(2, '0')
+  const month = String(parsed.month).padStart(2, '0')
+
+  return `${day}.${month}.${parsed.year} ${parsed.hours}:${parsed.minutes}`
 }
 
 export function formatShortDate(value?: string | null) {

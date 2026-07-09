@@ -431,7 +431,15 @@ export function PassengerHistoryTabs() {
         )
       ) : (
         <div className="rounded-[28px] border border-dashed border-border bg-white p-6 text-center">
-          <p className="text-sm font-semibold text-ink">Автобусы скоро</p>
+          <p className="text-sm font-semibold text-ink">Автобусные рейсы доступны отдельно</p>
+          <p className="mt-2 text-sm text-muted">Откройте каталог, чтобы посмотреть расписание и схему мест.</p>
+          <button
+            type="button"
+            onClick={actions.openBusSearch}
+            className="mt-4 rounded-2xl bg-accent px-4 py-3 text-sm font-semibold text-white"
+          >
+            Открыть автобусы
+          </button>
         </div>
       )}
 

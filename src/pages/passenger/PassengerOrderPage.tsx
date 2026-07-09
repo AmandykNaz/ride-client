@@ -256,22 +256,6 @@ export default function PassengerOrderPage() {
           </div>
         </div>
 
-        <button
-          type="button"
-          onClick={() => actions.setScreen('passengerAnnouncements')}
-          className="mb-4 flex w-full items-center justify-between gap-3 rounded-[24px] border border-border bg-surface-soft px-4 py-4 text-left transition hover:border-accent/30"
-        >
-          <span className="min-w-0">
-            <span className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.24em] text-muted">
-              Готовые поездки водителей
-            </span>
-            <span className="block text-base font-semibold leading-6 text-ink">
-              Посмотреть попутки
-            </span>
-          </span>
-          <ChevronRight className="h-4 w-4 shrink-0 text-muted" />
-        </button>
-
         <div className="space-y-2">
           <RowButton
             label="Откуда"

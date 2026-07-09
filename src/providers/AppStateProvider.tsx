@@ -161,6 +161,14 @@ import type { CreateRideComplaintPayload, CreateRideRequestComplaintPayload } fr
 
 type PassengerOrdersTab = 'rides' | 'parcels' | 'buses'
 type PassengerFlow = 'ride' | 'parcel' | 'login' | 'driverRegistrationStart' | 'driverRegistrationResume' | null
+type BusSearchNavigation = {
+  fromCityId: string
+  toCityId: string
+  date: string
+  fromCityName?: string
+  toCityName?: string
+}
+
 type DriverUnlockedContact = {
   phone: string
   passengerName: string | null
@@ -193,6 +201,8 @@ type AppState = {
   driverVerificationStatus: DriverVerificationStatus
   currentScreen: AppScreen
   isMenuOpen: boolean
+  busSearchNavigation: BusSearchNavigation | null
+  selectedBusTripId: string | null
   passengerProfile: PassengerProfile | null
   driverProfile: DriverProfile | null
   rideDraft: RideDraft
@@ -295,6 +305,10 @@ type AppContextValue = {
     closeMenu: () => void
     toggleMenu: () => void
     setScreen: (screen: AppScreen) => void
+    openBusSearch: () => void
+    openBusTrips: (params: BusSearchNavigation) => void
+    openBusTripDetail: (tripId: string) => void
+    openBusSeats: (tripId: string) => void
     setRole: (role: UserRole, screen?: AppScreen) => void
     setPassengerStatus: (status: PassengerStatus) => void
     logout: () => void
@@ -466,6 +480,10 @@ type AppAction =
   | { type: 'closeMenu' }
   | { type: 'toggleMenu' }
   | { type: 'setScreen'; screen: AppScreen }
+  | { type: 'openBusSearch' }
+  | { type: 'openBusTrips'; params: BusSearchNavigation }
+  | { type: 'openBusTripDetail'; tripId: string }
+  | { type: 'openBusSeats'; tripId: string }
   | { type: 'setRole'; role: UserRole; screen: AppScreen }
   | { type: 'setPassengerStatus'; status: PassengerStatus }
   | { type: 'resetPassengerSession' }
@@ -1609,6 +1627,29 @@ function appReducer(state: AppState, action: AppAction): AppState {
       return { ...state, isMenuOpen: !state.isMenuOpen }
     case 'setScreen':
       return { ...state, currentScreen: action.screen, isMenuOpen: false }
+    case 'openBusSearch':
+      return { ...state, currentScreen: 'busSearch', isMenuOpen: false }
+    case 'openBusTrips':
+      return {
+        ...state,
+        currentScreen: 'busTrips',
+        isMenuOpen: false,
+        busSearchNavigation: action.params,
+      }
+    case 'openBusTripDetail':
+      return {
+        ...state,
+        currentScreen: 'busTripDetail',
+        isMenuOpen: false,
+        selectedBusTripId: action.tripId,
+      }
+    case 'openBusSeats':
+      return {
+        ...state,
+        currentScreen: 'busSeats',
+        isMenuOpen: false,
+        selectedBusTripId: action.tripId,
+      }
     case 'setRole':
       return {
         ...clearTransientRideState(state),
@@ -2872,104 +2913,106 @@ function appReducer(state: AppState, action: AppAction): AppState {
 
 function createInitialState(): AppState {
   return {
-  role: 'passenger',
-  passengerStatus: 'GUEST',
-  driverVerificationStatus: 'NOT_STARTED',
-  currentScreen: defaultScreenByRole.passenger,
-  isMenuOpen: false,
-  passengerProfile: null,
-  driverProfile: null,
-  rideDraft: defaultRideDraft(),
-  isRideLocationSheetOpen: false,
-  rideLocationSheetTarget: null,
-  parcelDraft: defaultParcelDraft(),
-  driverApplicationDraft: defaultDriverApplicationDraft(),
-  driverRegistrationStep: 1,
-  activeRecheck: null,
-  driverWallet: defaultDriverWallet(),
-  driverAccess: null,
-  driverTariffs: [],
-  driverWalletTransactions: [],
-  driverTopUpRequests: [],
-  driverFeedOrders: [],
-  driverAnnouncements: [],
-  driverAnnouncementEditorId: null,
-  notifications: [],
-  unreadNotificationsCount: 0,
-  notificationsLoading: false,
-  notificationsError: null,
-  driverUnlockedContacts: {},
-  driverOrders: [],
-  driverActiveOrder: null,
-  driverCounterOffers: [],
-  isDriverCounterOfferSheetOpen: false,
-  driverCounterOfferRequestId: null,
-  driverCounterOfferPrice: '',
-  driverCounterOfferComment: '',
-  isDriverFeedLoading: false,
-  isDriverActionLoading: false,
-  isDriverWalletLoading: false,
-  isDriverAccessLoading: false,
-  isDriverTopUpSubmitting: false,
-  isRideReviewSubmitting: false,
-  isRideComplaintSubmitting: false,
-  driverFlowError: null,
-  driverWalletError: null,
-  driverAccessError: null,
-  rideSafetyError: null,
-  rideSafetyNotice: null,
-  isTopUpFormOpen: false,
-  isRideComplaintOpen: false,
-  topUpForm: {
-    amount: '',
-    method: 'KASPI_TRANSFER',
-    providerRef: '',
-    comment: '',
-    receiptFile: null,
-  },
-  rideComplaintForm: {
-    targetType: 'ORDER',
-    orderId: null,
-    requestId: null,
-    contactUnlockId: null,
-    reporterRole: 'PASSENGER',
-    title: null,
-    route: null,
-    category: 'other',
-    message: '',
-  },
-  activeRideRequest: null,
-  passengerRequestContactUnlocksByRequestId: {},
-  driverOffers: [],
-  activeRide: null,
-  activeRideEvents: [],
-  passengerRideRequests: [],
-  passengerRideOrders: [],
-  passengerReviewSummary: null,
-  driverReviewSummary: null,
-  passengerReviews: [],
-  driverReviews: [],
-  passengerComplaints: [],
-  driverComplaints: [],
-  orderReviews: [],
-  orderComplaints: [],
-  isRideListLoading: false,
-  isPassengerOrdersLoading: false,
-  isRideRequestLoading: false,
-  isRideOffersLoading: false,
-  isRideActionLoading: false,
-  rideFlowError: null,
-  rideFlowNotice: null,
-  activeParcelRequest: null,
-  parcelOffers: [],
-  activeParcelOrder: null,
-  passengerHistory: [],
-  passengerOrdersTab: 'rides',
-  verifiedPhone: '',
-  pendingPassengerFlow: null,
-  isPhoneVerifySheetOpen: false,
-  isPassengerOnboardingOpen: false,
-  isPassengerRatingOpen: false,
+    role: 'passenger',
+    passengerStatus: 'GUEST',
+    driverVerificationStatus: 'NOT_STARTED',
+    currentScreen: defaultScreenByRole.passenger,
+    isMenuOpen: false,
+    busSearchNavigation: null,
+    selectedBusTripId: null,
+    passengerProfile: null,
+    driverProfile: null,
+    rideDraft: defaultRideDraft(),
+    isRideLocationSheetOpen: false,
+    rideLocationSheetTarget: null,
+    parcelDraft: defaultParcelDraft(),
+    driverApplicationDraft: defaultDriverApplicationDraft(),
+    driverRegistrationStep: 1,
+    activeRecheck: null,
+    driverWallet: defaultDriverWallet(),
+    driverAccess: null,
+    driverTariffs: [],
+    driverWalletTransactions: [],
+    driverTopUpRequests: [],
+    driverFeedOrders: [],
+    driverAnnouncements: [],
+    driverAnnouncementEditorId: null,
+    notifications: [],
+    unreadNotificationsCount: 0,
+    notificationsLoading: false,
+    notificationsError: null,
+    driverUnlockedContacts: {},
+    driverOrders: [],
+    driverActiveOrder: null,
+    driverCounterOffers: [],
+    isDriverCounterOfferSheetOpen: false,
+    driverCounterOfferRequestId: null,
+    driverCounterOfferPrice: '',
+    driverCounterOfferComment: '',
+    isDriverFeedLoading: false,
+    isDriverActionLoading: false,
+    isDriverWalletLoading: false,
+    isDriverAccessLoading: false,
+    isDriverTopUpSubmitting: false,
+    isRideReviewSubmitting: false,
+    isRideComplaintSubmitting: false,
+    driverFlowError: null,
+    driverWalletError: null,
+    driverAccessError: null,
+    rideSafetyError: null,
+    rideSafetyNotice: null,
+    isTopUpFormOpen: false,
+    isRideComplaintOpen: false,
+    topUpForm: {
+      amount: '',
+      method: 'KASPI_TRANSFER',
+      providerRef: '',
+      comment: '',
+      receiptFile: null,
+    },
+    rideComplaintForm: {
+      targetType: 'ORDER',
+      orderId: null,
+      requestId: null,
+      contactUnlockId: null,
+      reporterRole: 'PASSENGER',
+      title: null,
+      route: null,
+      category: 'other',
+      message: '',
+    },
+    activeRideRequest: null,
+    passengerRequestContactUnlocksByRequestId: {},
+    driverOffers: [],
+    activeRide: null,
+    activeRideEvents: [],
+    passengerRideRequests: [],
+    passengerRideOrders: [],
+    passengerReviewSummary: null,
+    driverReviewSummary: null,
+    passengerReviews: [],
+    driverReviews: [],
+    passengerComplaints: [],
+    driverComplaints: [],
+    orderReviews: [],
+    orderComplaints: [],
+    isRideListLoading: false,
+    isPassengerOrdersLoading: false,
+    isRideRequestLoading: false,
+    isRideOffersLoading: false,
+    isRideActionLoading: false,
+    rideFlowError: null,
+    rideFlowNotice: null,
+    activeParcelRequest: null,
+    parcelOffers: [],
+    activeParcelOrder: null,
+    passengerHistory: [],
+    passengerOrdersTab: 'rides',
+    verifiedPhone: '',
+    pendingPassengerFlow: null,
+    isPhoneVerifySheetOpen: false,
+    isPassengerOnboardingOpen: false,
+    isPassengerRatingOpen: false,
   }
 }
 
@@ -2997,6 +3040,8 @@ function clearTransientRideState(state: AppState): AppState {
     driverCounterOfferRequestId: null,
     driverCounterOfferPrice: '',
     driverCounterOfferComment: '',
+    busSearchNavigation: null,
+    selectedBusTripId: null,
     activeRideRequest: null,
     passengerRequestContactUnlocksByRequestId: {},
     driverOffers: [],
@@ -5771,6 +5816,10 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       closeMenu: () => dispatch({ type: 'closeMenu' }),
       toggleMenu: () => dispatch({ type: 'toggleMenu' }),
       setScreen: (screen) => dispatch({ type: 'setScreen', screen }),
+      openBusSearch: () => dispatch({ type: 'openBusSearch' }),
+      openBusTrips: (params) => dispatch({ type: 'openBusTrips', params }),
+      openBusTripDetail: (tripId) => dispatch({ type: 'openBusTripDetail', tripId }),
+      openBusSeats: (tripId) => dispatch({ type: 'openBusSeats', tripId }),
       setRole: (role, screen = defaultScreenByRole[role]) =>
         dispatch({ type: 'setRole', role, screen }),
       setPassengerStatus: (status) =>

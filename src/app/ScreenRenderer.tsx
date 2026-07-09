@@ -1,6 +1,10 @@
 import type { ComponentType } from 'react'
 
 import type { AppScreen } from '../types/domain'
+import BusSearchPage from '../pages/bus/BusSearchPage'
+import BusSeatsPage from '../pages/bus/BusSeatsPage'
+import BusTripDetailPage from '../pages/bus/BusTripDetailPage'
+import BusTripsPage from '../pages/bus/BusTripsPage'
 import BusesComingSoonPage from '../pages/BusesComingSoonPage'
 import DriverBalancePage from '../pages/driver/DriverBalancePage'
 import DriverAnnouncementEditorPage from '../pages/driver/DriverAnnouncementEditorPage'
@@ -30,6 +34,10 @@ const screenComponents: Record<AppScreen, ComponentType> = {
   passengerAnnouncements: PassengerAnnouncementsPage,
   passengerOffers: PassengerOffersPage,
   passengerActiveRide: PassengerActiveRidePage,
+  busSearch: BusSearchPage,
+  busTrips: BusTripsPage,
+  busTripDetail: BusTripDetailPage,
+  busSeats: BusSeatsPage,
   parcelOffers: PassengerParcelOffersPage,
   activeParcel: PassengerActiveParcelPage,
   passengerParcels: PassengerParcelsPage,

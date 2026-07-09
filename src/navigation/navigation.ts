@@ -3,7 +3,6 @@ import {
   BusFront,
   CircleGauge,
   History,
-  House,
   Luggage,
   Settings,
   ShieldCheck,
@@ -52,6 +51,22 @@ export const screenMeta = {
   passengerActiveRide: {
     title: 'Активная поездка',
     subtitle: 'Текущий статус поездки',
+  },
+  busSearch: {
+    title: 'Автобусы',
+    subtitle: 'Поиск автобусных рейсов',
+  },
+  busTrips: {
+    title: 'Рейсы',
+    subtitle: 'Доступные автобусные маршруты',
+  },
+  busTripDetail: {
+    title: 'Рейс',
+    subtitle: 'Детали автобусного маршрута',
+  },
+  busSeats: {
+    title: 'Места',
+    subtitle: 'Схема автобуса без бронирования',
   },
   parcelOffers: {
     title: 'Поиск курьера',
@@ -132,8 +147,8 @@ export const screenMeta = {
 } satisfies Record<AppScreen, { title: string; subtitle: string }>
 
 export const passengerBottomNav: BottomNavItem[] = [
-  { label: 'Заказ', screen: 'passengerOrder', icon: House },
   { label: 'Попутки', screen: 'passengerAnnouncements', icon: Sparkles },
+  { label: 'Автобусы', screen: 'busSearch', icon: BusFront },
   { label: 'Мои заказы', screen: 'passengerOrders', icon: History },
 ]
 
@@ -147,7 +162,7 @@ export const driverBottomNav: BottomNavItem[] = [
 export const passengerDrawerItems: DrawerItem[] = [
   { label: 'Межгород', screen: 'passengerOrder', icon: BusFront },
   { label: 'Отправить посылку · скоро', screen: 'busesComingSoon', icon: Package2 },
-  { label: 'Автобусы скоро', screen: 'busesComingSoon', icon: BusFront },
+  { label: 'Автобусы', screen: 'busSearch', icon: BusFront },
   { label: 'История заказов', screen: 'passengerOrders', icon: History },
   { label: 'Безопасность', screen: 'safety', icon: ShieldCheck },
   { label: 'Поддержка', screen: 'support', icon: Users },
