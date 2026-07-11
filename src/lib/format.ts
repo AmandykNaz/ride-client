@@ -178,6 +178,39 @@ function formatShortTime(date: Date) {
   }).format(date)
 }
 
+function hasExplicitTimeZone(value: string) {
+  return /(?:[zZ]|[+-]\d{2}:\d{2}|[+-]\d{4})$/.test(value)
+}
+
+function formatDateInAlmaty(value: string) {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) {
+    return ''
+  }
+
+  const parts = new Intl.DateTimeFormat('ru-RU', {
+    timeZone: 'Asia/Almaty',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).formatToParts(date)
+
+  const lookup = new Map(parts.map((part) => [part.type, part.value]))
+  const day = lookup.get('day')
+  const month = lookup.get('month')
+  const year = lookup.get('year')
+  const hour = lookup.get('hour')
+  const minute = lookup.get('minute')
+
+  if (!day || !month || !year || !hour || !minute) {
+    return ''
+  }
+
+  return `${day}.${month}.${year} ${hour}:${minute}`
+}
+
 export const KZ_PLATE_REGION_CODES = [
   '01',
   '02',
@@ -460,18 +493,15 @@ export function formatBackendDateTimePreservingTime(value?: string | null) {
 export function formatBusDateTime(value?: string | null) {
   if (!value) return 'Не указано'
 
-  const parsed = parseBackendDateTimePreservingClock(value)
+  const normalized = String(value).trim()
+
+  if (hasExplicitTimeZone(normalized)) {
+    return formatDateInAlmaty(normalized) || 'Не указано'
+  }
+
+  const parsed = parseBackendDateTimePreservingClock(normalized)
   if (!parsed) {
-    return (
-      formatDateTimeValue(value, {
-        day: '2-digit',
-        month: '2-digit',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-        timeZone: 'Asia/Almaty',
-      }) || 'Не указано'
-    )
+    return formatDateInAlmaty(normalized) || 'Не указано'
   }
 
   const day = String(parsed.day).padStart(2, '0')

@@ -54,14 +54,29 @@ export type BusTripDetail = BusTripSummary & {
 
 export type BusSeatStatus = 'AVAILABLE' | 'HELD' | 'SOLD' | 'UNAVAILABLE' | 'UNKNOWN'
 
+export type BusSeatType =
+  | 'SEAT'
+  | 'BED'
+  | 'SLEEPER'
+  | 'AISLE'
+  | 'DOOR'
+  | 'DRIVER'
+  | 'EMPTY'
+  | 'UNKNOWN'
+
 export type BusSeat = {
   id: string
   label: string
   row: number | null
   column: number | null
+  x: number | null
+  y: number | null
+  deck?: string | null
+  level?: string | null
+  floor?: string | null
+  type: BusSeatType
   status: BusSeatStatus
   price: number | null
-  floor?: string | null
 }
 
 export type BusTripSeats = {

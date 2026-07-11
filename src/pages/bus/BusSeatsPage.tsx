@@ -64,34 +64,25 @@ export default function BusSeatsPage() {
   const orderedSeats = useMemo(
     () =>
       [...seats].sort((left, right) => {
-        const leftRow = left.row ?? Number.MAX_SAFE_INTEGER
-        const rightRow = right.row ?? Number.MAX_SAFE_INTEGER
+        const leftLevel = String(left.deck ?? left.level ?? left.floor ?? '').trim()
+        const rightLevel = String(right.deck ?? right.level ?? right.floor ?? '').trim()
+
+        if (leftLevel !== rightLevel) {
+          return leftLevel.localeCompare(rightLevel, 'ru')
+        }
+
+        const leftRow = left.y ?? left.row ?? Number.MAX_SAFE_INTEGER
+        const rightRow = right.y ?? right.row ?? Number.MAX_SAFE_INTEGER
 
         if (leftRow !== rightRow) return leftRow - rightRow
 
-        const leftColumn = left.column ?? Number.MAX_SAFE_INTEGER
-        const rightColumn = right.column ?? Number.MAX_SAFE_INTEGER
+        const leftColumn = left.x ?? left.column ?? Number.MAX_SAFE_INTEGER
+        const rightColumn = right.x ?? right.column ?? Number.MAX_SAFE_INTEGER
 
         return leftColumn - rightColumn
       }),
     [seats],
   )
-
-  const seatFloors = useMemo(() => {
-    const grouped = new Map<string, BusSeat[]>()
-
-    orderedSeats.forEach((seat) => {
-      const key = seat.floor?.trim() || 'main'
-      const existing = grouped.get(key) ?? []
-      existing.push(seat)
-      grouped.set(key, existing)
-    })
-
-    return Array.from(grouped.entries()).map(([floor, floorSeats]) => ({
-      floor,
-      seats: floorSeats,
-    }))
-  }, [orderedSeats])
 
   if (!selectedBusTripId) {
     return (
@@ -112,7 +103,7 @@ export default function BusSeatsPage() {
   }
 
   return (
-    <div className="space-y-4 pb-[calc(6rem+env(safe-area-inset-bottom))]">
+    <div className="space-y-4 pb-[calc(7rem+env(safe-area-inset-bottom))]">
       <button
         type="button"
         onClick={() => actions.setScreen('busTripDetail')}
@@ -124,14 +115,9 @@ export default function BusSeatsPage() {
 
       <PageCard
         eyebrow="Места"
-        title="Схема автобуса"
-        description="Места доступны только для просмотра. Свободные места можно выбрать визуально, без HOLD и оплаты."
-      >
-        <p className="text-sm text-muted">
-          Удержанные и занятые места недоступны для нажатия. Если backend отдаёт несколько уровней, каждый этаж
-          показывается отдельно.
-        </p>
-      </PageCard>
+        title="Схема салона"
+        description="Свободные места можно выбрать для просмотра. Бронирование подключим позже."
+      />
 
       {isLoading ? (
         <div className="rounded-[28px] border border-border bg-white p-6 text-center text-sm text-muted shadow-sm">
@@ -160,38 +146,11 @@ export default function BusSeatsPage() {
       ) : null}
 
       {!isLoading && !seatMapMissing && !error && orderedSeats.length > 0 ? (
-        <PageCard
-          eyebrow="Preview"
-          title="Просмотр мест"
-          description="Layout сделан в read-only режиме и опирается только на passenger-safe bus-client данные."
-        >
-          <div className="space-y-5">
-            {seatFloors.map((floorGroup) => (
-              <div key={floorGroup.floor} className="space-y-3">
-                <div className="flex items-center justify-between gap-3">
-                  <p className="text-sm font-semibold text-ink">
-                    {floorGroup.floor === 'main' ? 'Салон' : `Уровень: ${floorGroup.floor}`}
-                  </p>
-                  <p className="text-xs text-muted">{floorGroup.seats.length} мест</p>
-                </div>
-
-                <BusSeatMapMobile
-                  seats={floorGroup.seats}
-                  selectedSeatId={selectedSeatId}
-                  onSeatSelect={setSelectedSeatId}
-                />
-              </div>
-            ))}
-          </div>
-
-          <button
-            type="button"
-            disabled
-            className="w-full rounded-2xl border border-border bg-slate-100 px-4 py-3 text-sm font-semibold text-muted"
-          >
-            Бронирование скоро
-          </button>
-        </PageCard>
+        <BusSeatMapMobile
+          seats={orderedSeats}
+          selectedSeatId={selectedSeatId}
+          onSeatSelect={setSelectedSeatId}
+        />
       ) : null}
     </div>
   )

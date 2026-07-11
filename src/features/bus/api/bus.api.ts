@@ -4,6 +4,7 @@ import type {
   BusCity,
   BusSeat,
   BusSeatStatus,
+  BusSeatType,
   BusTripDetail,
   BusTripSearchParams,
   BusTripSeats,
@@ -326,6 +327,36 @@ function normalizeSeatStatus(value: unknown): BusSeatStatus {
   return 'UNKNOWN'
 }
 
+function normalizeSeatType(value: unknown): BusSeatType {
+  const normalized = asString(value, 'UNKNOWN').toUpperCase()
+
+  if (normalized === 'SEAT' || normalized === 'CHAIR' || normalized === 'PLACE') {
+    return 'SEAT'
+  }
+
+  if (normalized === 'BED' || normalized === 'SLEEPER' || normalized === 'SLEEP' || normalized === 'BERTH') {
+    return normalized === 'BED' ? 'BED' : 'SLEEPER'
+  }
+
+  if (normalized === 'AISLE' || normalized === 'PASSAGE' || normalized === 'WALKWAY') {
+    return 'AISLE'
+  }
+
+  if (normalized === 'DOOR' || normalized === 'ENTRY' || normalized === 'ENTRANCE') {
+    return 'DOOR'
+  }
+
+  if (normalized === 'DRIVER' || normalized === 'CABIN' || normalized === 'STEERING') {
+    return 'DRIVER'
+  }
+
+  if (normalized === 'EMPTY' || normalized === 'SPACE' || normalized === 'VOID') {
+    return 'EMPTY'
+  }
+
+  return 'UNKNOWN'
+}
+
 function extractSeatArray(value: unknown): unknown[] {
   if (Array.isArray(value)) {
     return value
@@ -386,12 +417,24 @@ function extractSeatArray(value: unknown): unknown[] {
 function mapSeat(item: unknown, index: number): BusSeat | null {
   const record = isRecord(item) ? item : {}
   const position = firstRecord(record.position, record.seatPosition, record.layoutPosition, record.coordinates)
-  const row = asNumber(record.row ?? record.rowIndex ?? record.y ?? position?.row ?? position?.y)
-  const column = asNumber(record.column ?? record.columnIndex ?? record.x ?? position?.column ?? position?.x)
+  const row = asNumber(record.row ?? record.rowIndex ?? record.rowNumber ?? record.y ?? position?.row ?? position?.y)
+  const column = asNumber(
+    record.column ?? record.col ?? record.columnIndex ?? record.colIndex ?? record.x ?? position?.column ?? position?.x,
+  )
+  const x = asNumber(record.x ?? record.column ?? record.col ?? record.columnIndex ?? record.colIndex ?? position?.x)
+  const y = asNumber(record.y ?? record.row ?? record.rowIndex ?? record.rowNumber ?? position?.y)
   const label = asString(
     record.label ?? record.seatLabel ?? record.name ?? record.seatNumber ?? record.number ?? record.code,
   )
   const id = asId(record.id ?? record.seatId ?? label, `seat-${index + 1}`)
+  const deck = asString(record.deck ?? record.level ?? record.floor ?? position?.deck ?? position?.level ?? position?.floor) || null
+  const level =
+    asString(record.level ?? record.deck ?? record.floor ?? position?.level ?? position?.deck ?? position?.floor) || null
+  const floor =
+    asString(record.floor ?? record.deck ?? record.level ?? position?.floor ?? position?.deck ?? position?.level) || null
+  const type = normalizeSeatType(
+    record.type ?? record.cellType ?? record.seatType ?? record.kind ?? record.placeType ?? position?.type,
+  )
 
   if (!id) return null
 
@@ -400,9 +443,14 @@ function mapSeat(item: unknown, index: number): BusSeat | null {
     label: label || `Место ${index + 1}`,
     row,
     column,
+    x,
+    y,
+    deck,
+    level,
+    floor,
+    type: type === 'UNKNOWN' && label ? 'SEAT' : type,
     status: normalizeSeatStatus(record.status ?? record.availabilityStatus ?? record.seatStatus),
     price: asNumber(record.price ?? record.seatPrice ?? record.tariff ?? record.amount) ?? null,
-    floor: asString(record.floor ?? record.deck ?? record.level ?? position?.floor ?? position?.deck) || null,
   }
 }
 
@@ -475,7 +523,12 @@ export async function getBusTripSeats(id: string) {
       label: seat.label,
       row: seat.row,
       column: seat.column,
+      x: seat.x,
+      y: seat.y,
+      deck: seat.deck,
+      level: seat.level,
       floor: seat.floor,
+      type: seat.type,
       status: seat.status,
       price: seat.price,
     })),
